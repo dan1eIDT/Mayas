@@ -31,6 +31,8 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.delay
+import kotlin.jvm.java
+
 
 class MainActivity : ComponentActivity() {
 
@@ -135,10 +137,10 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MayasApp(vm: AuthVM = viewModel()) {
+
     val navController = rememberNavController()
     val user = vm.user
     var showUserSearchDialog by remember { mutableStateOf(false) }
-
     LaunchedEffect(user) {
         if (user == null) {
             navController.navigate(Screen.Auth.route) {

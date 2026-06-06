@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
@@ -11,14 +12,36 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.firestore.Exclude
+import com.google.firebase.firestore.ServerTimestamp
+import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.functions.Functions
+import io.github.jan.supabase.realtime.Realtime
+import io.github.jan.supabase.storage.storage
+import io.github.jan.supabase.storage.Storage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.util.Date
+import io.github.jan.supabase.functions.functions
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
-// --- СТРУКТУРА СООБЩЕНИЯ С ПОДДЕРЖКОЙ ИМЕНИ (ДЛЯ ГРУПП) ---
+val supabase = createSupabaseClient(
+    supabaseUrl = "https://rfkqidshgbioplqyhgca.supabase.co",
+    supabaseKey = "sb_publishable_jGI8UyEaXfSyPaMY0l4HVQ_U4rUJZ5_"
+) {
+    install(Storage)
+    install(Realtime)
+    install(Functions)
+}
+
 data class Message(
-    val id: String = "",
-    val text: String = "",
+    @get:Exclude var id: String = "",
     val senderId: String = "",
-    val senderName: String = "User", // <-- Добавлено для отображения в группах
-    val timestamp: Timestamp? = null,
+    val senderName: String = "",
+    val text: String? = null,
+    val mediaUrl: String? = null,
+    @ServerTimestamp val timestamp: Date? = null,
     val readBy: List<String> = emptyList(),
     val replyToText: String? = null,
     val replyToName: String? = null,
@@ -215,14 +238,34 @@ class ChatVM : ViewModel() {
                 onSuccess(newChatId)
             }
     }
+    private fun sendPushNotification(receiverUid: String, messageText: String) {
+        if (receiverUid.isBlank()) return
 
+        // Достаем токен получателя из твоего Firestore
+        db.collection("users").document(receiverUid).get().addOnSuccessListener { doc ->
+            val token = doc.getString("fcmToken") ?: return@addOnSuccessListener
+
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    // Пинаем нашу Edge Function в Supabase
+                    supabase.functions.invoke("send-fcmpush", buildJsonObject {
+                        put("token", token)
+                        put("senderName", myName)
+                        put("text", messageText)
+                    })
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
     fun sendMessage(chatId: String, text: String, replyText: String?, replyName: String?) {
         if (text.isBlank()) return
 
         val messageData = mutableMapOf(
             "text" to text,
             "senderId" to myUid,
-            "senderName" to myName, // Передаем имя, чтобы в группах оно отображалось без лишних запросов
+            "senderName" to myName,
             "timestamp" to FieldValue.serverTimestamp(),
             "readBy" to listOf(myUid)
         )
@@ -231,12 +274,61 @@ class ChatVM : ViewModel() {
             messageData["replyToText"] = replyText
             messageData["replyToName"] = replyName
         }
-
         db.collection("chats").document(chatId)
             .collection("messages").add(messageData)
             .addOnSuccessListener {
                 updateChatMetadata(chatId, text, myUid ?: "")
             }
+    if (!isGroupChat && partnerUid.isNotBlank()) {
+        sendPushNotification(receiverUid = partnerUid, messageText = text)
+    }
+}
+
+
+    fun sendMediaMessage(
+        chatId: String,
+        text: String,
+        fileBytes: ByteArray,
+        replyText: String?,
+        replyName: String?
+    ) {
+        val uid = myUid ?: return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val fileName = "media_${uid}_${System.currentTimeMillis()}.jpg"
+
+                val bucket = supabase.storage.from("mayas-media")
+                bucket.upload(fileName, fileBytes)
+
+                val publicMediaUrl = bucket.publicUrl(fileName)
+
+                val messageData = mutableMapOf(
+                    "text" to text.ifBlank { null },
+                    "senderId" to uid,
+                    "senderName" to myName,
+                    "mediaUrl" to publicMediaUrl,
+                    "timestamp" to FieldValue.serverTimestamp(),
+                    "readBy" to listOf(uid)
+                )
+
+                if (replyText != null && replyName != null) {
+                    messageData["replyToText"] = replyText
+                    messageData["replyToName"] = replyName
+                }
+
+                // 5. Закидываем готовое сообщение в твой Firebase
+                db.collection("chats").document(chatId)
+                    .collection("messages").add(messageData)
+                    .addOnSuccessListener {
+                        val previewText = if (text.isNotBlank()) text else "📷 Фотография"
+                        updateChatMetadata(chatId, previewText, uid)
+                    }
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     fun editMessage(chatId: String, messageId: String, newText: String) {

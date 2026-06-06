@@ -14,6 +14,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
@@ -44,6 +45,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -59,14 +61,12 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.border
-import androidx.compose.ui.graphics.Brush
-import com.dan1eidtj.mayas.core_ui.ui.components.ProfileIcon
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import androidx.compose.ui.layout.ContentScale
 import com.dan1eidtj.data.SharedContentManager
 import com.dan1eidtj.mayas.core.ui.theme.*
+import com.dan1eidtj.mayas.core_ui.ui.components.ProfileIcon
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -289,8 +289,7 @@ fun ChatScreen(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.clickable {
-                                // Если это групповой чат, то передаем chatId в качестве ID профиля, иначе partnerUid
-                                val profileTargetId = if (chatVM.isGroupChat) chatId else partnerUid
+                                val profileTargetId = (if (chatVM.isGroupChat) chatId else partnerUid).orEmpty()
                                 if (profileTargetId.isNotBlank()) {
                                     onOpenProfile(profileTargetId)
                                 }
@@ -337,7 +336,7 @@ fun ChatScreen(
                                     horizontalArrangement = Arrangement.Start
                                 ) {
                                     Text(
-                                        text = partnerName,
+                                        text = partnerName.orEmpty(),
                                         fontSize = 16.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = textPrimaryColor,
@@ -353,8 +352,9 @@ fun ChatScreen(
                                     }
                                 }
 
+                                val statusText = if (!typingText.isNullOrBlank()) typingText else lastSeenText.orEmpty()
                                 AnimatedContent<String>(
-                                    targetState = if (typingText.isNotBlank()) typingText else lastSeenText,
+                                    targetState = statusText,
                                     label = "StatusAnimation",
                                     transitionSpec = {
                                         fadeIn(animationSpec = tween(200)) togetherWith fadeOut(animationSpec = tween(200))
@@ -544,7 +544,7 @@ fun ChatScreen(
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Text(
-                                                    text = msg.senderName.take(1).uppercase(),
+                                                    text = (msg.senderName ?: "").take(1).uppercase(),
                                                     color = textPrimaryColor,
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold
@@ -572,7 +572,7 @@ fun ChatScreen(
 
                                             if (!isMe && isGroupChat && isLastInChain) {
                                                 Text(
-                                                    text = msg.senderName,
+                                                    text = msg.senderName.orEmpty(),
                                                     fontSize = 13.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = MayasTheme.GlowPurple,
@@ -597,7 +597,7 @@ fun ChatScreen(
                                                 }
                                             }
 
-                                            val parsedText = rememberParsedMessageText(text = msg.text, accentColor = accentColor)
+                                            val parsedText = rememberParsedMessageText(text = msg.text.orEmpty(), accentColor = accentColor)
 
                                             ClickableText(
                                                 text = parsedText,
@@ -627,8 +627,22 @@ fun ChatScreen(
                                             verticalAlignment = Alignment.CenterVertically,
                                             modifier = Modifier.padding(top = 4.dp)
                                         ) {
-                                            val timeFormat = msg.timestamp?.toDate()?.let {
-                                                SimpleDateFormat("HH:mm", Locale.getDefault()).format(it)
+                                            val timeFormat = msg.timestamp?.let { ts ->
+                                                val date = when (ts) {
+                                                    is java.util.Date -> ts
+                                                    is Timestamp -> ts.toDate()
+                                                    else -> {
+                                                        try {
+                                                            val method = ts.javaClass.getMethod("toDate")
+                                                            method.invoke(ts) as? java.util.Date
+                                                        } catch (e: Exception) {
+                                                            null
+                                                        }
+                                                    }
+                                                }
+                                                date?.let {
+                                                    SimpleDateFormat("HH:mm", Locale.getDefault()).format(it)
+                                                }
                                             } ?: "--:--"
 
                                             Text(
@@ -668,7 +682,7 @@ fun ChatScreen(
                                         text = { Text("Копировать", color = textPrimaryColor) },
                                         leadingIcon = { Icon(Icons.Outlined.ContentCopy, null, tint = textSecondaryColor) },
                                         onClick = {
-                                            val clip = ClipData.newPlainText("MayasMessage", msg.text)
+                                            val clip = ClipData.newPlainText("MayasMessage", msg.text.orEmpty())
                                             clipboardManager.setPrimaryClip(clip)
                                             Toast.makeText(context, "Текст скопирован", Toast.LENGTH_SHORT).show()
                                             selectedMessage = null
@@ -678,7 +692,7 @@ fun ChatScreen(
                                         text = { Text("Поделиться", color = textPrimaryColor) },
                                         leadingIcon = { Icon(Icons.Outlined.Share, null, tint = textSecondaryColor) },
                                         onClick = {
-                                            shareText(context, msg.text)
+                                            shareText(context, msg.text.orEmpty())
                                             selectedMessage = null
                                         }
                                     )
@@ -686,7 +700,7 @@ fun ChatScreen(
                                         text = { Text("Закрепить", color = textPrimaryColor) },
                                         leadingIcon = { Icon(Icons.Outlined.PushPin, null, tint = textSecondaryColor) },
                                         onClick = {
-                                            chatVM.pinMessage(chatId, msg.text)
+                                            chatVM.pinMessage(chatId, msg.text.orEmpty())
                                             Toast.makeText(context, "Сообщение закреплено", Toast.LENGTH_SHORT).show()
                                             selectedMessage = null
                                         }
@@ -728,13 +742,13 @@ fun ChatScreen(
                                 Spacer(Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = if (reply.senderId == myUid) "Ответ себе" else "Ответ пользователю $partnerName",
+                                        text = if (reply.senderId == myUid) "Ответ себе" else "Ответ пользователю ${partnerName.orEmpty()}",
                                         fontSize = 11.sp,
                                         color = MayasTheme.GlowPurple,
                                         fontWeight = FontWeight.Bold
                                     )
                                     Text(
-                                        text = reply.text,
+                                        text = reply.text.orEmpty(),
                                         fontSize = 13.sp,
                                         maxLines = 1,
                                         color = textSecondaryColor,
@@ -803,7 +817,7 @@ fun ChatScreen(
                                                 chatId = chatId,
                                                 text = input,
                                                 replyText = replyMessage?.text,
-                                                replyName = if (replyMessage?.senderId == myUid) "Вы" else partnerName
+                                                replyName = if (replyMessage?.senderId == myUid) "Вы" else partnerName.orEmpty()
                                             )
                                             input = ""
                                             replyMessage = null
