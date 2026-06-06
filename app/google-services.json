@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "369442922752",
+    "project_id": "mayas-47778",
+    "storage_bucket": "mayas-47778.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:369442922752:android:596eaabc110a6c880c53e5",
+        "android_client_info": {
+          "package_name": "com.dan1eidtj.mayas"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDdrPn2q_8sPLTV1X1O0QsBtCZ20zNxZOE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
