@@ -27,14 +27,13 @@ import java.util.Calendar
 
 @Composable
 fun SplashScreen() {
-    // 🧠 Мозги: Твоя фича с датами (оставил как просил)
     val eventData = remember {
         val calendar = Calendar.getInstance()
         val day = calendar.get(Calendar.DAY_OF_MONTH)
         val month = calendar.get(Calendar.MONTH) + 1
 
         when {
-            day == 26 && month == 5 -> "dan1eYT С ДР!" to Color(0xFFFFFFFF)
+            day == 26 && month == 5 -> "dan1eYT С ДР!" to Color(0xFFFF0000)
             day == 14 && month == 2 -> "dan1e С ДР!" to Color(0xFFFF4081)
             day == 9 && month == 5 -> "С ПОБЕДОЙ!" to Color(0xFFFF9C06)
             day == 1 && month == 6 -> "ЛЕТО В МАЯС." to Color(0xFF00FFC2)
@@ -46,28 +45,23 @@ fun SplashScreen() {
     val eventText = eventData.first
     val accentColor = eventData.second
 
-    // --- Анимации ---
     val infinite = rememberInfiniteTransition(label = "cyber")
 
-    // Вращение фона для динамики
     val rotation by infinite.animateFloat(
         initialValue = 0f, targetValue = 360f,
         animationSpec = infiniteRepeatable(tween(20000, easing = LinearEasing))
     )
 
-    // Пульсация неона
     val neonIntensity by infinite.animateFloat(
         initialValue = 0.7f, targetValue = 1.2f,
         animationSpec = infiniteRepeatable(tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse)
     )
 
-    // Появление (Scale + Alpha)
     val appearanceProgress = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         appearanceProgress.animateTo(1f, animationSpec = tween(1200, easing = EaseOutBack))
     }
 
-    // Печатная машинка
     var typedText by remember { mutableStateOf("") }
     LaunchedEffect(eventText) {
         delay(600)
@@ -80,12 +74,11 @@ fun SplashScreen() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF040405)),
+            .background(MayasTheme.Background),
         contentAlignment = Alignment.Center
     ) {
 
 
-        // 2. ✨ ЧАСТИЦЫ (Звездная пыль)
         StaticParticles(accentColor)
 
         Column(
@@ -97,9 +90,9 @@ fun SplashScreen() {
                     scaleY = 0.8f + (appearanceProgress.value * 0.2f)
                 }
         ) {
-            // 3. 🔥 LOGO (Neon Layering)
+
             Box(contentAlignment = Alignment.Center) {
-                // Внешнее размытое свечение
+
                 Text(
                     "!M",
                     fontSize = 110.sp,
@@ -107,7 +100,7 @@ fun SplashScreen() {
                     color = accentColor.copy(alpha = 0.3f),
                     modifier = Modifier.blur(20.dp * neonIntensity)
                 )
-                // Основной текст лого
+
                 Text(
                     "!M",
                     fontSize = 110.sp,
@@ -121,22 +114,22 @@ fun SplashScreen() {
 
             Spacer(Modifier.height(20.dp))
 
-            // 4. 🧠 BRAND NAME
+
             Text(
                 "МАЯС",
                 fontSize = 28.sp,
                 fontWeight = FontWeight.ExtraLight,
                 letterSpacing = 12.sp,
-                color = Color.White
+                color = MayasTheme.TextPrimary
             )
 
             Spacer(Modifier.height(16.dp))
 
-            // 5. 📟 EVENT TEXT
+
             Box(contentAlignment = Alignment.CenterStart) {
                 Text(
                     text = typedText,
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = MayasTheme.TextSecondary,
                     fontSize = 12.sp,
                     letterSpacing = 2.sp,
                     fontWeight = FontWeight.Bold
@@ -144,7 +137,7 @@ fun SplashScreen() {
             }
         }
 
-        // 6. ⏳ ЛИНИЯ ЗАГРУЗКИ (Bottom Progress)
+
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)

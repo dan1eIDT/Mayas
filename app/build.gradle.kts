@@ -32,9 +32,9 @@ dependencies {
     implementation(project(":feature:chats"))
 
     // --- ПЛАТФОРМЫ (BOM) ---
-    // Firebase BOM (управляет версиями всех сервисов Firebase)
+    // Firebase BOM
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
-    // Compose BOM (управляет версиями Jetpack Compose)
+    // Compose BOM
     implementation(platform("androidx.compose:compose-bom:2026.05.00"))
 
     // --- GOOGLE & FIREBASE ---

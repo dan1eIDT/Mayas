@@ -1,5 +1,6 @@
 package com.dan1eidtj.mayas.feature.chat
 
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -64,7 +65,7 @@ class ChatVM : ViewModel() {
     var partnerUid by mutableStateOf("")
         private set
 
-    var isGroupChat by mutableStateOf(false) // <-- Флаг: группа это или личка
+    var isGroupChat by mutableStateOf(false)
         private set
 
     var partnerName by mutableStateOf("Загрузка...")
@@ -95,11 +96,9 @@ class ChatVM : ViewModel() {
     val myUid: String?
         get() = auth.currentUser?.uid
 
-    // Переменная для сохранения имени текущего пользователя, чтобы крепить к сообщениям
     private var myName: String = "Вы"
 
     init {
-        // Подгружаем свое имя для отправки в групповые чаты
         myUid?.let { uid ->
             db.collection("users").document(uid).get().addOnSuccessListener { doc ->
                 myName = doc.getString("name") ?: doc.getString("username") ?: "Вы"
@@ -120,6 +119,9 @@ class ChatVM : ViewModel() {
                     }
                     messages = list
                     markAsRead(chatId, list)
+
+                    // 🔥 Раз мы сидим внутри чата и получаем сообщения — сразу гасим свой счётчик непрочитанных в 0
+                    clearUnreadCount(chatId)
                 }
             }
 
@@ -129,28 +131,23 @@ class ChatVM : ViewModel() {
                 if (doc != null && doc.exists()) {
                     pinnedMessage = doc.getString("pinnedMessage")
 
-                    // Проверяем тип чата (и по type, и по isGroup для надежности)
                     val type = doc.getString("type") ?: "DIRECT"
                     val isGroupField = doc.getBoolean("isGroup") ?: false
                     isGroupChat = type == "GROUP" || isGroupField
 
                     if (isGroupChat) {
-                        // Если это ГРУППА, то "partnerName" — это название группы
                         partnerName = doc.getString("title") ?: doc.getString("groupName") ?: "Группа"
                         partnerAvatarUrl = doc.getString("groupAvatar") ?: doc.getString("groupAvatarUrl")
                         partnerUseCustomAvatar = !partnerAvatarUrl.isNullOrBlank()
-                        partnerEmoji = "👥" // Фиксированный эмодзи для групп
+                        partnerEmoji = "👥"
 
-                        // Считываем участников из participants (или из members, если они старые)
                         val members = (doc.get("participants") as? List<*>) ?: (doc.get("members") as? List<*>)
                         lastSeenText = "${members?.size ?: 0} участников"
-                        typingText = "" // Для групп логику печатания можно расширить позже
+                        typingText = ""
                     } else {
-                        // Если это ЛИЧНЫЙ чат — запускаем стандартное считывание собеседника
                         setupDirectChatListener(chatId, uid)
                     }
                 } else {
-                    // Если документа чата еще нет (новый чат), по дефолту считаем DIRECT
                     isGroupChat = false
                     setupDirectChatListener(chatId, uid)
                 }
@@ -183,82 +180,17 @@ class ChatVM : ViewModel() {
         }
     }
 
-    fun createGroupChat(
-        title: String,
-        description: String,               // <-- Добавили описание
-        isPublic: Boolean,                  // <-- Добавили приватность (true - публичная, false - приватная)
-        selectedUserIds: List<String>,
-        onSuccess: (String) -> Unit
-    ) {
+    fun clearUnreadCount(chatId: String) {
         val uid = myUid ?: return
-        if (title.isBlank() || selectedUserIds.isEmpty()) return
-
-        // 1. Генерируем ID для нового документа группы
-        val newChatId = db.collection("chats").document().id
-
-        // 2. Объединяем всех участников и добавляем создателя (тебя)
-        val allMembers = selectedUserIds.toMutableList().apply {
-            if (!contains(uid)) add(uid)
-        }
-
-        // 3. Формируем структуру документа группы уровня Telegram/Discord
-        val groupData = mapOf(
-            "chatId" to newChatId,
-            "type" to "GROUP",
-            "isGroup" to true,
-            "title" to title.trim(),
-            "groupName" to title.trim(),
-            "description" to description.trim(), // <-- Сохраняем описание чата
-            "ownerId" to uid,                     // <-- Ты создатель! (Пункт 4)
-            "admins" to listOf(uid),             // <-- Ты первый админ! (Пункт 5)
-            "isPublic" to isPublic,               // <-- Публичный статус чата (Пункт 10)
-            "participants" to allMembers,
-            "members" to allMembers,
-            "pinnedMessage" to null,
-            "lastMessage" to "$myName создал(а) группу \"${title.trim()}\"", // <-- Динамический текст
-            "lastSenderId" to "system",
-            "updatedAt" to FieldValue.serverTimestamp()
-        )
-
-        // 4. Записываем в Firestore
-        db.collection("chats").document(newChatId)
-            .set(groupData)
-            .addOnSuccessListener {
-                // 5. Создаем красивое системное сообщение (Пункт 9)
-                val systemMessage = mapOf(
-                    "text" to "$myName создал(а) группу \"$title\"",
-                    "senderId" to "system",
-                    "senderName" to "Система",
-                    "timestamp" to FieldValue.serverTimestamp(),
-                    "readBy" to listOf(uid)
-                )
-                db.collection("chats/$newChatId/messages").add(systemMessage)
-
-                // Переходим в созданный чат
-                onSuccess(newChatId)
-            }
+        db.collection("chats").document(chatId).update("unreadCount_$uid", 0)
+            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка сброса счётчика", e) }
     }
-    private fun sendPushNotification(receiverUid: String, messageText: String) {
-        if (receiverUid.isBlank()) return
 
-        // Достаем токен получателя из твоего Firestore
-        db.collection("users").document(receiverUid).get().addOnSuccessListener { doc ->
-            val token = doc.getString("fcmToken") ?: return@addOnSuccessListener
-
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    // Пинаем нашу Edge Function в Supabase
-                    supabase.functions.invoke("send-fcmpush", buildJsonObject {
-                        put("token", token)
-                        put("senderName", myName)
-                        put("text", messageText)
-                    })
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
+    private fun incrementUnreadCount(chatId: String, receiverUid: String) {
+        db.collection("chats").document(chatId).update("unreadCount_$receiverUid", FieldValue.increment(1))
+            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка инкремента счётчика", e) }
     }
+
     fun sendMessage(chatId: String, text: String, replyText: String?, replyName: String?) {
         if (text.isBlank()) return
 
@@ -274,16 +206,22 @@ class ChatVM : ViewModel() {
             messageData["replyToText"] = replyText
             messageData["replyToName"] = replyName
         }
+
         db.collection("chats").document(chatId)
             .collection("messages").add(messageData)
             .addOnSuccessListener {
                 updateChatMetadata(chatId, text, myUid ?: "")
-            }
-    if (!isGroupChat && partnerUid.isNotBlank()) {
-        sendPushNotification(receiverUid = partnerUid, messageText = text)
-    }
-}
 
+                // 🔥 Если это ЛИЧНЫЙ чат, накручиваем счётчик «хуйнюшки» твоему другу в документе чата
+                if (!isGroupChat && partnerUid.isNotBlank()) {
+                    incrementUnreadCount(chatId, partnerUid)
+                }
+            }
+
+        if (!isGroupChat && partnerUid.isNotBlank()) {
+            sendPushNotification(receiverUid = partnerUid, messageText = text)
+        }
+    }
 
     fun sendMediaMessage(
         chatId: String,
@@ -297,10 +235,8 @@ class ChatVM : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val fileName = "media_${uid}_${System.currentTimeMillis()}.jpg"
-
                 val bucket = supabase.storage.from("mayas-media")
                 bucket.upload(fileName, fileBytes)
-
                 val publicMediaUrl = bucket.publicUrl(fileName)
 
                 val messageData = mutableMapOf(
@@ -317,16 +253,88 @@ class ChatVM : ViewModel() {
                     messageData["replyToName"] = replyName
                 }
 
-                // 5. Закидываем готовое сообщение в твой Firebase
                 db.collection("chats").document(chatId)
                     .collection("messages").add(messageData)
                     .addOnSuccessListener {
                         val previewText = if (text.isNotBlank()) text else "📷 Фотография"
                         updateChatMetadata(chatId, previewText, uid)
+
+                        // 🔥 Накручиваем счётчик получателю при отправке ФОТОГРАФИИ
+                        if (!isGroupChat && partnerUid.isNotBlank()) {
+                            incrementUnreadCount(chatId, partnerUid)
+                        }
                     }
 
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+        }
+    }
+
+    fun createGroupChat(
+        title: String,
+        description: String,
+        isPublic: Boolean,
+        selectedUserIds: List<String>,
+        onSuccess: (String) -> Unit
+    ) {
+        val uid = myUid ?: return
+        if (title.isBlank() || selectedUserIds.isEmpty()) return
+
+        val newChatId = db.collection("chats").document().id
+        val allMembers = selectedUserIds.toMutableList().apply {
+            if (!contains(uid)) add(uid)
+        }
+
+        val groupData = mapOf(
+            "chatId" to newChatId,
+            "type" to "GROUP",
+            "isGroup" to true,
+            "title" to title.trim(),
+            "groupName" to title.trim(),
+            "description" to description.trim(),
+            "ownerId" to uid,
+            "admins" to listOf(uid),
+            "isPublic" to isPublic,
+            "participants" to allMembers,
+            "members" to allMembers,
+            "pinnedMessage" to null,
+            "lastMessage" to "$myName создал(а) группу \"${title.trim()}\"",
+            "lastSenderId" to "system",
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+
+        db.collection("chats").document(newChatId)
+            .set(groupData)
+            .addOnSuccessListener {
+                val systemMessage = mapOf(
+                    "text" to "$myName создал(а) группу \"$title\"",
+                    "senderId" to "system",
+                    "senderName" to "Система",
+                    "timestamp" to FieldValue.serverTimestamp(),
+                    "readBy" to listOf(uid)
+                )
+                db.collection("chats/$newChatId/messages").add(systemMessage)
+                onSuccess(newChatId)
+            }
+    }
+
+    private fun sendPushNotification(receiverUid: String, messageText: String) {
+        if (receiverUid.isBlank()) return
+
+        db.collection("users").document(receiverUid).get().addOnSuccessListener { doc ->
+            val token = doc.getString("fcmToken") ?: return@addOnSuccessListener
+
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    supabase.functions.invoke("send-fcmpush", buildJsonObject {
+                        put("token", token)
+                        put("senderName", myName)
+                        put("text", messageText)
+                    })
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         }
     }
@@ -376,7 +384,7 @@ class ChatVM : ViewModel() {
 
     fun setTyping(chatId: String, isTyping: Boolean) {
         val uid = myUid ?: return
-        if (!isGroupChat) { // В группах пока отключаем, чтобы не спамить в документ юзера
+        if (!isGroupChat) {
             db.collection("users").document(uid)
                 .update("typing.$chatId", isTyping)
         }

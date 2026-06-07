@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.net.Uri
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -78,6 +79,7 @@ import java.util.Locale
 import java.util.regex.Pattern
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
+
 
 // --- КАСТОМНЫЕ ФОРМЫ ДЛЯ ХВОСТИКОВ В СТИЛЕ MAYAS ---
 class IncomingBubbleShape(private val cornerRadius: Float = 36f, private val drawTail: Boolean = true) : Shape {
@@ -169,9 +171,14 @@ private fun shareText(context: Context, text: String) {
 fun ChatScreen(
     chatId: String,
     onBack: () -> Unit,
-    onOpenProfile: (String) -> Unit
+    onOpenProfile: (String) -> Unit,
+
 ) {
+
     val chatVM: ChatVM = viewModel()
+    LaunchedEffect(chatId) {
+        chatVM.clearUnreadCount(chatId)
+    }
     val myUid = FirebaseAuth.getInstance().currentUser?.uid ?: return
     val context = LocalContext.current
     val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
@@ -206,6 +213,7 @@ fun ChatScreen(
     }
 
     LaunchedEffect(input) {
+
         chatVM.setTyping(chatId, input.isNotBlank())
     }
 

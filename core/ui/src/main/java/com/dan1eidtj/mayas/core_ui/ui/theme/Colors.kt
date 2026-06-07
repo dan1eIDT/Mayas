@@ -66,6 +66,11 @@ object MayasTheme {
             listOf(Color(0xFFE8E1F5), Color(0xFFF8F8FC))
         }
 
+    val dan1eYTHB: Color
+        @Composable
+        @ReadOnlyComposable
+        get() = if (isSystemInDarkTheme()) Color(0xFF0A0807) else Color(0xFFFFFFFF)
+
     val BlueGradient: List<Color>
         @Composable
         @ReadOnlyComposable

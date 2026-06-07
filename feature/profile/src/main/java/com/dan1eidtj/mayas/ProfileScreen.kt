@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.DoorBack
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Notifications
@@ -423,13 +424,13 @@ fun ProfileScreen(
                                 TelegramInfoRow(
                                     icon = Icons.Default.Info,
                                     title = "О приложении",
-                                    subtitle = "Mayas v1.0.0"
+                                    subtitle = "Mayas"
                                 ) {
                                     onNavigateToCredits()
                                 }
                                 HorizontalDivider(color = MayasTheme.Background.copy(alpha = 0.5f), thickness = 0.8.dp, modifier = Modifier.padding(start = 56.dp))
                                 TelegramInfoRow(
-                                    icon = Icons.Default.Settings,
+                                    icon = Icons.Default.DoorBack,
                                     title = "Выйти из аккаунта",
                                     subtitle = "Завершить сессию"
                                 ) {

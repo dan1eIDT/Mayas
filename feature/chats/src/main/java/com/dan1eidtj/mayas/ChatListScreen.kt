@@ -988,8 +988,8 @@ fun ChatItemNew(
                         modifier = Modifier
                             .clip(CircleShape)
                             .background(MayasTheme.Accent)
-                            .padding(horizontal = 7.dp, vertical = 3.dp)
-                            .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+
                     ) {
                         Text(
                             text = "$unreadCount",
