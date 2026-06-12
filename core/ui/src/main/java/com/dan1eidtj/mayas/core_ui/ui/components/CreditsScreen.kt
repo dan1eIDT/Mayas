@@ -2,6 +2,8 @@
 
 package com.dan1eidtj.mayas.core_ui.ui.components
 
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -36,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -46,6 +49,24 @@ import com.dan1eidtj.mayas.core.ui.theme.*
 
 @Composable
 fun CreditsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+
+    // Получаем версию приложения динамически
+    val appVersion = remember(context) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    PackageManager.PackageInfoFlags.of(0)
+                ).versionName ?: "unknown"
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+            }
+        } catch (e: Exception) {
+            "unknown"
+        }
+    }
 
     val infinite = rememberInfiniteTransition(label = "InfiniteTransition")
 
@@ -60,7 +81,7 @@ fun CreditsScreen(onBack: () -> Unit) {
         label = "BgAlphaAnimation"
     )
 
-    // 💜 Реализовал пульс логотипа (раз уж в комментах заявлял!)
+
     val logoScale by infinite.animateFloat(
         initialValue = 0.95f,
         targetValue = 1.05f,
@@ -78,7 +99,7 @@ fun CreditsScreen(onBack: () -> Unit) {
     LaunchedEffect(Unit) {
         fullText.forEachIndexed { i, _ ->
             visibleText = fullText.substring(0, i + 1)
-            delay(150) // 60мс было слишком быстро, "Дошутился" пролетало мгновенно. 150мс — в самый раз!
+            delay(150) // 150мс — в самый раз!
         }
     }
 
@@ -101,7 +122,6 @@ fun CreditsScreen(onBack: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-
 
             // 💜 Логотип с эффектом пульсации
             Text(
@@ -138,7 +158,7 @@ fun CreditsScreen(onBack: () -> Unit) {
 
                     Spacer(Modifier.height(16.dp))
 
-                    Text("Дизайн", color = Color.White, fontSize = 18.sp) // Поправил опечатку "Дизаин"
+                    Text("Дизайн", color = Color.White, fontSize = 18.sp)
                     Text("@valeriy_dobryy", color = MayasTheme.TextGrey)
 
                     Spacer(Modifier.height(16.dp))
@@ -148,7 +168,8 @@ fun CreditsScreen(onBack: () -> Unit) {
 
                     Spacer(Modifier.height(16.dp))
 
-                    Text("beta.31.05.26", color = MayasTheme.TextGrey)
+
+                    Text("v$appVersion", color = MayasTheme.TextGrey)
                 }
             }
 
@@ -156,7 +177,7 @@ fun CreditsScreen(onBack: () -> Unit) {
 
             // 💥 Кнопка с эффектом масштаба
             val buttonScale by animateFloatAsState(
-                targetValue = if (visibleText.length == fullText.length) 1f else 0.0f, // Если текст не напечатан — прячем кнопку полностью
+                targetValue = if (visibleText.length == fullText.length) 1f else 0.0f,
                 label = "ButtonScaleAnimation"
             )
 

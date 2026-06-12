@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
+import com.dan1eidtj.mayas.feature.ChatVM
 import com.google.firebase.firestore.FirebaseFirestore
 
 // Класс данных для отображения пользователя со статусом выбора

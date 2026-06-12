@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.dan1eidtj.mayas.core_ui.ui.theme.MayasTypography
 
 
 @Composable
@@ -24,6 +25,7 @@ fun MayasAppTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
+        typography = MayasTypography,
         content = content
     )
 }

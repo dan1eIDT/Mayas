@@ -11,7 +11,7 @@ android {
         applicationId = "com.dan1eidtj.mayas"
         minSdk = 24
         versionCode = 1
-        versionName = "06.06.2026b"
+        versionName = "09.06.2026b"
         multiDexEnabled = true
     }
     buildTypes { release { isMinifyEnabled = false } }
@@ -77,6 +77,7 @@ dependencies {
     implementation("io.github.jan-tennert.supabase:storage-kt:3.6.0")
     implementation("io.github.jan-tennert.supabase:realtime-kt:3.6.0")
     implementation("io.github.jan-tennert.supabase:functions-kt:3.6.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 }
 
 

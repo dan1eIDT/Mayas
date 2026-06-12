@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
-package com.dan1eidtj.mayas.feature.chat
+package com.dan1eidtj.mayas.feature
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -15,7 +15,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
@@ -58,6 +57,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -80,52 +80,63 @@ import java.util.regex.Pattern
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
-
 // --- КАСТОМНЫЕ ФОРМЫ ДЛЯ ХВОСТИКОВ В СТИЛЕ MAYAS ---
-class IncomingBubbleShape(private val cornerRadius: Float = 36f, private val drawTail: Boolean = true) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val path = Path().apply {
-            if (drawTail) {
-                moveTo(cornerRadius + 12f, 0f)
-                lineTo(size.width - cornerRadius, 0f)
-                quadraticBezierTo(size.width, 0f, size.width, cornerRadius)
-                lineTo(size.width, size.height - cornerRadius)
-                quadraticBezierTo(size.width, size.height, size.width - cornerRadius, size.height)
-                lineTo(16f + cornerRadius, size.height)
-                quadraticBezierTo(16f, size.height, 16f, size.height - cornerRadius)
-                lineTo(16f, 12f)
-                quadraticBezierTo(16f, 0f, 0f, 0f)
-                quadraticBezierTo(12f, 0f, cornerRadius + 12f, 0f)
-            } else {
-                addRoundRect(RoundRect(0f, 0f, size.width, size.height, CornerRadius(cornerRadius)))
-            }
-            close()
-        }
-        return Outline.Generic(path)
-    }
+enum class BubbleType {
+    Incoming, Outgoing
 }
 
-class OutgoingBubbleShape(private val cornerRadius: Float = 36f, private val drawTail: Boolean = true) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+class BubbleShape(
+    private val type: BubbleType,
+    private val cornerRadius: Dp = 12.dp,
+    private val drawTail: Boolean = true,
+    private val tailWidth: Dp = 12.dp,
+    private val tailOffset: Dp = 16.dp
+) : Shape {
+
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline = with(density) {
+        val r = cornerRadius.toPx()
+        val tW = tailWidth.toPx()
+        val tOff = tailOffset.toPx()
+
         val path = Path().apply {
             if (drawTail) {
-                moveTo(cornerRadius, 0f)
-                lineTo(size.width - cornerRadius - 12f, 0f)
-                quadraticBezierTo(size.width - 12f, 0f, size.width - 12f, cornerRadius)
-                lineTo(size.width - 12f, size.height - 12f)
-                quadraticBezierTo(size.width - 12f, size.height, size.width, size.height)
-                quadraticBezierTo(size.width - 16f, size.height, size.width - 16f - cornerRadius, size.height)
-                quadraticBezierTo(size.width - 12f - cornerRadius, size.height, size.width - 12f - cornerRadius, size.height)
-                lineTo(cornerRadius, size.height)
-                quadraticBezierTo(0f, size.height, 0f, size.height - cornerRadius)
-                lineTo(0f, cornerRadius)
-                quadraticBezierTo(0f, 0f, cornerRadius, 0f)
+                when (type) {
+                    BubbleType.Incoming -> {
+                        moveTo(tW + r, 0f)
+                        lineTo(size.width - r, 0f)
+                        quadraticBezierTo(size.width, 0f, size.width, r)
+                        lineTo(size.width, size.height - r)
+                        quadraticBezierTo(size.width, size.height, size.width - r, size.height)
+                        lineTo(tOff + r, size.height)
+                        quadraticBezierTo(tOff, size.height, 0f, size.height)
+                        quadraticBezierTo(tW, size.height, tW, size.height - tW)
+                        lineTo(tW, r)
+                        quadraticBezierTo(tW, 0f, tW + r, 0f)
+                    }
+                    BubbleType.Outgoing -> {
+                        moveTo(r, 0f)
+                        lineTo(size.width - r - tW, 0f)
+                        quadraticBezierTo(size.width - tW, 0f, size.width - tW, r)
+                        lineTo(size.width - tW, size.height - tW)
+                        quadraticBezierTo(size.width - tW, size.height, size.width, size.height)
+                        quadraticBezierTo(size.width - tOff, size.height, size.width - tOff - r, size.height)
+                        lineTo(r, size.height)
+                        quadraticBezierTo(0f, size.height, 0f, size.height - r)
+                        lineTo(0f, r)
+                        quadraticBezierTo(0f, 0f, r, 0f)
+                    }
+                }
             } else {
-                addRoundRect(RoundRect(0f, 0f, size.width, size.height, CornerRadius(cornerRadius)))
+                addRoundRect(RoundRect(0f, 0f, size.width, size.height, CornerRadius(r)))
             }
             close()
         }
-        return Outline.Generic(path)
+
+        Outline.Generic(path)
     }
 }
 
@@ -171,10 +182,8 @@ private fun shareText(context: Context, text: String) {
 fun ChatScreen(
     chatId: String,
     onBack: () -> Unit,
-    onOpenProfile: (String) -> Unit,
-
+    onOpenProfile: (String, Boolean) -> Unit,
 ) {
-
     val chatVM: ChatVM = viewModel()
     LaunchedEffect(chatId) {
         chatVM.clearUnreadCount(chatId)
@@ -201,6 +210,68 @@ fun ChatScreen(
     var selectedMessage by remember { mutableStateOf<Message?>(null) }
     var replyMessage by remember { mutableStateOf<Message?>(null) }
 
+    // --- СИНХРОНИЗИРОВАННЫЕ СОСТОЯНИЯ ГРУППЫ / ПАРТНЕРА ---
+    var chatTitle by remember { mutableStateOf("") }
+    var chatAvatarUrl by remember { mutableStateOf<String?>(null) }
+    var chatUseCustomAvatar by remember { mutableStateOf(false) }
+    var chatProfileIcon by remember { mutableStateOf("default") }
+    var chatProfileGlow by remember { mutableStateOf("purple") }
+    var chatEmoji by remember { mutableStateOf<String?>(null) }
+
+
+    // 1. СИНХРОНИЗАЦИЯ ГРУППЫ ИЗ FIRESTORE (В РЕАЛЬНОМ ВРЕМЕНИ)
+    DisposableEffect(chatId, chatVM.isGroupChat) {
+        var listenerRegistration: com.google.firebase.firestore.ListenerRegistration? = null
+        if (chatVM.isGroupChat) {
+            val db = FirebaseFirestore.getInstance()
+            listenerRegistration = db.collection("chats").document(chatId)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.e("ChatScreen", "Ошибка синхронизации группы: ${error.message}")
+                        return@addSnapshotListener
+                    }
+                    if (snapshot != null && snapshot.exists()) {
+                        // Точное чтение названия из поля "groupName"
+                        val rawTitle = snapshot.getString("groupName").orEmpty()
+
+                        // Твоя проверка: если имя равно "Группа", стираем его, иначе выводим как есть
+                        chatTitle = if (rawTitle == "Группа") "" else rawTitle
+
+                        // Читаем параметры отображения группы по точным ключам из твоей БД
+                        chatAvatarUrl = snapshot.getString("avatarUrl") // появится, когда загрузится картинка
+                        chatUseCustomAvatar = snapshot.getBoolean("useCustomAvatar") ?: false
+                        chatProfileIcon = snapshot.getString("profileIcon") ?: "default"
+                        chatProfileGlow = snapshot.getString("profileGlow") ?: "purple"
+                        chatEmoji = snapshot.getString("emoji") // на случай добавления эмодзи в будущем
+                    }
+                }
+        }
+        onDispose {
+            listenerRegistration?.remove()
+        }
+    }
+
+    // 2. СИНХРОНИЗАЦИЯ ЛИЧНОГО ЧАТА ИЗ VIEWMODEL
+    LaunchedEffect(
+        chatVM.isGroupChat,
+        chatVM.partnerName,
+        chatVM.partnerAvatarUrl,
+        chatVM.partnerUseCustomAvatar,
+        chatVM.partnerProfileIcon,
+        chatVM.partnerProfileGlow,
+        chatVM.partnerEmoji
+    ) {
+        if (!chatVM.isGroupChat) {
+            val rawTitle = chatVM.partnerName.orEmpty()
+            chatTitle = if (rawTitle == "Группа") "" else rawTitle
+            chatAvatarUrl = chatVM.partnerAvatarUrl
+            chatUseCustomAvatar = chatVM.partnerUseCustomAvatar
+            chatProfileIcon = chatVM.partnerProfileIcon ?: "default"
+            chatProfileGlow = chatVM.partnerProfileGlow ?: "purple"
+            chatEmoji = chatVM.partnerEmoji
+        }
+    }
+
     LaunchedEffect(SharedContentManager.sharedText) {
         SharedContentManager.sharedText?.let { sharedText ->
             input = sharedText
@@ -213,7 +284,6 @@ fun ChatScreen(
     }
 
     LaunchedEffect(input) {
-
         chatVM.setTyping(chatId, input.isNotBlank())
     }
 
@@ -232,19 +302,12 @@ fun ChatScreen(
         }
     }
 
-    val partnerName = chatVM.partnerName
     val lastSeenText = chatVM.lastSeenText
     val typingText = chatVM.typingText
     val partnerUid = chatVM.partnerUid
     val pinnedMessage = chatVM.pinnedMessage
-    val partnerAvatarUrl = chatVM.partnerAvatarUrl
-    val partnerEmoji = chatVM.partnerEmoji
 
-    val partnerUseCustomAvatar = chatVM.partnerUseCustomAvatar
-    val partnerProfileIcon = chatVM.partnerProfileIcon
-    val partnerProfileGlow = chatVM.partnerProfileGlow
-
-    val partnerGlowColor = when (partnerProfileGlow) {
+    val partnerGlowColor = when (chatProfileGlow) {
         "pink" -> MayasTheme.GlowPink
         "blue" -> MayasTheme.GlowBlue
         "green" -> MayasTheme.GlowGreen
@@ -299,11 +362,11 @@ fun ChatScreen(
                             modifier = Modifier.clickable {
                                 val profileTargetId = (if (chatVM.isGroupChat) chatId else partnerUid).orEmpty()
                                 if (profileTargetId.isNotBlank()) {
-                                    onOpenProfile(profileTargetId)
+                                    onOpenProfile(profileTargetId, chatVM.isGroupChat)
                                 }
                             }
                         ) {
-                            // --- КРУГЛАЯ АВАТАРКА С ПОДДЕРЖКОЙ ЗАГРУЗКИ ИЗ СЕТИ ---
+                            // --- КРУГЛАЯ АВАТАРКА С СИНХРОНИЗАЦИЕЙ ---
                             Box(
                                 modifier = Modifier
                                     .size(40.dp)
@@ -311,10 +374,10 @@ fun ChatScreen(
                                     .background(partnerGlowColor.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                if (partnerUseCustomAvatar && partnerAvatarUrl?.isNotBlank() == true) {
+                                if (chatUseCustomAvatar && chatAvatarUrl?.isNotBlank() == true) {
                                     AsyncImage(
-                                        model = partnerAvatarUrl,
-                                        contentDescription = "Partner Avatar",
+                                        model = chatAvatarUrl,
+                                        contentDescription = "Chat Avatar",
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop
                                     )
@@ -332,7 +395,7 @@ fun ChatScreen(
                                             ),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        ProfileIcon(partnerProfileIcon)
+                                        ProfileIcon(chatProfileIcon)
                                     }
                                 }
                             }
@@ -344,17 +407,17 @@ fun ChatScreen(
                                     horizontalArrangement = Arrangement.Start
                                 ) {
                                     Text(
-                                        text = partnerName.orEmpty(),
+                                        text = chatTitle,
                                         fontSize = 16.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = textPrimaryColor,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                    if (!partnerEmoji.isNullOrBlank()) {
+                                    if (!chatEmoji.isNullOrBlank()) {
                                         Spacer(Modifier.width(4.dp))
                                         Text(
-                                            text = partnerEmoji,
+                                            text = chatEmoji!!,
                                             fontSize = 16.sp
                                         )
                                     }
@@ -476,12 +539,18 @@ fun ChatScreen(
                             val bubbleColor = if (isMe) bubbleMineColor else bubbleOtherColor
                             val timeColor = textSecondaryColor
 
-                            val bubbleShape = if (isMe) OutgoingBubbleShape(drawTail = isLastInChain) else IncomingBubbleShape(drawTail = isLastInChain)
-
                             val alignment = if (isMe) Alignment.CenterEnd else Alignment.CenterStart
 
-                            val startPadding = if (isMe) 60.dp else 0.dp
-                            val endPadding = if (isMe) 0.dp else 60.dp
+                            val bubbleShape = remember(isMe, isLastInChain) {
+                                BubbleShape(
+                                    type = if (isMe) BubbleType.Outgoing else BubbleType.Incoming,
+                                    drawTail = isLastInChain
+                                )
+                            }
+
+                            val tailWidth = 12.dp
+                            val startPadding = if (isMe) 60.dp else (if (isLastInChain) 0.dp else tailWidth)
+                            val endPadding = if (isMe) (if (isLastInChain) 0.dp else tailWidth) else 60.dp
 
                             val replyThreshold = with(density) { 50.dp.toPx() }
                             val maxOffsetX = with(density) { 80.dp.toPx() }
@@ -566,11 +635,11 @@ fun ChatScreen(
                                     Row(
                                         modifier = Modifier
                                             .clip(bubbleShape)
-                                            .background(bubbleColor)
+                                            .background(bubbleColor, bubbleShape)
                                             .clickable { selectedMessage = msg }
                                             .padding(
-                                                start = if (isMe) 14.dp else if (isLastInChain) 22.dp else 14.dp,
-                                                end = if (isMe) (if (isLastInChain) 22.dp else 14.dp) else 14.dp,
+                                                start = if (isMe) 14.dp else (if (isLastInChain) 26.dp else 14.dp),
+                                                end = if (isMe) (if (isLastInChain) 26.dp else 14.dp) else 14.dp,
                                                 top = 8.dp,
                                                 bottom = 8.dp
                                             ),
@@ -750,7 +819,7 @@ fun ChatScreen(
                                 Spacer(Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = if (reply.senderId == myUid) "Ответ себе" else "Ответ пользователю ${partnerName.orEmpty()}",
+                                        text = if (reply.senderId == myUid) "Вы" else "$chatTitle",
                                         fontSize = 11.sp,
                                         color = MayasTheme.GlowPurple,
                                         fontWeight = FontWeight.Bold
@@ -825,7 +894,7 @@ fun ChatScreen(
                                                 chatId = chatId,
                                                 text = input,
                                                 replyText = replyMessage?.text,
-                                                replyName = if (replyMessage?.senderId == myUid) "Вы" else partnerName.orEmpty()
+                                                replyName = if (replyMessage?.senderId == myUid) "Вы" else chatTitle
                                             )
                                             input = ""
                                             replyMessage = null
@@ -927,7 +996,25 @@ fun ChatScreen(
 
 @Composable
 fun EmojiPicker(onEmojiSelected: (String) -> Unit) {
-    val emojis = listOf("😀", "😂", "🥰", "😎", "🤔", "😊", "🔥", "👍", "🙌", "🤡", "❤️", "🚀", "💀", "😭")
+    val emojis = listOf(
+        // Лица и эмоции
+        "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🥲", "🥹", "😊", "😇", "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥸", "🤩", "🥳", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫", "😩", "🥺", "😢", "😭", "😮‍💨", "😤", "😠", "😡", "🤬", "🤯", "😳", "🥵", "🥶", "😱", "😨", "😰", "😥", "😓", "🫣", "🤗", "🫡", "🤔", "🫣", "🤭", "🤫", "🤥", "😶", "😶‍🌫️", "😐", "😑", "😬", "🫨", "🫠", "🙄", "😯", "😦", "😧", "😮", "😲", "🥱", "😴", "🤤", "😪", "😮‍💨", "😵", "😵‍💫", "🫥", "🤐", "🥴", "🤢", "🤮", "🤧", "😷", "🤒", "🤕", "🤑", "🤠", "😈", "👿", "👹", "👺", "🤡", "💩", "👻", "💀", "☠️", "👽", "👾", "🤖", "🎃", "😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾",
+
+        // Жесты и люди
+        "👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🫰", "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "✍️", "💅", "🤳", "💪", "🦾", "🦿", "🦵", "🦶", "👂", "🦻", "👃", "🧠", "🫀", "🫁", "🦷", "🦴", "👀", "👁️", "👅", "👄", "💋", "🩸",
+
+        // Сердечки и одежда
+        "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❤️‍🔥", "❤️‍🩹", "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "👑", "👒", "🎩", "🎓", "🧢", "⛑️", "📿", "💄", "💍", "💼", "🎒", "🧳", "👓", "🕶️", "🥽", "🥼", "🦺", "👔", "👕", "👖", "🧣", "🧤", "🧥", "🧦", "👗", "👘", "🥻", "🩱", "🩲", "🩳", "👙",
+
+        // Животные и природа
+        "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐻‍❄️", "🐨", "🐯", "🦁", "🐮", "🐷", "🐽", "🐸", "🐵", "🙈", "🙉", "🙊", "🐒", "🐔", "🐧", "🐦", "🐤", "🐣", "🐥", "🦆", "🦅", "🦉", "🦤", "🪶", "🦩", "🦚", "🦜", "🐊", "🐢", "🦎", "🐍", "🐲", "🐉", "🦕", "🦖", "🐳", "🐋", "🐬", "🦭", "🐟", "🐠", "🐡", "🦈", "🐙", "🐚", "🪸", "🐌", "🦋", "🐛", "🐜", "🐝", "🪲", "🐞", "🦗", "🕷️", "🕸️", "🦂", "🦟", "🪰", "🪱", "🦠", "💐", "🌸", "💮", "🪷", "🌹", "🥀", "🌺", "🌻", "🌼", "🌷", "🌱", "🪴", "🌲", "🌳", "🌴", "🌵", "🌾", "🌿", "☘️", "🍀", "🍁", "🍂", "🍃", "🍄", "🌰", "🦀", "🦞", "🦐", "🦑",
+
+        // Еда и напитки
+        "🍏", "🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈", "🍒", "🍑", "🥭", "🍍", "🥥", "🥝", "🍅", "🍆", "🥑", "🥦", "🥬", "🥒", "🌶️", "🫑", "🌽", "🥕", "🫒", "🧄", "🧅", "🥔", "🍠", "🥐", "🥯", "🍞", "🥖", "🥨", "🥞", "🧇", "🧀", "🍖", "🥩", "🍗", "🍔", "🍟", "🍕", "🌭", "🥪", "🌮", "🌯", "🫔", "🥙", "🧆", "🥚", "🍳", "🥘", "🍲", "🫕", "🥣", "🥗", "🍿", "🧈", "🧂", "🥫", "🍱", "🍘", "🍙", "🍚", "🍛", "🍜", "🍝", "🍣", "🍤", "🥮", "🍡", "🥟", "🥠", "🥡", "🍦", "🍧", "🍨", "🍩", "🍪", "🎂", "🍰", "🧁", "🥧", "🍫", "🍬", "🍭", "🍮", "🍯", "🍼", "🥛", "☕", "🫖", "🍵", "🍶", "🍾", "🍷", "🍸", "🍹", "🍺", "🍻", "🥂", "🥃", "🫗", "🥤", "🧋", "🧃", "🧉", "🧊",
+
+        // Космос, погода, спорт и транспорт
+        "🌍", "🌎", "🌏", "🌐", "🗺️", "🗾", "🧭", "🏔️", "⛰️", "🌋", "🗻", "🏕️", "🏖️", "🏜️", "🏝️", "🏞️", "🏟️", "🏛️", "🏗️", "🧱", "🪨", "🪵", "🛖", "🏘️", "🏚️", "🏠", "🏡", "🏢", "🏣", "🏤", "🏥", "🏦", "🏨", "🏩", "🏪", "🏫", "🏬", "🏭", "🏯", "🏰", "💒", "🗼", "🗽", "⛪", "🕌", "🛕", "🕍", "⛩️", "🕋", "⛲", "⛺", "🌁", "🌃", "🏙️", "🌄", "🌅", "🌆", "🌇", "🌉", "🌌", "🎠", "🎡", "🎢", "🚂", "🚃", "🚄", "🚅", "🚆", "🚇", "🚈", "🚉", "🚊", "🦽", "🦼", "🚲", "🛵", "🏍️", "🛺", "🚨", "🚔", "🚍", "🚘", "🚖", "🚡", "🚠", "🚟", "🚃", "🌌", "🎈", "🎉", "🎊", "🎇", "🎆", "🧨", "✨", "🌟", "⭐", "🌙", "🌛", "🌜", "🌚", "🌕", "☀️", "🌤️", "⛅", "🌥️", "☁️", "🌦️", "🌧️", "⛈️", "🌩️", "❄️", "☃️", "⛄", "🌬️", "💨", "🌪️", "🌫️", "🌊", "💧", "💦", "☔", "⚡", "🔥", "💥"
+    )
     Card(
         modifier = Modifier.fillMaxWidth().height(250.dp),
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),

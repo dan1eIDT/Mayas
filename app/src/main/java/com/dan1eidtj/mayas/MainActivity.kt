@@ -24,7 +24,7 @@ import com.dan1eidtj.data.SharedContentManager
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme.DarkColors
 import com.dan1eidtj.mayas.core_ui.ui.components.*
 import com.dan1eidtj.mayas.feature.auth.*
-import com.dan1eidtj.mayas.feature.chat.ChatScreen
+import com.dan1eidtj.mayas.feature.ChatScreen
 import com.dan1eidtj.mayas.feature.chats.ChatListScreen.ChatListScreen
 import com.dan1eidtj.mayas.ProfileScreen
 import com.google.firebase.auth.FirebaseAuth
@@ -168,7 +168,7 @@ fun MayasApp(vm: AuthVM = viewModel()) {
             ChatListScreen(
                 vm = vm,
                 onStartChat = { chatId -> navController.navigate(Screen.Chat.create(chatId)) },
-                onOpenProfile = { uid -> navController.navigate(Screen.Profile.create(uid)) },
+                onOpenProfile = { uid -> navController.navigate(Screen.Profile.create(uid, isGroup = false)) },
                 onOpenSettings = { navController.navigate(Screen.Profile.create(vm.user?.uid ?: "")) },
                 onOpenCredits = { navController.navigate(Screen.Credits.route) },
                 onLogout = {
@@ -188,7 +188,9 @@ fun MayasApp(vm: AuthVM = viewModel()) {
             ChatScreen(
                 chatId = chatId,
                 onBack = { navController.popBackStack() },
-                onOpenProfile = { uid -> navController.navigate(Screen.Profile.create(uid)) }
+                onOpenProfile = { uid, isGroup ->
+                    navController.navigate(Screen.Profile.create(uid, isGroup))
+                }
             )
         }
 
@@ -206,8 +208,13 @@ fun MayasApp(vm: AuthVM = viewModel()) {
                 isGroup = isGroup,
                 vm = vm,
                 onBack = { navController.popBackStack() },
-                onNavigate = { targetUid: String, targetIsGroup: Boolean ->
+                onNavigateToProfile = { targetUid, targetIsGroup ->
+                    // Переход на профиль другого пользователя
                     navController.navigate(Screen.Profile.create(targetUid, targetIsGroup))
+                },
+                onNavigateToChat = { chatId ->
+                    // Переход непосредственно в чат
+                    navController.navigate(Screen.Chat.create(chatId))
                 },
                 onNavigateToCredits = {
                     navController.navigate(Screen.Credits.route)

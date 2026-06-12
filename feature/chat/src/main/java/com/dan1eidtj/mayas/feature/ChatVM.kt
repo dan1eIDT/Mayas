@@ -1,4 +1,4 @@
-package com.dan1eidtj.mayas.feature.chat
+package com.dan1eidtj.mayas.feature
 
 import android.util.Log
 import androidx.compose.runtime.getValue
@@ -26,10 +26,12 @@ import java.util.Date
 import io.github.jan.supabase.functions.functions
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 val supabase = createSupabaseClient(
-    supabaseUrl = "https://rfkqidshgbioplqyhgca.supabase.co",
-    supabaseKey = "sb_publishable_jGI8UyEaXfSyPaMY0l4HVQ_U4rUJZ5_"
+    supabaseUrl = "supabaseUrlP",
+    supabaseKey = "supabaseKeyP"
 ) {
     install(Storage)
     install(Realtime)
@@ -290,7 +292,6 @@ class ChatVM : ViewModel() {
             "chatId" to newChatId,
             "type" to "GROUP",
             "isGroup" to true,
-            "title" to title.trim(),
             "groupName" to title.trim(),
             "description" to description.trim(),
             "ownerId" to uid,
@@ -396,8 +397,8 @@ class ChatVM : ViewModel() {
         val last = ts.toDate().time
         val diff = now - last
 
-        val sdfTime = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
-        val sdfDate = java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.getDefault())
+        val sdfTime = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val sdfDate = SimpleDateFormat("dd.MM HH:mm", Locale.getDefault())
 
         return when {
             diff < 15_000 -> "в сети"

@@ -2,6 +2,7 @@
 
 package com.dan1eidtj.mayas
 
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -57,8 +58,9 @@ fun ProfileScreen(
     isGroup: Boolean,
     vm: AuthVM,
     onBack: () -> Unit,
-    onNavigate: (String, Boolean) -> Unit,
-    onNavigateToCredits: () -> Unit
+    onNavigateToCredits: () -> Unit,
+    onNavigateToProfile: (String, Boolean) -> Unit,
+    onNavigateToChat: (String) -> Unit,
 ) {
     val currentMyUid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
     val finalId = targetId ?: currentMyUid
@@ -103,30 +105,56 @@ fun ProfileScreen(
     )
 
     // Real-time подписка
+
     DisposableEffect(finalId, isGroup) {
         if (finalId.isEmpty()) return@DisposableEffect onDispose {}
-        val collectionPath = if (isGroup) "groups" else "users"
+
+        val collectionPath = if (isGroup) "chats" else "users"
         val listener = vm.db.collection(collectionPath).document(finalId)
-            .addSnapshotListener { doc, _ ->
+            .addSnapshotListener { doc, err ->
+
+                Log.d("PROFILE_DEBUG", "finalId=$finalId | collection=$collectionPath")
+
+                if (err != null) {
+                    Log.e("PROFILE_DEBUG", "Firestore error", err)
+                    return@addSnapshotListener
+                }
+
                 if (doc != null && doc.exists()) {
+                    Log.d("PROFILE_DEBUG", "DATA = ${doc.data}")
+
+                    // Общие поля для групп и пользователей
                     profileIcon = doc.getString("profileIcon") ?: "face"
                     profileGlow = doc.getString("profileGlow") ?: "purple"
                     useCustomAvatar = doc.getBoolean("useCustomAvatar") ?: true
-                    name = doc.getString("name") ?: (if (isGroup) "Группа" else "Пользователь")
                     avatar = doc.getString("avatarUrl") ?: ""
                     desc = doc.getString("description") ?: ""
 
+                    // Безопасное получение имени:
+                    // Сначала ищем 'name'. Если его нет в документе чата, пробуем 'groupName'
+                    val fallbackName = if (isGroup) "Группа без названия" else "Пользователь"
+                    name = doc.getString("name") ?: doc.getString("groupName") ?: fallbackName
+
+                    // Разделение логики в зависимости от типа профиля
                     if (isGroup) {
                         @Suppress("UNCHECKED_CAST")
                         membersUids = doc.get("members") as? List<String> ?: emptyList()
-                        adminId = doc.getString("adminId") ?: doc.getString("ownerId") ?: ""
+
+                        // Проверяем все возможные варианты ID создателя/админа
+                        adminId = doc.getString("adminId")
+                            ?: doc.getString("ownerId")
+                                    ?: doc.getString("creatorId")
+                                    ?: ""
                     } else {
                         username = doc.getString("username") ?: ""
                         isOnline = doc.getBoolean("isOnline") ?: false
                         emojiStatus = doc.getString("emojiStatus") ?: ""
                     }
+                } else {
+                    Log.d("PROFILE_DEBUG", "Document does not exist")
                 }
             }
+
         onDispose { listener.remove() }
     }
 
@@ -173,7 +201,8 @@ fun ProfileScreen(
             vm.uploadAvatar(it, onSuccess = { url ->
                 useCustomAvatar = true
                 avatar = url
-                val collectionPath = if (isGroup) "groups" else "users"
+                val collectionPath = if (isGroup) "chats" else "users"
+
                 vm.db.collection(collectionPath).document(finalId).update(
                     mapOf("avatarUrl" to url, "useCustomAvatar" to true)
                 )
@@ -200,10 +229,10 @@ fun ProfileScreen(
                         IconButton(
                             onClick = {
                                 if (isEditing) {
-                                    val collectionPath = if (isGroup) "groups" else "users"
+                                    val collectionPath = if (isGroup) "chats" else "users"
                                     val updateData = if (isGroup) {
                                         mapOf(
-                                            "name" to name,
+                                            "groupName" to name,
                                             "description" to desc,
                                             "profileIcon" to profileIcon,
                                             "profileGlow" to profileGlow,
@@ -360,23 +389,23 @@ fun ProfileScreen(
                     item {
                         SectionTitle("УЧАСТНИКИ")
                         MembersList(groupMembers, adminId) { uid ->
-                            onNavigate(uid, false)
+                            onNavigateToProfile(uid, false)
                         }
                     }
                     item {
                         Spacer(Modifier.height(24.dp))
                         ExitButton(isOwner = adminId == currentMyUid) {
                             // Логика выхода
-                            vm.db.collection("groups").document(finalId).get().addOnSuccessListener { doc ->
+                            vm.db.collection("chats").document(finalId).get().addOnSuccessListener { doc ->
                                 if (doc.exists()) {
                                     val currentMembers = doc.get("members") as? List<String> ?: emptyList()
                                     val updatedMembers = currentMembers.filter { it != currentMyUid }
                                     if (updatedMembers.isEmpty()) {
-                                        vm.db.collection("groups").document(finalId).delete().addOnSuccessListener { onBack() }
+                                        vm.db.collection("chats").document(finalId).delete().addOnSuccessListener { onBack() }
                                     } else {
                                         val updates = mutableMapOf<String, Any>("members" to updatedMembers)
                                         if (adminId == currentMyUid) updates["adminId"] = updatedMembers.first()
-                                        vm.db.collection("groups").document(finalId).update(updates).addOnSuccessListener { onBack() }
+                                        vm.db.collection("chats").document(finalId).update(updates).addOnSuccessListener { onBack() }
                                     }
                                 }
                             }
@@ -390,9 +419,7 @@ fun ProfileScreen(
                         QuickActionRow {
                             if (!isMyProfile) {
                                 QuickActionItem(icon = Icons.AutoMirrored.Filled.Send, label = "Написать") {
-                                    onNavigate(create(Screen.getChatId(currentMyUid, finalId)),
-                                        false
-                                    )
+                                    onNavigateToChat(Screen.getChatId(currentMyUid, finalId))
                                 }
                                 QuickActionItem(icon = Icons.Default.Call, label = "Звонок") { }
                             }
