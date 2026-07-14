@@ -41,6 +41,7 @@ dependencies {
     implementation(libs.androidx.foundation)
     implementation(libs.androidx.animation)
     testImplementation(libs.junit)
+    implementation(project(":core:data"))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))

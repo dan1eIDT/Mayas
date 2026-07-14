@@ -22,7 +22,7 @@ object ShopConstants {
         ShopItem("lime", "Лайм", ItemType.BUBBLE, 55),
         ShopItem("sky", "Небо", ItemType.BUBBLE, 60),
         ShopItem("plum", "Слива", ItemType.BUBBLE, 65),
-        ShopItem("folli", "Фолли", ItemType.BUBBLE, 280, description = "Красный на белом"),
+        ShopItem("folly", "Фолли", ItemType.BUBBLE, 280, description = "Красный на белом"),
         ShopItem("dani", "Дани", ItemType.BUBBLE, 320, description = "Чёрный терминал с зелёным текстом"),
         ShopItem("sakura", "Сакура", ItemType.BUBBLE, 240, description = "Розовый закат"),
         ShopItem("intel", "Intel", ItemType.BUBBLE, 260, description = "Синий с голубым текстом")
@@ -55,7 +55,7 @@ object ShopConstants {
         "lime" -> Color(0xFFCDDC39)
         "sky" -> Color(0xFF74C0FC)
         "plum" -> Color(0xFF9C6ADE)
-        "folli" -> Color(0xFFD32F2F)
+        "folly" -> Color(0xFFD32F2F)
         "dani" -> Color(0xFF39FF14)
         "sakura" -> Color(0xFFFF6FB5)
         "intel" -> Color(0xFF00AEEF)
@@ -82,7 +82,7 @@ object ShopConstants {
         "folly" -> listOf(Color(0xFFD32F2F), Color(0xFFFDEDEC))
         "dani" -> listOf(Color(0xFF050505), Color(0xFF1A1A1A))
         "sakura" -> listOf(Color(0xFFFF6FB5), Color(0xFFFFD1E8))
-        "intel1" -> listOf(Color(0xFF003D82), Color(0xFF0071C5))
+        "intel" -> listOf(Color(0xFF003D82), Color(0xFF0071C5))
         else -> listOf(getStyleColor(id), getStyleColor(id))
     }
 

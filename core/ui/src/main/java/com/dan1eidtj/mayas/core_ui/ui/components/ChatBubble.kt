@@ -49,8 +49,8 @@ import androidx.compose.foundation.border
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
+import com.dan1eidtj.data.ShopConstants
 
-// --- РЕГУЛЯРНЫЕ ВЫРАЖЕНИЯ (Выделены на уровень файла для производительности) ---
 private val MARKDOWN_REGEX = Regex("\\[([^\\]]+)\\]\\(([^)]+)\\)")
 private val URL_REGEX = Regex("(?<!@)\\b(?:https?://|www\\.)?[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)*\\.[a-zA-Z]{2,}(?:/[a-zA-Z0-9-+&@#/%?=~_|!:,.;]*[a-zA-Z0-9-+&@#/%=~_|])?\\b")
 private val EMAIL_REGEX = Regex("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}")
@@ -404,7 +404,7 @@ fun ChatBubble(
                 shape = bubbleShape
             )
         }
-        else -> {
+        null -> {
             if (isPremium) {
                 Modifier.background(
                     brush = Brush.linearGradient(
@@ -430,6 +430,22 @@ fun ChatBubble(
                     bubbleShape
                 )
             }
+        }
+
+        else -> {
+            val accent = ShopConstants.getStyleColor(messageStyle)
+            Modifier.background(
+                brush = Brush.linearGradient(
+                    colors = ShopConstants.getStyleGradient(messageStyle)
+                ),
+                shape = bubbleShape
+            ).border(
+                width = 1.dp,
+                brush = Brush.linearGradient(
+                    colors = listOf(Color.White.copy(alpha = 0.25f), accent)
+                ),
+                shape = bubbleShape
+            )
         }
     }
 
@@ -530,11 +546,11 @@ fun ChatBubble(
                             MessageStyle.MATRIX -> MayasTheme.GlowLime
                             MessageStyle.GOLD -> Color(0xFF5D4037)
                             MessageStyle.FOREST, MessageStyle.SUNSET, MessageStyle.MIDNIGHT -> Color.White
-                            else -> when {
-                                messageStyle != null -> Color.White
-                                isMe -> Color.White
-                                else -> MayasTheme.TextPrimary
-                            }
+                            null -> if (isMe) Color.White else MayasTheme.TextPrimary
+                            // Купленные стили из магазина без ручного описания —
+                            // берём читаемый цвет текста из ShopConstants (например,
+                            // для folly тёмно-красный текст на светлом фоне и т.п.)
+                            else -> ShopConstants.getStyleTextColor(messageStyle)
                         }
                         RichText(
                             text = text,
@@ -563,7 +579,10 @@ fun ChatBubble(
                             MessageStyle.GOLD -> Color(0xFF5D4037).copy(alpha = 0.7f)
                             MessageStyle.FOREST, MessageStyle.SUNSET -> Color.White.copy(alpha = 0.7f)
                             MessageStyle.MIDNIGHT -> Color.White.copy(alpha = 0.6f)
-                            else -> if (messageStyle != null) Color.White.copy(alpha = 0.7f) else timeColor
+                            null -> timeColor
+                            // Тот же цвет текста стиля, но приглушённый — для новых
+                            // купленных стилей из магазина
+                            else -> ShopConstants.getStyleTextColor(messageStyle).copy(alpha = 0.7f)
                         }
 
                         if (isPremium && isMe) {
