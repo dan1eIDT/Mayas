@@ -23,8 +23,7 @@ interface ChatDao {
     @Query("SELECT * FROM chats_table ORDER BY updatedAt DESC")
     fun getChatsFlow(): Flow<List<ChatEntity>>
 
-    // FIX: добавили апдейт партнёрских данных отдельным запросом
-    // чтобы VM могла заполнять их без полной перезаписи ChatEntity
+
     @Query("""
         UPDATE chats_table 
         SET partnerName = :name,

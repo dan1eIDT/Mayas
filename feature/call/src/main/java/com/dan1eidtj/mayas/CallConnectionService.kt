@@ -24,10 +24,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
-/**
- * Сервис звонка. Работает в фоне, когда приложение свернуто,
- * и выводит интерактивное уведомление с кнопками управления.
- */
+
 class CallConnectionService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
@@ -109,18 +106,7 @@ class CallConnectionService : Service() {
         super.onDestroy()
     }
 
-    /**
-     * Слушаем изменения стейта звонка. При переключении состояний (или завершении)
-     * обновляем или тушим уведомление.[cite: 3]
-     *
-     * Раньше подписывались только на callManager.callState — уведомление
-     * пересобиралось лишь при смене стейта звонка (OUTGOING -> CONNECTING -> ...),
-     * но никак не реагировало на то, что пользователь свернул или открыл
-     * приложение обратно посреди уже идущего разговора (стейт CONNECTED не
-     * менялся вообще). Добавили combine с CallUiVisibility.isAppForeground —
-     * теперь любое пересечение "стейт звонка" x "приложение видно/не видно"
-     * пересобирает уведомление.
-     */
+
     // Стал ли сервис уже "eligible" и добавили ли мы microphone-тип к foreground-сервису.
     // Нужен, чтобы не дёргать startForeground() повторно на каждое обновление стейта.
     private var microphoneTypeUpgraded = false
@@ -169,9 +155,7 @@ class CallConnectionService : Service() {
         }
     }
 
-    /**
-     * Метод для принудительного обновления текста на кнопках (Вкл/Выкл микрофон)
-     */
+
     private fun refreshCurrentNotification() {
         val session = callManager.activeCall.value ?: return
         val state = callManager.callState.value
@@ -192,9 +176,7 @@ class CallConnectionService : Service() {
     private fun currentUserIdOrEmpty(): String =
         com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
 
-    /**
-     * Сборка самого уведомления с динамическими кнопками
-     */
+
     private fun buildCallNotificationSync(
         isIncoming: Boolean,
         peerName: String,

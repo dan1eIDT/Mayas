@@ -18,18 +18,18 @@ import com.yandex.mobile.ads.rewarded.RewardedAdLoadListener
 import com.yandex.mobile.ads.rewarded.RewardedAdLoader
 
 enum class RewardedState {
-    IDLE,       // ничего не происходит, loadRewarded() ещё не вызван
-    LOADING,    // идёт загрузка
-    READY,      // реклама загружена, можно показывать
-    SHOWING,    // реклама сейчас на экране
-    FAILED      // загрузка завалилась
+    IDLE,
+    LOADING,
+    READY,
+    SHOWING,
+    FAILED
 }
 
 private const val TAG = "YandexProvider"
 
 class YandexProvider : AdsProvider {
 
-    // ─── Rewarded ─────────────────────────────────────────────────────────────
+
     private var rewardedAd: RewardedAd? = null
     private var rewardedLoader: RewardedAdLoader? = null
     private var initialized = false
@@ -37,10 +37,10 @@ class YandexProvider : AdsProvider {
     var rewardedState: RewardedState = RewardedState.IDLE
         private set
 
-    // колбэк, который мы сохраняем до момента показа
+
     private var pendingReward: (() -> Unit)? = null
 
-    // ─── Инициализация ────────────────────────────────────────────────────────
+
     override fun initialize(activity: Activity) {
         if (initialized) return
 
@@ -52,7 +52,7 @@ class YandexProvider : AdsProvider {
         initialized = true
     }
 
-    // ─── Настройка лоадера ────────────────────────────────────────────────────
+
     private fun setupRewardedLoader(activity: Activity) {
         rewardedLoader = RewardedAdLoader(activity).apply {
             setAdLoadListener(object : RewardedAdLoadListener {
@@ -73,7 +73,7 @@ class YandexProvider : AdsProvider {
         }
     }
 
-    // ─── Загрузка ─────────────────────────────────────────────────────────────
+
     override fun loadRewarded() {
         if (rewardedAd != null) {
             Log.d(TAG, "loadRewarded skipped: ad already loaded")
@@ -90,7 +90,7 @@ class YandexProvider : AdsProvider {
         rewardedLoader?.loadAd(adRequestConfiguration)
     }
 
-    // ─── Показ ────────────────────────────────────────────────────────────────
+
     override fun showRewarded(activity: Activity, onReward: () -> Unit, onError: (String) -> Unit) {
         val ad = rewardedAd
         if (ad == null) {
@@ -122,7 +122,7 @@ class YandexProvider : AdsProvider {
                 Log.d(TAG, "Rewarded dismissed")
                 rewardedState = RewardedState.IDLE
                 cleanupRewardedAd()
-                // автоматически грузим следующую рекламу
+
                 loadRewarded()
             }
 
@@ -144,18 +144,18 @@ class YandexProvider : AdsProvider {
         ad.show(activity)
     }
 
-    // ─── Проверка готовности (для кнопки в UI) ────────────────────────────────
+
     fun isRewardedReady(): Boolean = rewardedState == RewardedState.READY
 
     override fun isRewardedAvailable(): Boolean = rewardedState == RewardedState.READY
 
-    // ─── Очистка объекта рекламы ──────────────────────────────────────────────
+
     private fun cleanupRewardedAd() {
         rewardedAd?.setAdEventListener(null)
         rewardedAd = null
     }
 
-    // ─── Retry через 30 сек после фейла ──────────────────────────────────────
+
     private fun scheduleRetry(activity: Activity) {
         Handler(Looper.getMainLooper()).postDelayed({
             Log.d(TAG, "Retrying rewarded load…")
@@ -168,7 +168,7 @@ class YandexProvider : AdsProvider {
     override fun showInterstitial(activity: Activity) {  }
     override fun loadBanner(container: ViewGroup) { }
 
-    // ─── Уничтожение ──────────────────────────────────────────────────────────
+
     override fun destroy() {
         rewardedLoader?.setAdLoadListener(null)
         rewardedLoader = null

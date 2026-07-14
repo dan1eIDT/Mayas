@@ -15,8 +15,8 @@ interface MessageDao {
     @Query("SELECT * FROM messages_table WHERE chatId = :chatId ORDER BY timestamp DESC")
     fun getMessagesForChatFlow(chatId: String): Flow<List<MessageEntity>>
 
-    // FIX: добавили пагинацию — грузим порциями по 50, передаём offset
-    // VM вызывает это при скролле вверх
+
+
     @Query("""
         SELECT * FROM messages_table 
         WHERE chatId = :chatId 

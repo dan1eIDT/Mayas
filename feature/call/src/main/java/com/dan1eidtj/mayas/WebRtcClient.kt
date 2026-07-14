@@ -14,57 +14,48 @@ import org.webrtc.PeerConnectionFactory
 import org.webrtc.SdpObserver
 import org.webrtc.SessionDescription
 
-/**
- * Контракт для WebRTC-слоя. CallManager видит только эти методы и Listener —
- * ничего не знает про PeerConnection, SDP, ICE candidate объекты из org.webrtc.
- */
+
 interface WebRtcClient {
 
     fun init(listener: Listener)
 
-    /** Создаёт локальный аудио-трек (микрофон) и добавляет его в PeerConnection. */
+
     fun startLocalAudio()
 
-    /** Инициирует создание SDP offer (вызывает вызывающая сторона). */
+
     fun createOffer()
 
-    /**
-     * Принимает удалённый offer, выставляет его как remote description и создаёт answer
-     * (вызывается принимающей стороной после acceptCall()).
-     */
+
     fun createAnswer(remoteOfferSdp: String)
 
-    /** Выставляет полученный answer как remote description (вызывает звонящая сторона). */
+
     fun setRemoteAnswer(remoteAnswerSdp: String)
 
-    /** Добавляет ICE-кандидата, полученного от собеседника через Firestore. */
+
     fun addRemoteIceCandidate(candidate: IceCandidateData)
 
-    /** true — заглушить исходящий звук (микрофон), false — вернуть звук. */
+
     fun setMuted(muted: Boolean)
 
     fun close()
 
     interface Listener {
-        /** Локальный ICE-кандидат готов — нужно отправить его собеседнику через Firestore. */
+
         fun onLocalIceCandidate(candidate: IceCandidateData)
 
-        /** Локальный offer создан и уже выставлен как local description — нужно записать в Firestore. */
+
         fun onLocalOfferCreated(sdp: String)
 
-        /** Локальный answer создан и уже выставлен как local description — нужно записать в Firestore. */
+
         fun onLocalAnswerCreated(sdp: String)
 
-        /**
-         * Remote description (offer или answer) успешно выставлен. До этого момента
-         * добавлять ICE-кандидаты от собеседника небезопасно — их нужно копить в очереди.
-         */
+
         fun onRemoteDescriptionSet()
 
-        /** ICE-соединение установлено — можно считать звонок реально CONNECTED. */
+
         fun onIceConnected()
 
-        /** ICE-соединение окончательно не удалось (FAILED) — временный DISCONNECTED сюда не попадает. */
+
         fun onIceFailed()
 
         fun onError(message: String)
@@ -349,7 +340,7 @@ class WebRtcClientImpl(
         }
     }
 
-    /** SdpObserver с пустыми реализациями по умолчанию — переопределяем только нужное. */
+
     private open class SdpObserverAdapter : SdpObserver {
         override fun onCreateSuccess(sdp: SessionDescription?) = Unit
         override fun onSetSuccess() = Unit

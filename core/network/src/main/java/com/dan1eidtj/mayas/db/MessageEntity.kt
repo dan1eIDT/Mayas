@@ -15,7 +15,7 @@ data class MessageEntity(
     val replyToText: String? = null,
     val replyToName: String? = null,
 
-    // 0 = pending, 1 = sent, 2 = read
+
     val status: Int = 0,
 
     val readBy: List<String> = emptyList(),

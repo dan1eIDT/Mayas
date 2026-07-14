@@ -15,22 +15,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-/**
- * Offline-first стратегия:
- *
- *  Есть интернет:
- *    Firestore снапшот → ChatRepository.syncChatsFromSnapshot() → Room
- *    UI подписан на Room Flow → видит свежие данные
- *
- *  Нет интернета:
- *    Firestore снапшот не приходит (или приходит из кэша Firestore SDK)
- *    Room Flow отдаёт последнее что было записано
- *    UI показывает старые данные без пустого экрана
- *
- *  Партнёрские данные (имя, аватар) для личных чатов:
- *    Firestore снапшот слушателя users/ → updatePartnerInfoFromFirestore() → Room
- *    Room Flow автоматически эмитит обновление → UI перерисовывается
- */
+
 class ChatListViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = ChatRepository(application)
@@ -41,13 +26,10 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
 
     // --- UI-состояние ---
 
-    /** Статус синка с Firestore — для баннера "Нет соединения" */
+
     val syncState = MutableStateFlow(SyncState.IDLE)
 
-    /**
-     * Основной поток чатов — UI читает ТОЛЬКО отсюда.
-     * Room сам эмитит новые значения при каждом изменении таблицы.
-     */
+
     val chats: StateFlow<List<ChatEntity>> = repository
         .getChats()
         .stateIn(

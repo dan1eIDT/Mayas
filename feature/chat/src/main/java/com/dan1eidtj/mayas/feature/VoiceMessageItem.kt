@@ -33,7 +33,7 @@ fun WaveformVisualizer(
     val barCount = 32
     val heights = remember { List(barCount) { Random.nextFloat() * 0.8f + 0.2f } }
     
-    // Анимация для "живого" эффекта при воспроизведении
+
     val infiniteTransition = rememberInfiniteTransition(label = "waveform")
     val animatedScales = List(barCount) { index ->
         if (isPlaying) {
@@ -86,7 +86,7 @@ fun VoiceMessageItem(
     progress: Float,
     onPlayPause: () -> Unit
 ) {
-    // Format duration to mm:ss
+
     val formattedDuration = remember(duration) {
         val mins = duration / 60
         val secs = duration % 60

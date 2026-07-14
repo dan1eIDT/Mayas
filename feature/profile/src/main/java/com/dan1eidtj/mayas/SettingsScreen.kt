@@ -95,7 +95,7 @@ fun SettingsScreen(
                         vm.switchAccount(accountToSwitch!!.email, switchPassword) {
                             showPasswordDialog = false
                             switchPassword = ""
-                            onBack() // Возвращаемся в чаты после успешного переключения
+                            onBack()
                         }
                     },
                     enabled = switchPassword.isNotBlank() && !vm.isLoading,
@@ -114,7 +114,7 @@ fun SettingsScreen(
         )
     }
 
-    // Безопасно достаем данные текущего юзера из userData мапы, если полей name/avatarUrl в объекте нет
+
     val currentUserName = vm.userData["name"] ?: vm.userData["username"] ?: "Пользователь Mayas"
     val currentUserAvatar = vm.userData["avatarUrl"] ?: vm.userData["photoUrl"] ?: ""
 
@@ -160,7 +160,7 @@ fun SettingsScreen(
                 .padding(padding),
             contentPadding = PaddingValues(16.dp)
         ) {
-            // --- ШАПКА ПРОФИЛЯ ---
+
             item {
                 UserProfileHeader(
                     name = currentUserName,
@@ -172,7 +172,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(24.dp))
             }
 
-            // --- АККАУНТ ---
+
             item { SettingsSectionTitle("АККАУНТ") }
 
             item {
@@ -204,7 +204,7 @@ fun SettingsScreen(
                 )
             }
 
-            // --- НАСТРОЙКИ ---
+
             item { Spacer(Modifier.height(24.dp)) }
             item { SettingsSectionTitle("НАСТРОЙКИ") }
 
@@ -280,11 +280,11 @@ fun SettingsScreen(
                     icon = Icons.Default.Notifications,
                     title = "Уведомления и звуки",
                     subtitle = "Настроить пуши",
-                    onClick = { /* TODO */ }
+                    onClick = { /* ты чо , рано)) */ }
                 )
             }
 
-            // --- ПРИЛОЖЕНИЕ ---
+
             item { Spacer(Modifier.height(24.dp)) }
             item { SettingsSectionTitle("ПРИЛОЖЕНИЕ") }
 
@@ -562,7 +562,7 @@ fun PrivacySubSection(vm: AuthVM, onNavigateToPremium: () -> Unit) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Режим невидимки (оставляем как есть, он особенный)
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -592,7 +592,7 @@ fun PrivacySubSection(vm: AuthVM, onNavigateToPremium: () -> Unit) {
 
         HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
 
-        // Основные настройки приватности
+
         privacySettings.forEach { (key, label, icon) ->
             val value = vm.userData[key] ?: "all"
             val valueText = when (value) {
@@ -787,7 +787,7 @@ fun SecuritySubSection(vm: AuthVM) {
                     onClick = {
                         vm.deleteUserAccount(
                             onSuccess = { showDeleteDialog = false },
-                            onError = { /* Ошибка выведется в лог или можно добавить Snackbar */ }
+                            onError = {  }
                         )
                     }
                 ) {
@@ -811,7 +811,7 @@ fun SecuritySubSection(vm: AuthVM) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Смена Email
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -828,7 +828,7 @@ fun SecuritySubSection(vm: AuthVM) {
 
         HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
 
-        // Смена пароля
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -845,7 +845,7 @@ fun SecuritySubSection(vm: AuthVM) {
 
         HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
 
-        // Сброс пароля
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -867,7 +867,7 @@ fun SecuritySubSection(vm: AuthVM) {
 
         HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
 
-        // Удаление аккаунта
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()

@@ -9,7 +9,7 @@ class VoiceRecorder(private val context: Context) {
     private var recorder: MediaRecorder? = null
     private var outputFile: File? = null
 
-    // FIX: флаг чтобы не вызывать stop() дважды и не получить IllegalStateException
+
     private var isRecording = false
 
     fun start() {

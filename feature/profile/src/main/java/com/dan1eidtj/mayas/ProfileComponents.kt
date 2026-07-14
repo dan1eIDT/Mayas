@@ -47,16 +47,16 @@ import com.dan1eidtj.mayas.core_ui.ui.components.ChatBubble
 import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
 import com.dan1eidtj.mayas.core_ui.ui.components.ProfileIcon
 
-// ─── Градиенты Mayas+ ───────────────────────────────────────────────────────
+
 
 val PremiumGradient = Brush.linearGradient(
     colors = listOf(
-        Color(0xFFFFD700), // золото
-        Color(0xFFFFAA00), // янтарь
-        Color(0xFFFF6B35), // оранжевый
-        Color(0xFFFF4D8D), // розовый
-        Color(0xFFE040FB), // фуксия
-        Color(0xFF9C6BFF)  // фиолетовый
+        Color(0xFFFFD700),
+        Color(0xFFFFAA00),
+        Color(0xFFFF6B35),
+        Color(0xFFFF4D8D),
+        Color(0xFFE040FB),
+        Color(0xFF9C6BFF)
     )
 )
 
@@ -69,7 +69,6 @@ val PremiumGradientSubtle = Brush.linearGradient(
     )
 )
 
-// ─── Базовые компоненты ──────────────────────────────────────────────────────
 
 @Composable
 fun SectionTitle(title: String) {
@@ -150,7 +149,7 @@ fun EditField(label: String, value: String, onValueChange: (String) -> Unit) {
     )
 }
 
-// ─── ColorPicker ─────────────────────────────────────────────────────────────
+
 
 @Composable
 fun ColorPicker(
@@ -213,7 +212,7 @@ fun ColorPicker(
 
         Spacer(Modifier.height(16.dp))
 
-        // Premium colors header
+
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
@@ -263,7 +262,7 @@ fun ColorPicker(
     }
 }
 
-// ─── Mayas+ аккордеон ────────────────────────────────────────────────────────
+
 
 @Composable
 fun PremiumSectionCollapsible(
@@ -290,7 +289,7 @@ fun PremiumSectionCollapsible(
     )
 
     Column(modifier = Modifier.fillMaxWidth()) {
-        // Заголовок
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1028,7 +1027,7 @@ fun ShopDialog(
     }
 }
 
-// ─── ImagePickerDialog ───────────────────────────────────────────────────────
+
 
 @Composable
 fun ImagePickerDialog(

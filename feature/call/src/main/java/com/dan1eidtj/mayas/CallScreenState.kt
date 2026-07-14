@@ -10,7 +10,7 @@ import com.dan1eidtj.mayas.CallType
  */
 sealed interface CallScreenState {
 
-    /** Звонка нет — экран звонка вообще не должен показываться. */
+
     data object NoCall : CallScreenState
 
     data class Active(
@@ -29,12 +29,12 @@ sealed interface CallScreenState {
         val durationSeconds: Long,
         val isMuted: Boolean,
         val isSpeakerOn: Boolean,
-        /** true — звонок уже завершён (отклонён/окончен) и просто донашивает статус на экране. */
+
         val isEnded: Boolean
     ) : CallScreenState
 }
 
-/** Форматирует секунды в mm:ss для таймера разговора. */
+
 fun Long.toCallDurationText(): String {
     val minutes = this / 60
     val seconds = this % 60

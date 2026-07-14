@@ -14,8 +14,6 @@ class MayasMessagingService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        // TODO: Отправить этот токен в таблицу users в Supabase (fcm_token),
-        // чтобы бэкенд знал, куда слать пуш этому юзеру.
     }
 
     override fun onMessageReceived(message: RemoteMessage) {

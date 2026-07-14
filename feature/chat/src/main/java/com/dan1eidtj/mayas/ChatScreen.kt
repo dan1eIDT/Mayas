@@ -98,7 +98,6 @@ object ChatThemeId {
     const val PINK = "pink"
 }
 
-// --- УМНОЕ СКАНИРОВАНИЕ И РАЗБОР ССЫЛОК, ХЭШТЕГОВ И ЮЗЕРНЕЙМОВ ---
 @Composable
 fun rememberParsedMessageText(text: String, accentColor: Color): AnnotatedString {
     return remember(text, accentColor) {
@@ -106,8 +105,6 @@ fun rememberParsedMessageText(text: String, accentColor: Color): AnnotatedString
             val finalSb = StringBuilder()
             val spans = mutableListOf<Pair<IntRange, SpanStyle>>()
 
-            // Регулярное выражение для bold (** или __) и italic (* или _)
-            // Используем группы захвата, чтобы определить тип маркера и контент
             val combinedRegex = Pattern.compile("(\\*\\*|__|\\*|_)(.*?)\\1")
             val matcher = combinedRegex.matcher(text)
             var lastEnd = 0
@@ -132,12 +129,10 @@ fun rememberParsedMessageText(text: String, accentColor: Color): AnnotatedString
             val finalString = finalSb.toString()
             append(finalString)
 
-            // Применяем Markdown стили
             spans.forEach { (range, style) ->
                 addStyle(style, range.first, range.last + 1)
             }
 
-            // Теперь ссылки, хэштеги и юзернеймы поверх очищенного текста
             val urlMatcher = Pattern.compile("(https?://[\\w-]+(\\.[\\w-]+)+(/[^\\s]*)?)").matcher(finalString)
             while (urlMatcher.find()) {
                 addStyle(SpanStyle(color = accentColor, fontWeight = FontWeight.Bold), urlMatcher.start(), urlMatcher.end())
@@ -251,8 +246,6 @@ fun ChatScreen(
     val pinkGradient = MayasTheme.PinkGradient
 
     val backgroundBrush = remember(chatTheme, userWallpaper, purpleGradient, blueGradient, redGradient, goldGradient, pinkGradient) {
-        // Приоритизируем глобальные обои пользователя, если они не стандартные.
-        // Если пользователь выбрал специфические обои в магазине, они перекрывают тему чата.
         if (userWallpaper != "default") {
             when (userWallpaper) {
                 "dark_mesh" -> Brush.verticalGradient(listOf(Color(0xFF121212), Color(0xFF1E1E1E)))
@@ -273,8 +266,6 @@ fun ChatScreen(
         }
     }
 
-    // Разворот списка пересчитывается только когда реально меняется chatVM.messages,
-    // а не на каждой рекомпозиции экрана (раньше .reversed() гонялся постоянно).
     val messages = remember(chatVM.messages) { chatVM.messages.reversed() }
     var input by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
@@ -367,7 +358,7 @@ fun ChatScreen(
 
     fun playMessageSound() {
         if (audioManager.ringerMode == AudioManager.RINGER_MODE_NORMAL) {
-            // TODO: MediaPlayer.create(context, R.raw.new_msg).start()
+            
         }
     }
 
@@ -472,7 +463,6 @@ fun ChatScreen(
                                         }
                                     }
                                 ) {
-                                    // --- КРУГЛАЯ АВАТАРКА С СИНХРОНИЗАЦИЕЙ ---
                                     MayasAvatar(
                                         url = chatAvatarUrl,
                                         icon = chatProfileIcon,
@@ -484,15 +474,12 @@ fun ChatScreen(
                                     )
                                     Spacer(Modifier.width(12.dp))
                                     Column {
-                                        // --- НИКНЕЙМ + СИНХРОНИЗИРОВАННЫЙ ЭМОДЗИ РЯДОМ ---
+
                                         Row(
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.Start
                                         ) {
-                                            // Раньше тут было "если премиум — золотой, иначе никак",
-                                            // без учёта реального nameColor из профиля. Теперь красим
-                                            // именем тем же цветом, что выбран в ProfileScreen —
-                                            // getNameColorBrush(nameColor) это единственный источник истины.
+
                                             val titleColor =
                                                 if (partnerIsPremium && !chatVM.isGroupChat) {
                                                     getNameColorBrush(chatNameColor)
@@ -563,8 +550,6 @@ fun ChatScreen(
                                                     fontSize = 12.sp,
                                                     color = overWallpaperSecondaryColor
                                                 )
-                                                // Раньше сравнивали локализованную строку "печатает "— рассинхронизировалось бы
-                                                // при любой правке текста в ChatVM. Теперь — отдельный явный флаг.
                                                 if (isPartnerTyping) {
                                                     Spacer(Modifier.width(4.dp))
                                                     TypingIndicator(
@@ -1234,7 +1219,6 @@ fun ChatScreen(
                                             }
                                         }
 
-                                        // --- РЕАКЦИИ ПОД СООБЩЕНИЕМ ---
                                         if (msg.reactions.isNotEmpty()) {
                                             val groupedReactions = msg.reactions.values.groupBy { it }.mapValues { it.value.size }
                                             Row(
@@ -1294,7 +1278,6 @@ fun ChatScreen(
                                                 selectedMessage = null
                                             }
                                         )
-                                        // --- БЫСТРЫЕ РЕАКЦИИ В МЕНЮ ---
                                         val quickReactions = listOf("👍", "❤️", "😂", "😮", "😢", "🔥")
                                         Row(
                                             modifier = Modifier
@@ -1565,12 +1548,9 @@ fun ChatScreen(
                                             label = "micPulse"
                                         )
 
-                                        // FIX: remember стабилен пока composable в дереве,
-                                        // но нам нужно освобождать ресурс при выходе
                                         val recorder = remember { VoiceRecorder(context) }
                                         DisposableEffect(Unit) {
                                             onDispose {
-                                                // Если юзер вышел во время записи — останавливаем
                                                 recorder.stop()
                                             }
                                         }
@@ -1578,7 +1558,7 @@ fun ChatScreen(
                                             ActivityResultContracts.RequestPermission()
                                         ) { isGranted ->
                                             if (isGranted) {
-                                                // Можно начать запись
+                                                
                                             }
                                         }
 
@@ -1788,7 +1768,6 @@ fun ChatScreen(
 }
 
 private fun withContextMainToast(context: Context, message: String) {
-    // Тосты можно показывать только из main-потока; sendMediaMessage запускается в Dispatchers.IO.
     android.os.Handler(context.mainLooper).post {
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }

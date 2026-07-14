@@ -845,11 +845,7 @@ fun ChatListScreen(
                                             onLongClick = { selectedChats = selectedChats + chatId }
                                         )
                                     } else {
-                                        // Логика для ОБЫЧНОГО ЧАТА:
-                                        // partnerUid хранится в ChatEntity и пробрасывается в map
                                         val partnerUid = chat["partnerUid"] as? String ?: ""
-                                        // userData из userCache — живые данные (typing, lastSeen, isInvisible)
-                                        // Если userCache ещё не заполнен — строим userData из Room-кэша
                                         val userData: Map<String, Any?> = userCache[partnerUid]
                                             ?: mapOf(
                                                 "name" to chat["partnerName"],
@@ -859,11 +855,6 @@ fun ChatListScreen(
                                                 "profileIcon" to "ghost",
                                                 "useCustomAvatar" to false,
                                                 "isPremium" to false,
-                                                // TODO: ChatEntity/ChatRepository не хранят partnerNameColor —
-                                                // нужно добавить колонку в ChatEntity и писать её в
-                                                // syncChatsFromSnapshot()/updatePartnerInfoFromSnapshot(),
-                                                // иначе офлайн (до прихода живого userCache) имя всегда
-                                                // будет падать на дефолтный "gold" вместо реального цвета.
                                                 "nameColor" to (chat["partnerNameColor"] ?: "gold"),
                                                 "isGroup" to false
                                             )
@@ -1661,10 +1652,7 @@ fun UserSearchDialog(
 
 // УДАЛЕНО: перенесено в UserUtils.kt
 
-/**
- * Форматирует Long (миллисекунды) в строку времени/даты для отображения в списке чатов.
- * Сегодня — "14:35", раньше — "вчера" / "пн" / "12.06"
- */
+
 fun formatTimestamp(millis: Long): String {
     if (millis <= 0L) return ""
     val date = Date(millis)

@@ -16,12 +16,11 @@ class MonetizationVM : ViewModel() {
     private val AD_REWARD = 10
     private val RESET_INTERVAL_MS = TimeUnit.DAYS.toMillis(1)
 
-    // FIX: флаг чтобы не начислять монеты дважды при двойном нажатии
     private var isWatchingAd = false
 
     fun watchAd(currentWatched: Int, lastTimestamp: Long, onLimit: () -> Unit) {
         if (uid.isEmpty()) return
-        if (isWatchingAd) return // FIX: защита от двойного вызова
+        if (isWatchingAd) return
         isWatchingAd = true
 
         val currentTime = System.currentTimeMillis()
@@ -45,9 +44,6 @@ class MonetizationVM : ViewModel() {
         }
     }
 
-    // FIX: заменили get()+update() на runTransaction — атомарная операция,
-    // исключает race condition когда два вызова читают баланс одновременно
-    // и оба проходят проверку, уводя баланс в минус
     fun buyItem(
         itemId: String,
         price: Int,

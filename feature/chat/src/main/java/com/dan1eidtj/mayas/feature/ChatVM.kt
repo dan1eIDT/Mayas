@@ -114,8 +114,8 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     private var userListener: ListenerRegistration? = null
     private var chatDocListener: ListenerRegistration? = null
 
-    // FIX: храним chatId для которого установлен userListener,
-    // чтобы корректно переустанавливать при смене чата
+
+
     private var userListenerChatId: String? = null
 
     var partnerUseCustomAvatar by mutableStateOf(true)
@@ -167,7 +167,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     private var mediaPlayer: android.media.MediaPlayer? = null
     private var progressJob: Job? = null
 
-    // FIX: слушатель своего профиля — нужно хранить чтобы снять в onCleared()
+
     private var myProfileListener: ListenerRegistration? = null
 
     var searchResults by mutableStateOf<List<Message>>(emptyList())
@@ -183,7 +183,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             return
         }
         isSearching = true
-        // Временное решение через Firestore. В будущем перейдет на Room.
+
         db.collection("chats/$chatId/messages")
             .whereGreaterThanOrEqualTo("text", query)
             .whereLessThanOrEqualTo("text", query + "\uf8ff")
@@ -260,7 +260,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
     init {
         myUid?.let { uid ->
-            // FIX: сохраняем слушатель чтобы снять его в onCleared()
+
             myProfileListener = db.collection("users").document(uid)
                 .addSnapshotListener { doc, _ ->
                     if (doc != null && doc.exists()) {
@@ -313,8 +313,8 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                     }
                     messages = list
                     markAsRead(chatId, list, uid)
-                    // FIX: clearUnreadCount только если у нас реально есть непрочитанные,
-                    // убрали из снапшота — теперь вызывается один раз из ChatScreen.LaunchedEffect(chatId)
+
+
                 }
             }
 
@@ -380,9 +380,9 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                         partnerIsPremium = doc.getBoolean("isPremium") ?: false
                         partnerVerifiedIcon = doc.getString("verifiedIcon") ?: "verified"
                         partnerAvatarFrame = doc.getString("avatarFrame") ?: "rainbow"
-                        // nameColor — реальный выбранный цвет ника из Firestore users/{uid}.nameColor,
-                        // тот же, что читает ProfileScreen (см. ProfileScreen.kt:164). Дефолт "gold"
-                        // совпадает с дефолтом там же, чтобы не расходился с профилем при пустом поле.
+
+
+
                         partnerNameColor = doc.getString("nameColor") ?: "gold"
                     }
                 }
@@ -460,8 +460,8 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         batch.commit()
             .addOnSuccessListener {
                 playSound(messageSentSoundId)
-                // FIX: пуш раньше не отправлялся вообще — sendPushNotification()
-                // существовала, но никогда не вызывалась
+
+
                 if (!isGroupChat && partnerUid.isNotBlank()) {
                     sendPushNotification(partnerUid, text)
                 }
@@ -867,10 +867,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     }
 }
 
-/**
- * UI-модель участника группы. isAdmin/isOwner вычисляются на лету из
- * ownerId/admins документа чата.
- */
+
 data class GroupMemberUi(
     val uid: String,
     val name: String,

@@ -253,7 +253,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                                     ))
                                 }
                                 isLoading = false
-                                onSuccess() // FIX: вызываем onSuccess после регистрации
+                                onSuccess()
                             }
                             .addOnFailureListener { e ->
                                 isLoading = false
@@ -273,7 +273,6 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
 
     fun logout() {
         logoutSilently {
-            // FIX: чистим Room при логауте чтобы следующий юзер не видел чужие чаты
             viewModelScope.launch {
                 ChatRepository(getApplication()).clearAll()
             }
@@ -421,7 +420,6 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
 
             checkUsername(usernameInput) { isAvailable ->
                 if (isAvailable) {
-                    // FIX: передаём onSuccess в register — раньше его не было
                     register(emailInput, passInput, nameInput, usernameInput, onSuccess = onSuccess) { errMsg ->
                         authError = errMsg
                     }
@@ -430,7 +428,6 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                 }
             }
         } else {
-            // FIX: передаём onSuccess в login — раньше его не было, навигация не срабатывала
             login(emailInput, passInput, onSuccess = onSuccess) { errMsg ->
                 authError = errMsg
             }

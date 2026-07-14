@@ -15,14 +15,12 @@ class ChatRepository(context: Context) {
     private val messageDao = database.messageDao()
     private val firestore = FirebaseFirestore.getInstance()
 
-    // --- Читаем из Room (UI подписывается сюда) ---
 
     fun getChats(): Flow<List<ChatEntity>> = chatDao.getChatsFlow()
 
     fun getMessages(chatId: String): Flow<List<MessageEntity>> =
         messageDao.getMessagesForChatFlow(chatId)
 
-    // --- Пишем из Firestore в Room ---
 
     suspend fun syncChatsFromSnapshot(snapshot: QuerySnapshot, userId: String) {
         try {
@@ -36,7 +34,6 @@ class ChatRepository(context: Context) {
                         ?.map { it.toString() }
                         ?: emptyList()
 
-                    // Находим partnerUid для личных чатов
                     val partnerUid = if (!isGroup) {
                         @Suppress("UNCHECKED_CAST")
                         (doc.get("participants") as? List<*>)
@@ -44,8 +41,6 @@ class ChatRepository(context: Context) {
                             ?.firstOrNull { it != userId }
                     } else null
 
-                    // Сохраняем старые партнёрские данные если новые ещё не пришли
-                    // (защита от мигания пустыми аватарками)
                     val existing = if (!isGroup) chatDao.getChatById(doc.id) else null
 
                     ChatEntity(
@@ -64,7 +59,7 @@ class ChatRepository(context: Context) {
                         isPublic = doc.getBoolean("isPublic") ?: false,
                         isPinned = doc.getBoolean("pinned_$userId") ?: false,
                         partnerUid = partnerUid,
-                        // Берём закэшированные партнёрские данные чтобы не было мигания
+
                         partnerName = existing?.partnerName,
                         partnerAvatarUrl = existing?.partnerAvatarUrl,
                         partnerProfileGlow = existing?.partnerProfileGlow,
@@ -82,10 +77,7 @@ class ChatRepository(context: Context) {
         }
     }
 
-    /**
-     * Вызывается из ChatListViewModel когда приходит обновление профиля партнёра.
-     * Обновляет только партнёрские поля — не затрагивает остальные данные чата.
-     */
+
     suspend fun updatePartnerInfoFromSnapshot(chatId: String, userDoc: DocumentSnapshot) {
         try {
             chatDao.updatePartnerInfo(
@@ -115,10 +107,6 @@ class ChatRepository(context: Context) {
         }
     }
 
-    /**
-     * Синк сообщений конкретного чата.
-     * Вызывается при открытии ChatScreen.
-     */
     suspend fun syncMessages(chatId: String) {
         try {
             val snapshot = firestore.collection("chats").document(chatId)
@@ -164,7 +152,6 @@ class ChatRepository(context: Context) {
         }
     }
 
-    /** Подгрузка старых сообщений из Room при скролле вверх */
     suspend fun loadMoreMessages(chatId: String, offset: Int): List<MessageEntity> {
         return messageDao.getMessagesPaged(chatId, limit = 50, offset = offset)
     }
@@ -175,7 +162,6 @@ class ChatRepository(context: Context) {
             Log.e("ChatRepository", "Ошибка удаления сообщения из кэша $messageId", e)
         }
     }
-    /** Очистить все чаты из Room (например при логауте) */
     suspend fun clearAll() {
         chatDao.clearAllChats()
     }

@@ -80,7 +80,7 @@ fun ProfileScreen(
     val context = LocalContext.current
     val activity = context as Activity
 
-    // Безопасный scope для корутин (замена Handler)
+
     val coroutineScope = rememberCoroutineScope()
 
     var name by remember { mutableStateOf("Загрузка...") }
@@ -105,9 +105,9 @@ fun ProfileScreen(
     var isUsernameAvailable by remember { mutableStateOf(true) }
     var isCheckingUsername by remember { mutableStateOf(false) }
 
-    // ИСПРАВЛЕНО: раньше originalUsername "замораживался" в момент первой отрисовки,
-    // когда данные из Firestore ещё не успели прийти (username был пустой строкой).
-    // Из-за этого проверка "юзернейм занят" срабатывала некорректно.
+
+
+
     var originalUsername by remember(finalId) { mutableStateOf("") }
     LaunchedEffect(username, isEditing) {
         if (!isEditing) originalUsername = username
@@ -347,7 +347,7 @@ fun ProfileScreen(
                     }
                 }
 
-                // ИСПРАВЛЕНО: Магазин и заработок теперь отображаются на главном экране профиля, если это мой профиль
+
                 if (isMyProfile) {
                     item {
                         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -377,7 +377,7 @@ fun ProfileScreen(
                                             val newCount = adsWatchedToday + 1
                                             val newBalance = balance + 250
 
-                                            // ИСПРАВЛЕНО: Локальный стейт обновляем только ПОСЛЕ успешного сохранения в бд
+
                                             vm.db.collection("users").document(finalId)
                                                 .update(mapOf("adsWatchedToday" to newCount, "balance" to newBalance))
                                                 .addOnSuccessListener {
@@ -399,7 +399,7 @@ fun ProfileScreen(
                                         }
                                     )
 
-                                    // ИСПРАВЛЕНО: Подстраховка через корутину жизненного цикла вместо Handler
+
                                     coroutineScope.launch {
                                         kotlinx.coroutines.delay(10_000L)
                                         isAdLoading = false
@@ -411,7 +411,7 @@ fun ProfileScreen(
                     }
                 }
             } else {
-                // Сюда попадаем, только когда включен режим редактирования (карандаш)
+
                 item {
                     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                         SectionTitle("ЦВЕТОВОЕ ОФОРМЛЕНИЕ")
@@ -419,7 +419,7 @@ fun ProfileScreen(
                     }
                 }
 
-                // ДОБАВЛЕНО: выбор иконки прямо в редакторе группы, без захода в диалог аватарки.
+
                 if (isGroup) {
                     item {
                         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -459,8 +459,8 @@ fun ProfileScreen(
                     }
                 }
 
-                // ИСПРАВЛЕНО: плашка MAYAS+ (премиум-настройки аккаунта) относится только
-                // к личному профилю пользователя — в редакторе группы её быть не должно.
+
+
                 if (!isGroup) {
                     item {
                         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
@@ -562,7 +562,7 @@ fun ProfileScreen(
     }
 }
 
-// ── TopBar ───────────────────────────────────────────────────────────────────
+
 
 @Composable
 fun ProfileTopBar(
@@ -619,7 +619,7 @@ fun ProfileTopBar(
     )
 }
 
-// ── Header ───────────────────────────────────────────────────────────────────
+
 
 @Composable
 fun ProfileHeader(
@@ -713,8 +713,8 @@ fun ProfileHeader(
                         )
                     )
                 }
-                // ИСПРАВЛЕНО: раньше поле описания было доступно только для пользователей (if (!isGroup)),
-                // из-за чего у группы физически не было возможности редактировать описание.
+
+
                 OutlinedTextField(
                     value = desc, onValueChange = onDescChange,
                     label = { Text(if (isGroup) "Описание группы" else "О себе", fontSize = 12.sp) },
@@ -784,7 +784,7 @@ fun ProfileHeader(
     }
 }
 
-// ── InfoSection ──────────────────────────────────────────────────────────────
+
 
 @Composable
 fun ProfileInfoSection(
@@ -846,7 +846,7 @@ fun ProfileInfoSection(
     }
 }
 
-// ── GroupMembersScreen ───────────────────────────────────────────────────────
+
 
 @Composable
 fun GroupMembersScreen(

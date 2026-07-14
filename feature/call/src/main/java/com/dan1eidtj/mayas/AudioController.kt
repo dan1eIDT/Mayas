@@ -8,18 +8,10 @@ import android.os.Build
 import android.os.PowerManager
 import android.util.Log
 
-/**
- * Управляет системным аудио-режимом на время звонка: аудио-фокус, режим
- * MODE_IN_COMMUNICATION, громкая связь.
- *
- * Сознательно НЕ отвечает за mute микрофона — фактическое отключение звука идёт через
- * WebRtcClient.setMuted (он отключает сам аудио-трек, который реально уходит в сеть).
- * Если делать mute только на уровне AudioManager, звук всё равно продолжит передаваться
- * собеседнику через WebRTC — поэтому эти две ответственности разделены намеренно.
- */
+
 interface AudioController {
 
-    /** Вызывается в момент CONNECTED — переводит телефон в режим звонка и берёт аудио-фокус. */
+
     fun start()
 
     fun setLoudspeakerEnabled(enabled: Boolean)

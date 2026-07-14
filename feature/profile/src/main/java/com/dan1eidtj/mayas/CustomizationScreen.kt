@@ -40,9 +40,9 @@ fun CustomizationScreen(
     val currentMessageStyle = vm.userData["messageStyle"] ?: "default"
     val currentEmojiStatus = vm.userData["emojiStatus"] ?: ""
 
-    // "default" не является предметом магазина, поэтому добавляется вручную,
-    // остальные стили и их цвета берутся из ShopConstants — единого источника правды,
-    // который используется и в магазине (ShopDialog), и здесь.
+
+
+
     val styles = listOf(
         Triple("default", "Стандартный", listOf(MayasTheme.Accent, MayasTheme.Accent))
     ) + ShopConstants.BUBBLE_STYLES.map { item ->
@@ -71,7 +71,7 @@ fun CustomizationScreen(
                 .padding(padding),
             contentPadding = PaddingValues(16.dp)
         ) {
-            // --- ПРЕВЬЮ СООБЩЕНИЯ ---
+
             item {
                 SectionTitle("ПРЕВЬЮ")
                 Box(
@@ -94,7 +94,7 @@ fun CustomizationScreen(
                 Spacer(Modifier.height(24.dp))
             }
 
-            // --- ЭМОДЗИ СТАТУСЫ ---
+
             item {
                 SectionTitle("ЭМОДЗИ-СТАТУС")
                 val myOwnedEmojis = allEmojiOptions.filter { ownedItems.contains(it) }
@@ -122,7 +122,7 @@ fun CustomizationScreen(
                             .background(MayasTheme.Surface)
                             .padding(12.dp)
                     ) {
-                        // Сетка эмодзи (по 4 в ряд)
+
                         myOwnedEmojis.chunked(4).forEach { row ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -162,7 +162,7 @@ fun CustomizationScreen(
                                         }
                                     }
                                 }
-                                // Пустые ячейки для выравнивания последнего ряда
+
                                 repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                             }
                             Spacer(Modifier.height(8.dp))
@@ -179,7 +179,7 @@ fun CustomizationScreen(
                 Spacer(Modifier.height(24.dp))
             }
 
-            // --- СТИЛИ СООБЩЕНИЙ ---
+
             item {
                 SectionTitle("СТИЛЬ СООБЩЕНИЙ")
             }

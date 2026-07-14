@@ -87,9 +87,9 @@ object ShopConstants {
     }
 
     fun getStyleTextColor(id: String): Color = when (id) {
-        "dani" -> Color(0xFF39FF14)   // терминально-зелёный на чёрном
-        "intel" -> Color(0xFF00E5FF)  // голубой на синем
-        "folli" -> Color(0xFF7A0000)  // тёмно-бордовый — читаемо и на красном, и на белом краю
+        "dani" -> Color(0xFF39FF14)
+        "intel" -> Color(0xFF00E5FF)
+        "folly" -> Color(0xFF7A0000)
         "sakura" -> Color(0xFFFFFFFF)
         else -> Color.White
     }

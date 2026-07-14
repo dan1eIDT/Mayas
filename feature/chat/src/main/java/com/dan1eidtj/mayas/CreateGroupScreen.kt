@@ -15,7 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Search // Добавлен импорт поиска
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,7 +36,7 @@ import com.dan1eidtj.mayas.core_ui.utils.getGlowColor
 import com.dan1eidtj.mayas.feature.ChatVM
 import com.google.firebase.firestore.FirebaseFirestore
 
-// Класс данных для отображения пользователя со статусом выбора
+
 data class SelectableUser(
     val uid: String,
     val name: String,
@@ -59,52 +59,52 @@ fun CreateGroupScreen(
     val context = LocalContext.current
     val db = FirebaseFirestore.getInstance()
 
-    // Состояния (используем mutableIntStateOf для оптимизации)
+
     var step by remember { mutableIntStateOf(1) }
     var contacts by remember { mutableStateOf<List<SelectableUser>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var searchQuery by remember { mutableStateOf("") }
 
-    // Переносим настройки группы наверх (hoisting), чтобы они были видны везде
+
     var groupTitle by remember { mutableStateOf("") }
     var groupDescription by remember { mutableStateOf("") }
-    var isPublic by remember { mutableStateOf(false) } // false = Приватная, true = Публичная
+    var isPublic by remember { mutableStateOf(false) }
 
     val selectedUsers = contacts.filter { it.isSelected }
 
-    // Фильтруем список контактов перед выводом в LazyColumn
+
     val filteredContacts = contacts.filter { contact ->
         contact.name.contains(searchQuery, ignoreCase = true) ||
                 contact.username.contains(searchQuery, ignoreCase = true)
     }
 
-    // Подгрузка контактов (всех, кроме себя)
-    // Подгрузка контактов (Только те, с кем есть чаты, и НЕ включаем себя)
+
+
     LaunchedEffect(Unit) {
-        val myUid = chatVM.myUid ?: "" // Твой ID из ViewModel (или FirebaseAuth.getInstance().currentUser?.uid)
+        val myUid = chatVM.myUid ?: ""
 
         if (myUid.isEmpty()) {
             isLoading = false
             return@LaunchedEffect
         }
 
-        // 1. Сначала ищем все чаты, где МЫ являемся участником (и это личные чаты, а не группы)
+
         db.collection("chats")
             .whereArrayContains("participants", myUid)
             .get()
             .addOnSuccessListener { chatsSnap ->
 
-                // Собираем ID всех людей, с кем у нас есть чаты (исключая себя)
+
                 val partnerIds = chatsSnap.documents.mapNotNull { doc ->
                     val isGroup = doc.getBoolean("isGroup") ?: false
                     if (!isGroup) {
                         val participants = doc.get("participants") as? List<*>
-                        // Находим ID собеседника (тот элемент списка, который не равен моему uid)
+
                         participants?.firstOrNull { it != myUid } as? String
                     } else {
-                        null // Пропускаем групповые чаты, нам нужны только личные контакты
+                        null
                     }
-                }.distinct() // Убираем дубликаты на всякий случай
+                }.distinct()
 
                 if (partnerIds.isEmpty()) {
                     contacts = emptyList()
@@ -112,8 +112,8 @@ fun CreateGroupScreen(
                     return@addOnSuccessListener
                 }
 
-                // 2. Теперь делаем точечный запрос в "users", чтобы достать инфу только по этим ID
-                // Firestore позволяет использовать 'whereIn', но максимум для 30 элементов за раз.
+
+
                 // Для надежности прогоним загрузку документов:
                 val loadedUsers = mutableListOf<SelectableUser>()
                 var processedCount = 0
