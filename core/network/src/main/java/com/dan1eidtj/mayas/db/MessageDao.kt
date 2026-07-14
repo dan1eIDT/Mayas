@@ -1,4 +1,4 @@
-package com.dan1eidtj.mayas.db // Твой пакет
+package com.dan1eidtj.mayas.db
 
 import androidx.room.Dao
 import androidx.room.Insert
@@ -9,20 +9,39 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface MessageDao {
 
-    // Сохраняем пачку сообщений. Если какое-то сообщение уже скачалось ранее, перезаписываем его
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessages(messages: List<MessageEntity>)
 
-    // Вытаскиваем сообщения только для конкретного chatId.
-    // Сортируем по времени DESC (от новых к старым), потому что у тебя в ChatScreen используется ТГ-реверс для LazyColumn
     @Query("SELECT * FROM messages_table WHERE chatId = :chatId ORDER BY timestamp DESC")
     fun getMessagesForChatFlow(chatId: String): Flow<List<MessageEntity>>
 
-    // Удалить конкретное сообщение по его ID (для функции удаления сообщений)
+    // FIX: добавили пагинацию — грузим порциями по 50, передаём offset
+    // VM вызывает это при скролле вверх
+    @Query("""
+        SELECT * FROM messages_table 
+        WHERE chatId = :chatId 
+        ORDER BY timestamp DESC 
+        LIMIT :limit OFFSET :offset
+    """)
+    suspend fun getMessagesPaged(chatId: String, limit: Int = 50, offset: Int = 0): List<MessageEntity>
+
     @Query("DELETE FROM messages_table WHERE messageId = :messageId")
     suspend fun deleteMessageById(messageId: String)
 
-    // Полностью очистить историю конкретного чата
     @Query("DELETE FROM messages_table WHERE chatId = :chatId")
     suspend fun clearChatHistory(chatId: String)
+
+    @Query("""
+        SELECT * FROM messages_table 
+        WHERE chatId = :chatId AND text LIKE '%' || :query || '%' 
+        ORDER BY timestamp DESC
+    """)
+    fun searchMessages(chatId: String, query: String): Flow<List<MessageEntity>>
+
+    @Query("""
+        SELECT * FROM messages_table 
+        WHERE text LIKE '%' || :query || '%' 
+        ORDER BY timestamp DESC
+    """)
+    fun searchAllMessages(query: String): Flow<List<MessageEntity>>
 }

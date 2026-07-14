@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -34,8 +35,11 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.junit)
     implementation(project(":core:network"))
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
     implementation(platform("androidx.compose:compose-bom:2024.04.01"))
     implementation("com.google.firebase:firebase-messaging-ktx")

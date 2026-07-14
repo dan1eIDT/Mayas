@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
+import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
+import com.dan1eidtj.mayas.core_ui.utils.getGlowColor
 import com.dan1eidtj.mayas.feature.ChatVM
 import com.google.firebase.firestore.FirebaseFirestore
 
@@ -38,7 +40,12 @@ import com.google.firebase.firestore.FirebaseFirestore
 data class SelectableUser(
     val uid: String,
     val name: String,
-    val username: String = "", // Добавлено поле username
+    val username: String = "",
+    val avatarUrl: String? = null,
+    val useCustomAvatar: Boolean = false,
+    val profileIcon: String = "ghost",
+    val profileGlow: String = "purple",
+    val isPremium: Boolean = false,
     val isSelected: Boolean = false
 )
 
@@ -117,9 +124,23 @@ fun CreateGroupScreen(
                             if (userDoc.exists()) {
                                 val username = userDoc.getString("username") ?: ""
                                 val name = userDoc.getString("name") ?: username.ifEmpty { "User" }
+                                val avatarUrl = userDoc.getString("avatarUrl")
+                                val useCustomAvatar = userDoc.getBoolean("useCustomAvatar") ?: false
+                                val profileIcon = userDoc.getString("profileIcon") ?: "ghost"
+                                val profileGlow = userDoc.getString("profileGlow") ?: "purple"
+                                val isPremium = userDoc.getBoolean("isPremium") ?: false
 
                                 loadedUsers.add(
-                                    SelectableUser(uid = partnerId, name = name, username = username)
+                                    SelectableUser(
+                                        uid = partnerId,
+                                        name = name,
+                                        username = username,
+                                        avatarUrl = avatarUrl,
+                                        useCustomAvatar = useCustomAvatar,
+                                        profileIcon = profileIcon,
+                                        profileGlow = profileGlow,
+                                        isPremium = isPremium
+                                    )
                                 )
                             }
 
@@ -318,15 +339,15 @@ fun CreateGroupScreen(
                                             .padding(8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(42.dp)
-                                                .clip(CircleShape)
-                                                .background(MayasTheme.GlowPurple.copy(0.15f)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text(user.name.take(1).uppercase(), color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold)
-                                        }
+                                        MayasAvatar(
+                                            url = user.avatarUrl,
+                                            icon = user.profileIcon,
+                                            glowColor = getGlowColor(user.profileGlow),
+                                            isPremium = user.isPremium,
+                                            size = 42.dp,
+                                            useCustomAvatar = user.useCustomAvatar,
+                                            frameType = "none"
+                                        )
 
                                         Spacer(Modifier.width(14.dp))
 

@@ -1,18 +1,25 @@
-package com.dan1eidtj.mayas.db // Проверь свой package!
+package com.dan1eidtj.mayas.db
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "messages_table")
 data class MessageEntity(
-    @PrimaryKey val messageId: String, // Уникальный ID самого сообщения
-    val chatId: String,                 // К какому именно чату относится это сообщение (чтобы связывать их)
-    val text: String,                   // Сам текст сообщения
-    val senderId: String,               // Кто отправил (твой UID или собеседника)
-    val senderName: String?,            // Имя отправителя (критично для групп, чтобы сразу отображать)
-    val timestamp: Long,                // Время отправки в миллисекундах (для сортировки истории от старых к новым)
+    @PrimaryKey val messageId: String,
+    val chatId: String,
+    val text: String,
+    val senderId: String,
+    val senderName: String?,
+    val timestamp: Long,
 
-    // Поля для ответов (Reply), прямо как у тебя в Firestore
-    val replyToText: String?,
-    val replyToName: String?
+    val replyToText: String? = null,
+    val replyToName: String? = null,
+
+    // 0 = pending, 1 = sent, 2 = read
+    val status: Int = 0,
+
+    val readBy: List<String> = emptyList(),
+    val mediaUrl: String? = null,
+    val isPremium: Boolean = false,
+    val messageStyle: String? = null
 )

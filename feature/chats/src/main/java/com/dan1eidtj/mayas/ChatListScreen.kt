@@ -3,14 +3,19 @@
 package com.dan1eidtj.mayas.feature.chats.ChatListScreen
 
 import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.net.Uri
+import android.os.Build
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,6 +27,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,20 +42,50 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.TextStyle
 import coil.compose.AsyncImage
+import com.dan1eidtj.mayas.core_ui.Screen
 import com.dan1eidtj.mayas.core.ui.theme.MayasAppTheme
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
+import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
 import com.dan1eidtj.mayas.core_ui.ui.components.ProfileIcon
+import com.dan1eidtj.mayas.core_ui.utils.isUserOnline
+import com.dan1eidtj.mayas.core_ui.utils.getNameColorBrush
+import com.dan1eidtj.mayas.feature.TypingIndicator
 import com.dan1eidtj.mayas.feature.auth.AuthVM
-import com.dan1eidtj.mayas.feature.chat.CreateGroupScreen // Импортируем экран создания группы
+import com.dan1eidtj.mayas.feature.chat.CreateGroupScreen
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.ListenerRegistration
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.request.*
+import io.ktor.serialization.kotlinx.json.*
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.runtime.collectAsState
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
-enum class ConnectionState { ONLINE, FIREBASE_OFFLINE, OFFLINE }
+
+@Serializable
+data class AppVersion(
+    val latestVersion: String,
+    val updateUrl: String,
+    val changelog: String? = null
+)
+
+
+enum class ConnectionState { ONLINE, OFFLINE }
 
 enum class ChatFolder(val displayName: String, val icon: ImageVector) {
     ALL("Все чаты", Icons.Default.ChatBubble),
@@ -63,22 +99,7 @@ fun getChatId(uid1: String, uid2: String): String {
 }
 
 // Хелпер для определения, находится ли пользователь реально в сети в данный момент
-fun isUserOnline(userData: Map<String, Any?>?): Boolean {
-    if (userData == null) return false
-
-    // 1. Проверяем строковое поле активности
-    val activity = userData["activity"] as? String
-    if (activity == "в сети" || activity == "online") return true
-
-    // 2. Проверяем Timestamp последнего входа (lastSeen)
-    val lastSeen = userData["lastSeen"] as? com.google.firebase.Timestamp
-    if (lastSeen != null) {
-        // Берем по модулю (abs) на случай, если время на девайсе спешит относительно Firebase
-        val diff = kotlin.math.abs(System.currentTimeMillis() - lastSeen.toDate().time)
-        return diff < 60_000 // Считаем онлайн, если активность была менее 1 минуты (60 сек) назад
-    }
-    return false
-}
+// УДАЛЕНО: перенесено в UserUtils.kt
 
 @Composable
 fun ChatListScreen(
@@ -95,7 +116,65 @@ fun ChatListScreen(
     val myUid = currentUser.uid
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    // --- OFFLINE-FIRST VM ---
+    val chatListVm: ChatListViewModel = viewModel()
+    // UI читает чаты из Room — он обновляется VM при каждом снапшоте Firestore
+    val roomChats by chatListVm.chats.collectAsState()
+    val syncState by chatListVm.syncState.collectAsState()
+
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+
+    // FIX: httpClient внутри composable — закрывается при выходе с экрана
+    val httpClient = remember {
+        HttpClient {
+            install(ContentNegotiation) {
+                json(Json {
+                    ignoreUnknownKeys = true
+                    coerceInputValues = true
+                })
+            }
+        }
+    }
+    DisposableEffect(Unit) { onDispose { httpClient.close() } }
+
+    // --- ОБНОВЛЕНИЕ ПРИЛОЖЕНИЯ ---
+    var isUpdateAvailable by remember { mutableStateOf(false) }
+    var bannerDismissed by rememberSaveable { mutableStateOf(false) }
+    var updateUrl by remember { mutableStateOf("") }
+
+    val currentVersionName = remember(context) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(context.packageName, PackageManager.PackageInfoFlags.of(0)).versionName
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            } ?: ""
+        } catch (e: Exception) { "" }
+    }
+
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            try {
+                val versionInfo: AppVersion = httpClient.get("https://raw.githubusercontent.com/dan1eIDT/Mayas/master/version.json").body()
+                withContext(Dispatchers.Main) {
+                    updateUrl = versionInfo.updateUrl
+                    if (versionInfo.latestVersion.isNotEmpty() && versionInfo.latestVersion != currentVersionName) {
+                        isUpdateAvailable = true
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                vm.db.collection("system").document("config").get().addOnSuccessListener { doc ->
+                    val latestVersion = doc.getString("latestVersion") ?: ""
+                    updateUrl = doc.getString("updateUrl") ?: ""
+                    if (latestVersion.isNotEmpty() && latestVersion != currentVersionName) {
+                        isUpdateAvailable = true
+                    }
+                }
+            }
+        }
+    }
 
     // --- СОСТОЯНИЕ НАВИГАЦИИ НА ЭКРАН СОЗДАНИЯ ГРУППЫ ---
     var showCreateGroupScreen by remember { mutableStateOf(false) }
@@ -104,8 +183,45 @@ fun ChatListScreen(
     var selectedChats by remember { mutableStateOf(setOf<String>()) }
     var connectionState by remember { mutableStateOf(ConnectionState.ONLINE) }
     var connectionText by remember { mutableStateOf("...") }
-    var chats by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
+    // FIX: chats теперь маппируется из Room ChatEntity в Map<String,Any>
+    // чтобы не переписывать весь UI — совместимый формат
+    val chats: List<Map<String, Any>> = remember(roomChats) {
+        roomChats.map { entity ->
+            buildMap {
+                put("chatId", entity.chatId)
+                put("isGroup", entity.isGroup)
+                put("groupName", entity.groupName ?: "")
+                put("groupAvatarUrl", entity.groupAvatarUrl ?: "")
+                put("groupIcon", entity.groupIcon ?: "groups")
+                put("useCustomAvatar", entity.useCustomAvatar)
+                put("lastMessage", entity.lastMessage ?: "")
+                // unreadCount уже раскрыт по userId в Repository — просто int
+                put("unreadCount", entity.unreadCount)
+                // updatedAt — Long (миллисекунды), не Timestamp
+                put("updatedAt", entity.updatedAt)
+                put("description", entity.description ?: "")
+                put("ownerId", entity.ownerId ?: "")
+                put("isPublic", entity.isPublic)
+                // isPinned раскрыт по userId в Repository
+                put("isPinned", entity.isPinned)
+                // partnerUid нужен для поиска живых данных в userCache
+                put("partnerUid", entity.partnerUid ?: "")
+                // партнёрские данные для личных чатов
+                put("partnerName", entity.partnerName ?: "")
+                put("partnerAvatarUrl", entity.partnerAvatarUrl ?: "")
+                put("partnerProfileGlow", entity.partnerProfileGlow ?: "purple")
+                put("partnerEmoji", entity.partnerEmoji ?: "")
+            }
+        }
+    }
+    // isInitialLoading = true пока Room не вернул ни одного элемента И идёт синк
     var isInitialLoading by remember { mutableStateOf(true) }
+    LaunchedEffect(roomChats, syncState) {
+        if (syncState != SyncState.IDLE && syncState != SyncState.SYNCING) {
+            isInitialLoading = false
+        }
+        if (roomChats.isNotEmpty()) isInitialLoading = false
+    }
     var searchQuery by remember { mutableStateOf("") }
     var showUserSearchDialog by remember { mutableStateOf(false) }
     var searchInput by remember { mutableStateOf("") }
@@ -160,31 +276,15 @@ fun ChatListScreen(
         )
 
         // --- МОНИТОРИНГ СОЕДИНЕНИЯ ---
-        LaunchedEffect(dots) {
+        // FIX: ключ Unit вместо dots; syncState из VM подсказывает реальный статус Firestore
+        LaunchedEffect(Unit) {
             while (isActive) {
                 val internetOk = checkInternet(context)
-                var firebaseOk = false
-
-                if (internetOk) {
-                    runCatching {
-                        vm.db.collection("system").document("ping").get().await()
-                        firebaseOk = true
-                    }.onFailure {
-                        firebaseOk = false
-                    }
-                }
-
                 when {
                     !internetOk -> {
                         connectionState = ConnectionState.OFFLINE
                         connectionText = "Жди инет$dots"
                     }
-
-                    !firebaseOk -> {
-                        connectionState = ConnectionState.FIREBASE_OFFLINE
-                        connectionText = "База приём$dots"
-                    }
-
                     else -> {
                         connectionState = ConnectionState.ONLINE
                         connectionText = "в сети"
@@ -193,11 +293,24 @@ fun ChatListScreen(
                 delay(4000)
             }
         }
+        // Синк-статус от VM — показывает реальный статус Firestore без ping-запросов
+        LaunchedEffect(syncState) {
+            when (syncState) {
+                SyncState.OFFLINE -> {
+                    connectionState = ConnectionState.OFFLINE
+                    connectionText = "Нет связи$dots"
+                }
+                SyncState.ONLINE -> {
+                    connectionState = ConnectionState.ONLINE
+                    connectionText = "в сети"
+                }
+                else -> {}
+            }
+        }
 
         val glowColor by animateColorAsState(
             targetValue = when (connectionState) {
                 ConnectionState.ONLINE -> MayasTheme.GlowGreen
-                ConnectionState.FIREBASE_OFFLINE -> Color(0xFFBEFF26)
                 ConnectionState.OFFLINE -> Color(0xFFFF4D4D)
             },
             animationSpec = tween(500), label = "glow"
@@ -205,61 +318,90 @@ fun ChatListScreen(
 
         // --- ЗАГРУЗКА ДАННЫХ СВОЕГО ПРОФИЛЯ ---
         LaunchedEffect(myUid) {
-            vm.db.collection("users").document(myUid).get()
-                .addOnSuccessListener { doc ->
-                    if (doc.exists()) {
-                        myProfileData = mapOf(
-                            "name" to (doc.getString("name") ?: doc.getString("username") ?: "Я"),
-                            "avatarUrl" to (doc.getString("avatarUrl") ?: ""),
-                            "profileIcon" to (doc.getString("profileIcon") ?: "ghost"),
-                            "useCustomAvatar" to (doc.getBoolean("useCustomAvatar") ?: false),
-                            "activity" to (doc.getString("activity") ?: "в сети")
-                        )
-                    }
+            vm.db.collection("users").document(myUid).addSnapshotListener { doc, _ ->
+                if (doc != null && doc.exists()) {
+                    myProfileData = mapOf(
+                        "name" to (doc.getString("name") ?: doc.getString("username") ?: "Я"),
+                        "avatarUrl" to (doc.getString("avatarUrl") ?: ""),
+                        "profileIcon" to (doc.getString("profileIcon") ?: "ghost"),
+                        "useCustomAvatar" to (doc.getBoolean("useCustomAvatar") ?: false),
+                        "activity" to (doc.getString("activity") ?: "в сети"),
+                        "isPremium" to (doc.getBoolean("isPremium") ?: false),
+                        "nameColor" to (doc.getString("nameColor") ?: "gold"),
+                        "isGroup" to false
+                    )
                 }
+            }
         }
 
-        // --- ЗАГРУЗКА ЧАТОВ И КЭШИРОВАНИЕ СОБЕСЕДНИКОВ ---
+        // --- ЗАГРУЗКА ЧАТОВ: теперь через ChatListViewModel (offline-first) ---
+        // VM слушает Firestore и пишет в Room. UI читает из roomChats (см. выше).
+        // userCache больше не нужен для основных данных — они в ChatEntity.
+        // Оставляем его для дополнительных полей (lastSeen, typing, isInvisible)
+        // которые не хранятся в Room намеренно (слишком часто меняются).
         DisposableEffect(myUid) {
-            var listener: ListenerRegistration? = null
+            val partnerListeners = mutableMapOf<String, ListenerRegistration>()
 
-            listener = vm.db.collection("chats")
+            // Слушаем только "живые" данные партнёров которые не нужно кэшировать
+            val chatsListener = vm.db.collection("chats")
                 .whereArrayContains("participants", myUid)
                 .addSnapshotListener { snapshot, error ->
-                    isInitialLoading = false
                     if (error != null || snapshot == null) return@addSnapshotListener
 
-                    chats = snapshot.documents.mapNotNull { doc ->
-                        val data = doc.data?.toMutableMap() ?: return@mapNotNull null
-                        data["chatId"] = doc.id
-                        data
+                    val currentPartnerUids = snapshot.documents
+                        .filter { doc ->
+                            val type = doc.getString("type") ?: "DIRECT"
+                            val isGroup = type == "GROUP" || (doc.getBoolean("isGroup") ?: false)
+                            !isGroup
+                        }
+                        .flatMap { doc ->
+                            (doc.get("participants") as? List<*>)
+                                ?.filterIsInstance<String>()
+                                ?.filter { it != myUid }
+                                ?: emptyList()
+                        }.toSet()
+
+                    val toRemove = partnerListeners.keys - currentPartnerUids
+                    toRemove.forEach { uid ->
+                        partnerListeners[uid]?.remove()
+                        partnerListeners.remove(uid)
                     }
 
-                    chats.flatMap { data ->
-                        (data["participants"] as? List<*>)?.filterIsInstance<String>() ?: emptyList()
-                    }.filter { id -> id != myUid && !userCache.containsKey(id) }
-                        .distinct()
-                        .forEach { partnerUid ->
-                            vm.db.collection("users").document(partnerUid).get()
-                                .addOnSuccessListener { doc ->
-                                    if (doc.exists()) {
+                    currentPartnerUids.forEach { partnerUid ->
+                        if (!partnerListeners.containsKey(partnerUid)) {
+                            partnerListeners[partnerUid] = vm.db.collection("users")
+                                .document(partnerUid)
+                                .addSnapshotListener { doc, _ ->
+                                    if (doc != null && doc.exists()) {
+                                        // Только живые данные которые не кэшируем в Room
                                         userCache[partnerUid] = mapOf(
+                                            "lastSeen" to doc.getTimestamp("lastSeen"),
+                                            "isInvisible" to (doc.getBoolean("isInvisible") ?: false),
+                                            "typing" to doc.get("typing"),
+                                            "activity" to (doc.getString("activity") ?: ""),
+                                            // Остальное уже в Room через ChatEntity
                                             "name" to (doc.getString("name") ?: doc.getString("username") ?: "Аноним"),
-                                            "emoji" to (doc.getString("emojiStatus") ?: ""),
                                             "avatarUrl" to (doc.getString("avatarUrl") ?: ""),
                                             "profileIcon" to (doc.getString("profileIcon") ?: "ghost"),
                                             "useCustomAvatar" to (doc.getBoolean("useCustomAvatar") ?: false),
                                             "profileGlow" to (doc.getString("profileGlow") ?: "purple"),
-                                            "activity" to (doc.getString("activity") ?: ""),
-                                            "lastSeen" to doc.getTimestamp("lastSeen") // <-- Сохраняем таймстамп активности в кэш!
+                                            "isPremium" to (doc.getBoolean("isPremium") ?: false),
+                                            // nameColor — реальный цвет ника из профиля партнёра, тот же
+                                            // параметр, что в ProfileScreen/ChatVM. Раньше не читался тут,
+                                            // из-за чего список чатов красил премиум-имена жёстко золотым.
+                                            "nameColor" to (doc.getString("nameColor") ?: "gold"),
+                                            "isGroup" to false,
+                                            "emoji" to (doc.getString("emojiStatus") ?: "")
                                         )
                                     }
                                 }
                         }
+                    }
                 }
 
             onDispose {
-                listener?.remove()
+                chatsListener.remove()
+                partnerListeners.values.forEach { it.remove() }
             }
         }
 
@@ -268,19 +410,23 @@ fun ChatListScreen(
             chats.filter { chat ->
                 val isGroup = chat["isGroup"] as? Boolean ?: false
 
-                // Определяем имя для фильтра поиска
+                // Имя для поиска: для групп — groupName, для личных — из userCache или partnerName
                 val name = if (isGroup) {
                     chat["groupName"] as? String ?: ""
                 } else {
-                    val participants = chat["participants"] as? List<*> ?: emptyList<Any>()
-                    val partnerUid = participants.filterIsInstance<String>().firstOrNull { it != myUid }
-                    userCache[partnerUid]?.get("name") as? String ?: ""
+                    val partnerUid = chat["partnerUid"] as? String ?: ""
+                    // Приоритет: живые данные из userCache (имя может обновиться)
+                    // иначе — закэшированное в Room partnerName
+                    userCache[partnerUid]?.get("name") as? String
+                        ?: chat["partnerName"] as? String
+                        ?: ""
                 }
 
                 val matchesSearch = name.contains(searchQuery, ignoreCase = true)
                 if (!matchesSearch) return@filter false
 
-                val isPinned = chat["pinned_$myUid"] as? Boolean ?: false
+                // isPinned уже раскрыт по userId в Repository и хранится в ChatEntity
+                val isPinned = chat["isPinned"] as? Boolean ?: false
 
                 when (selectedFolder) {
                     ChatFolder.ALL -> true
@@ -289,9 +435,10 @@ fun ChatListScreen(
                     ChatFolder.CONTACTS -> !isGroup
                 }
             }.sortedWith(
-                compareByDescending<Map<String, Any>> { (it["pinned_$myUid"] as? Boolean) ?: false }
+                compareByDescending<Map<String, Any>> { it["isPinned"] as? Boolean ?: false }
                     .thenByDescending {
-                        (it["updatedAt"] as? com.google.firebase.Timestamp)?.seconds ?: 0L
+                        // updatedAt — Long (мс), не Timestamp
+                        it["updatedAt"] as? Long ?: 0L
                     }
             )
         }
@@ -309,7 +456,7 @@ fun ChatListScreen(
                         .border(
                             1.dp,
                             Brush.verticalGradient(
-                                colors = listOf(Color.White.copy(alpha = 0.08f), Color.Transparent)
+                                colors = listOf(MayasTheme.Outline, Color.Transparent)
                             ),
                             RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)
                         )
@@ -328,6 +475,39 @@ fun ChatListScreen(
                         )
 
                         Spacer(modifier = Modifier.height(24.dp))
+
+                        // --- ПУНКТ ОБНОВЛЕНИЯ (ЕСЛИ ЕСТЬ) ---
+                        if (isUpdateAvailable) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MayasTheme.GlowGreen.copy(alpha = 0.15f))
+                                    .combinedClickable {
+                                        if (updateUrl.isNotEmpty()) {
+                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl)))
+                                        }
+                                    }
+                                    .padding(horizontal = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Update,
+                                    contentDescription = null,
+                                    tint = MayasTheme.GlowGreen,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Text(
+                                    text = "Обновить Mayas",
+                                    color = MayasTheme.TextPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
 
                         // --- ДОБАВЛЕНА КНОПКА В БОКОВОМ МЕНЮ ---
                         Row(
@@ -406,7 +586,7 @@ fun ChatListScreen(
                                 val count = when (folder) {
                                     ChatFolder.ALL -> chats.size
                                     ChatFolder.PINNED -> chats.count {
-                                        it["pinned_$myUid"] as? Boolean ?: false
+                                        it["isPinned"] as? Boolean ?: false
                                     }
 
                                     ChatFolder.GROUPS -> chats.count {
@@ -423,7 +603,7 @@ fun ChatListScreen(
                                             .clip(CircleShape)
                                             .background(
                                                 if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.2f)
-                                                else Color.White.copy(alpha = 0.05f)
+                                                else MayasTheme.Surface.copy(alpha = 0.05f)
                                             )
                                             .padding(horizontal = 7.dp, vertical = 2.dp)
                                     ) {
@@ -468,21 +648,8 @@ fun ChatListScreen(
                 }
             }
         ) {
-            // --- ДОБАВЛЕН SCAFFOLD С ПЛАВАЮЩЕЙ КНОПКОЙ (FAB) ---
+            // --- ДОБАВЛЕН SCAFFOLD (БЕЗ FAB) ---
             Scaffold(
-                floatingActionButton = {
-                    FloatingActionButton(
-                        onClick = { showCreateGroupScreen = true },
-                        containerColor = MayasTheme.GlowPurple,
-                        contentColor = Color.White,
-                        shape = CircleShape
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.GroupAdd,
-                            contentDescription = "Создать группу"
-                        )
-                    }
-                },
                 containerColor = MayasTheme.Background
             ) { paddingValues ->
                 // НАЧАЛО ОСНОВНОГО СТОЛБЦА
@@ -492,6 +659,51 @@ fun ChatListScreen(
                         .padding(paddingValues)
                         .background(MayasTheme.Background)
                 ) {
+                    // --- ПЛАШКА ОБНОВЛЕНИЯ ---
+                    AnimatedVisibility(
+                        visible = isUpdateAvailable && !bannerDismissed,
+                        enter = expandVertically(),
+                        exit = shrinkVertically()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MayasTheme.GlowPurple.copy(alpha = 0.9f))
+                                .clickable {
+                                    if (updateUrl.isNotEmpty()) {
+                                        try {
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl))
+                                            context.startActivity(intent)
+                                        } catch (e: Exception) {}
+                                    }
+                                }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Default.Update, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Text(
+                                    text = "Доступно обновление Mayas!",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            IconButton(
+                                onClick = { bannerDismissed = true },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Закрыть",
+                                    tint = Color.White.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+
                     AnimatedContent(
                         targetState = selectedChats.isEmpty(),
                         label = "header"
@@ -513,15 +725,27 @@ fun ChatListScreen(
                                     selectedChats.forEach { id ->
                                         val chatDoc = chats.firstOrNull { it["chatId"] == id }
                                         val isCurrentlyPinned =
-                                            chatDoc?.get("pinned_$myUid") as? Boolean ?: false
+                                            chatDoc?.get("isPinned") as? Boolean ?: false
                                         vm.db.collection("chats").document(id)
                                             .update("pinned_$myUid", !isCurrentlyPinned)
                                     }
                                     selectedChats = emptySet()
                                 },
                                 onDeleteChats = {
+                                    // FIX: раньше удалялся только сам документ чата в Firestore,
+                                    // а подколлекция messages оставалась — утечка данных, и при
+                                    // повторном создании чата с тем же chatId старые сообщения
+                                    // "воскресали". Теперь сначала чистим сообщения батчем.
                                     selectedChats.forEach { id ->
-                                        vm.db.collection("chats").document(id).delete()
+                                        val chatRef = vm.db.collection("chats").document(id)
+                                        chatRef.collection("messages").get()
+                                            .addOnSuccessListener { snapshot ->
+                                                val batch = vm.db.batch()
+                                                snapshot.documents.forEach { batch.delete(it.reference) }
+                                                batch.commit().addOnCompleteListener {
+                                                    chatRef.delete()
+                                                }
+                                            }
                                     }
                                     selectedChats = emptySet()
                                 }
@@ -581,7 +805,8 @@ fun ChatListScreen(
                                     key = { it["chatId"] ?: it.hashCode() }) { chat ->
                                     val isGroup = chat["isGroup"] as? Boolean ?: false
                                     val chatId = chat["chatId"] as? String ?: ""
-                                    val isPinned = chat["pinned_$myUid"] as? Boolean ?: false
+                                    // isPinned уже раскрыт в Repository по userId
+                                    val isPinned = chat["isPinned"] as? Boolean ?: false
 
                                     if (isGroup) {
                                         // Логика для ГРУППЫ:
@@ -594,19 +819,21 @@ fun ChatListScreen(
                                                 ?: "groups"),
                                             "useCustomAvatar" to (chat["useCustomAvatar"] as? Boolean
                                                 ?: false),
-                                            "profileGlow" to "purple"
+                                            "profileGlow" to "purple",
+                                            "isGroup" to true
                                         )
 
                                         ChatItemNew(
                                             userData = groupData,
                                             lastMsg = chat["lastMessage"] as? String ?: "",
-                                            unreadCount = (chat["unreadCount_$myUid"] as? Long
-                                                ?: 0L).toInt(),
-                                            updatedAt = chat["updatedAt"] as? com.google.firebase.Timestamp,
+                                            // unreadCount уже Int, раскрытый по userId в Repository
+                                            unreadCount = chat["unreadCount"] as? Int ?: 0,
+                                            // updatedAt — Long (мс)
+                                            updatedAt = chat["updatedAt"] as? Long ?: 0L,
                                             isSelected = selectedChats.contains(chatId),
                                             isPinned = isPinned,
                                             unreadGlowAlpha = unreadGlowAlpha,
-                                            isOnline = false, // Для групп статус сети не выводим
+                                            isOnline = false,
                                             onClick = {
                                                 if (selectedChats.isNotEmpty()) {
                                                     selectedChats =
@@ -619,23 +846,41 @@ fun ChatListScreen(
                                         )
                                     } else {
                                         // Логика для ОБЫЧНОГО ЧАТА:
-                                        val participants =
-                                            chat["participants"] as? List<*> ?: emptyList<Any>()
-                                        val partnerUid = participants.filterIsInstance<String>()
-                                            .firstOrNull { it != myUid } ?: return@items
-                                        val userData = userCache[partnerUid]
-                                        val isOnline = isUserOnline(userData) // Проверяем статус в сети
+                                        // partnerUid хранится в ChatEntity и пробрасывается в map
+                                        val partnerUid = chat["partnerUid"] as? String ?: ""
+                                        // userData из userCache — живые данные (typing, lastSeen, isInvisible)
+                                        // Если userCache ещё не заполнен — строим userData из Room-кэша
+                                        val userData: Map<String, Any?> = userCache[partnerUid]
+                                            ?: mapOf(
+                                                "name" to chat["partnerName"],
+                                                "avatarUrl" to chat["partnerAvatarUrl"],
+                                                "profileGlow" to chat["partnerProfileGlow"],
+                                                "emoji" to chat["partnerEmoji"],
+                                                "profileIcon" to "ghost",
+                                                "useCustomAvatar" to false,
+                                                "isPremium" to false,
+                                                // TODO: ChatEntity/ChatRepository не хранят partnerNameColor —
+                                                // нужно добавить колонку в ChatEntity и писать её в
+                                                // syncChatsFromSnapshot()/updatePartnerInfoFromSnapshot(),
+                                                // иначе офлайн (до прихода живого userCache) имя всегда
+                                                // будет падать на дефолтный "gold" вместо реального цвета.
+                                                "nameColor" to (chat["partnerNameColor"] ?: "gold"),
+                                                "isGroup" to false
+                                            )
+                                        val isOnline = isUserOnline(userData)
+                                        val typingMap = userData["typing"] as? Map<*, *>
+                                        val isTyping = typingMap?.get(chatId) == true
 
                                         ChatItemNew(
                                             userData = userData,
                                             lastMsg = chat["lastMessage"] as? String ?: "",
-                                            unreadCount = (chat["unreadCount_$myUid"] as? Long
-                                                ?: 0L).toInt(),
-                                            updatedAt = chat["updatedAt"] as? com.google.firebase.Timestamp,
+                                            unreadCount = chat["unreadCount"] as? Int ?: 0,
+                                            updatedAt = chat["updatedAt"] as? Long ?: 0L,
                                             isSelected = selectedChats.contains(chatId),
                                             isPinned = isPinned,
                                             unreadGlowAlpha = unreadGlowAlpha,
-                                            isOnline = isOnline, // Передаем вычисленный статус
+                                            isOnline = isOnline,
+                                            isTyping = isTyping,
                                             onClick = {
                                                 if (selectedChats.isNotEmpty()) {
                                                     selectedChats =
@@ -675,26 +920,12 @@ fun ChatListScreen(
             searchError = searchError,
             onInputChange = { searchInput = it; searchError = null },
             onDismiss = { showUserSearchDialog = false; searchInput = ""; searchError = null; onDismissUserSearch() },
-            onConfirm = {
-                val username = searchInput.removePrefix("@").lowercase().trim()
-
-                if (username.isEmpty()) {
-                    searchError = "Введите никнейм"
-                } else {
-                    vm.resolveUserByUsername(username) { targetUid ->
-                        if (targetUid != null) {
-                            if (targetUid == myUid) {
-                                searchError = "Нельзя создать чат с самим собой"
-                            } else {
-                                onStartChat(getChatId(myUid, targetUid))
-                                showUserSearchDialog = false
-                                searchInput = ""
-                            }
-                        } else {
-                            searchError = "Пользователь не найден"
-                        }
-                    }
-                }
+            onConfirm = {},
+            vm = vm,
+            onStartChat = onStartChat,
+            onCreateGroup = {
+                showUserSearchDialog = false
+                showCreateGroupScreen = true
             }
         )
     }
@@ -728,8 +959,8 @@ fun HeaderSection(
                     onClick = onMenuClick,
                     modifier = Modifier
                         .size(40.dp)
-                        .background(MayasTheme.Surface.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                        .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                        .background(MayasTheme.SurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                        .border(1.dp, MayasTheme.Outline, RoundedCornerShape(12.dp))
                 ) {
                     Icon(
                         imageVector = Icons.Default.Menu,
@@ -752,8 +983,8 @@ fun HeaderSection(
                 onClick = onAddFriendClick,
                 modifier = Modifier
                     .size(40.dp)
-                    .background(MayasTheme.Surface.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                    .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp))
+                    .background(MayasTheme.SurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    .border(1.dp, MayasTheme.Outline, RoundedCornerShape(12.dp))
             ) {
                 Icon(
                     imageVector = Icons.Default.PersonAdd,
@@ -796,10 +1027,10 @@ fun HeaderSection(
                 .height(48.dp),
             shape = RoundedCornerShape(14.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MayasTheme.Surface.copy(alpha = 0.4f),
-                unfocusedContainerColor = MayasTheme.Surface.copy(alpha = 0.2f),
+                focusedContainerColor = MayasTheme.SurfaceVariant.copy(alpha = 0.4f),
+                unfocusedContainerColor = MayasTheme.SurfaceVariant.copy(alpha = 0.2f),
                 focusedBorderColor = MayasTheme.GlowPurple.copy(alpha = 0.35f),
-                unfocusedBorderColor = Color.White.copy(alpha = 0.05f)
+                unfocusedBorderColor = MayasTheme.Outline
             )
         )
     }
@@ -845,11 +1076,12 @@ fun ChatItemNew(
     userData: Map<String, Any?>?,
     lastMsg: String,
     unreadCount: Int,
-    updatedAt: com.google.firebase.Timestamp?,
+    updatedAt: Long,
     isSelected: Boolean,
     isPinned: Boolean,
     unreadGlowAlpha: Float,
-    isOnline: Boolean = false, // Добавлен флаг для отображения статуса сети
+    isOnline: Boolean = false,
+    isTyping: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
@@ -858,6 +1090,16 @@ fun ChatItemNew(
         "blue" -> MayasTheme.GlowBlue
         "green" -> MayasTheme.GlowGreen
         "red" -> MayasTheme.GlowRed
+        "orange" -> MayasTheme.GlowOrange
+        "cyan" -> MayasTheme.GlowCyan
+        "mint" -> MayasTheme.GlowMint
+        "indigo" -> MayasTheme.GlowIndigo
+        "lime" -> MayasTheme.GlowLime
+        "rose" -> MayasTheme.GlowRose
+        "amber" -> MayasTheme.GlowAmber
+        "sky" -> MayasTheme.GlowSky
+        "white" -> MayasTheme.GlowWhite
+        "gold" -> MayasTheme.GlowGold
         else -> MayasTheme.GlowPurple
     }
 
@@ -894,45 +1136,27 @@ fun ChatItemNew(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // АВАТАРКА ПОЛЬЗОВАТЕЛЯ
-        Box(modifier = Modifier.size(54.dp)) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .clip(CircleShape)
-                    .background(avatarGlow.copy(alpha = 0.12f))
-                    .border(
-                        width = if (unreadCount > 0) 2.dp else 1.dp,
-                        brush = glowBorderBrush,
-                        shape = CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                val useAvatar = userData?.get("useCustomAvatar") as? Boolean ?: false
-                val url = userData?.get("avatarUrl") as? String ?: ""
-                if (useAvatar && url.isNotEmpty()) {
-                    AsyncImage(
-                        model = url,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(CircleShape)
-                    )
-                } else {
-                    ProfileIcon(userData?.get("profileIcon") as? String ?: "ghost")
-                }
-            }
+        Box(contentAlignment = Alignment.Center) {
+            MayasAvatar(
+                url = if (userData?.get("useCustomAvatar") as? Boolean == true) userData?.get("avatarUrl") as? String else null,
+                icon = userData?.get("profileIcon") as? String ?: "ghost",
+                glowColor = avatarGlow,
+                isPremium = userData?.get("premium") as? Boolean ?: false,
+                size = 54.dp,
+                useCustomAvatar = userData?.get("useCustomAvatar") as? Boolean ?: false,
+                frameType = userData?.get("avatarFrame") as? String ?: "none"
+            )
 
             // Онлайн статус отображается только если человек РЕАЛЬНО в сети
             if (isOnline) {
                 Box(
                     modifier = Modifier
-                        .size(12.dp)
+                        .align(Alignment.BottomEnd)
+                        .size(13.dp)
                         .clip(CircleShape)
                         .background(MayasTheme.GlowGreen)
-                        .align(Alignment.BottomEnd)
                         .border(1.5.dp, MayasTheme.Background, CircleShape)
+                        .offset(x = 2.dp, y = 2.dp)
                 )
             }
         }
@@ -945,18 +1169,55 @@ fun ChatItemNew(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier.weight(1f, fill = false),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
+                    val name = userData?.get("name") ?: "..."
+                    val isPremium = userData?.get("isPremium") as? Boolean ?: false
+                    val isGroupChat =
+                        userData?.get("isGroup") as? Boolean ?: userData?.containsKey("groupName")
+                        ?: false
+
+                    // Раньше: любой премиум красился жёстко золотым, без учёта
+                    // реального nameColor из профиля партнёра. Теперь берём тот
+                    // же цвет, что выбран в ProfileScreen (getNameColorBrush — общий источник истины).
+                    val nameBrush = if (isPremium && !isGroupChat) {
+                        getNameColorBrush(userData?.get("nameColor") as? String ?: "gold")
+                    } else {
+                        null
+                    }
+
                     Text(
-                        text = "${userData?.get("name") ?: "..."} ${userData?.get("emoji") ?: ""}".trim(),
-                        color = MayasTheme.TextPrimary,
+                        text = "${name} ${userData?.get("emoji") ?: ""}".trim(),
+                        style = if (nameBrush != null) TextStyle(brush = nameBrush) else TextStyle(
+                            color = MayasTheme.TextPrimary
+                        ),
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 15.sp,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
+
+                    if (isPremium && !isGroupChat) {
+                        Spacer(Modifier.width(4.dp))
+                        val verifiedIcon = userData?.get("verifiedIcon") as? String ?: "verified"
+                        val vIcon = when(verifiedIcon) {
+                            "star" -> Icons.Default.Star
+                            "diamond" -> Icons.Default.Diamond
+                            "auto_awesome" -> Icons.Default.AutoAwesome
+                            else -> Icons.Default.Verified
+                        }
+                        Icon(
+                            imageVector = vIcon,
+                            contentDescription = "Premium",
+                            tint = MayasTheme.GlowGold,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+
                     if (isPinned) {
+                        Spacer(Modifier.width(4.dp))
                         Icon(
                             imageVector = Icons.Default.PushPin,
                             contentDescription = "Закреплен",
@@ -965,31 +1226,50 @@ fun ChatItemNew(
                         )
                     }
                 }
-                updatedAt?.let {
+
+                if (updatedAt > 0L) {
+                    Spacer(Modifier.width(8.dp))
                     Text(
-                        text = formatTime(it),
+                        text = formatTimestamp(updatedAt),
                         color = MayasTheme.TextSecondary.copy(alpha = 0.6f),
                         fontSize = 11.sp
                     )
                 }
             }
+
             Spacer(modifier = Modifier.height(3.dp))
+
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = lastMsg.ifEmpty { "Нет сообщений" },
-                    modifier = Modifier.weight(1f),
-                    color = MayasTheme.TextSecondary.copy(alpha = 0.8f),
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (isTyping) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        TypingIndicator(dotColor = MayasTheme.GlowPurple)
+                        Text(
+                            text = "печатает...",
+                            color = MayasTheme.GlowPurple,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                } else {
+                    Text(
+                        text = lastMsg.ifEmpty { "Нет сообщений" },
+                        modifier = Modifier.weight(1f),
+                        color = MayasTheme.TextSecondary.copy(alpha = 0.8f),
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
                 if (unreadCount > 0) {
                     Box(
                         modifier = Modifier
                             .clip(CircleShape)
                             .background(MayasTheme.Accent)
                             .padding(horizontal = 4.dp, vertical = 1.dp)
-
                     ) {
                         Text(
                             text = "$unreadCount",
@@ -1022,7 +1302,7 @@ fun BottomProfileBar(
         border = BorderStroke(
             1.dp,
             Brush.verticalGradient(
-                colors = listOf(Color.White.copy(alpha = 0.05f), Color.Transparent)
+                colors = listOf(MayasTheme.Outline, Color.Transparent)
             )
         )
     ) {
@@ -1041,8 +1321,8 @@ fun BottomProfileBar(
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.03f))
-                        .border(1.dp, Color.White.copy(alpha = 0.08f), CircleShape),
+                        .background(MayasTheme.SurfaceVariant.copy(alpha = 0.3f))
+                        .border(1.dp, MayasTheme.Outline, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     val useAvatar = myProfileData["useCustomAvatar"] as? Boolean ?: false
@@ -1080,22 +1360,52 @@ fun BottomProfileBar(
                     .weight(1f)
                     .combinedClickable { onOpenProfile(myUid) }
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val isPremium = myProfileData["isPremium"] as? Boolean ?: false
+                    // То же самое для своего имени внизу — реальный nameColor вместо
+                    // жёсткого золотого по флагу isPremium.
+                    val nameBrush = if (isPremium) {
+                        getNameColorBrush(myProfileData["nameColor"] as? String ?: "gold")
+                    } else {
+                        null
+                    }
+
                     Text(
                         text = myProfileData["name"] as? String ?: "Загрузка...",
-                        color = MayasTheme.TextPrimary,
+                        style = if (nameBrush != null) TextStyle(brush = nameBrush) else TextStyle(color = MayasTheme.TextPrimary),
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Открыть профиль",
-                        tint = MayasTheme.TextSecondary,
-                        modifier = Modifier.size(14.dp)
-                    )
+                    if (isPremium) {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        val verifiedIcon = myProfileData["verifiedIcon"] as? String ?: "verified"
+                        val vIcon = when(verifiedIcon) {
+                            "star" -> Icons.Default.Star
+                            "diamond" -> Icons.Default.Diamond
+                            "auto_awesome" -> Icons.Default.AutoAwesome
+                            else -> Icons.Default.Verified
+                        }
+                        Icon(
+                            imageVector = vIcon,
+                            contentDescription = "Premium",
+                            tint = MayasTheme.GlowGold,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Открыть профиль",
+                            tint = MayasTheme.TextSecondary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
                 }
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
@@ -1113,8 +1423,8 @@ fun BottomProfileBar(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White.copy(alpha = 0.04f))
-                    .border(1.dp, Color.White.copy(alpha = 0.06f), RoundedCornerShape(12.dp)),
+                    .background(MayasTheme.SurfaceVariant.copy(alpha = 0.4f))
+                    .border(1.dp, MayasTheme.Outline, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
                 IconButton(onClick = onOpenSettings) {
@@ -1205,8 +1515,31 @@ fun UserSearchDialog(
     searchError: String?,
     onInputChange: (String) -> Unit,
     onDismiss: () -> Unit,
-    onConfirm: () -> Unit
+    onConfirm: () -> Unit,
+    vm: AuthVM,
+    onStartChat: (String) -> Unit,
+    onCreateGroup: () -> Unit
 ) {
+    var foundUser by remember { mutableStateOf<Map<String, Any?>?>(null) }
+    var isSearching by remember { mutableStateOf(false) }
+    val myUid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+    val chatListVM: ChatListViewModel = viewModel()
+
+
+    LaunchedEffect(searchInput) {
+        val name = searchInput.removePrefix("@").trim()
+        if (name.length >= 3) {
+            isSearching = true
+            vm.resolveUserByUsername(name) { user ->
+                foundUser = user
+                isSearching = false
+            }
+        } else {
+            foundUser = null
+            isSearching = false
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -1219,8 +1552,26 @@ fun UserSearchDialog(
         },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
+                // Кнопка создания группы внутри поиска
+                Surface(
+                    onClick = onCreateGroup,
+                    color = MayasTheme.GlowPurple.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                ) {
+                    Row(
+                        Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.Groups, null, tint = MayasTheme.GlowPurple)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Создать группу", color = MayasTheme.GlowPurple, fontWeight = FontWeight.Bold)
+                    }
+                }
+
                 Text(
-                    text = "Введите юзернейм собеседника без символа @",
+                    text = "Поиск по юзернейму",
                     color = MayasTheme.TextSecondary.copy(alpha = 0.8f),
                     fontSize = 13.sp,
                     modifier = Modifier.padding(bottom = 12.dp)
@@ -1229,63 +1580,108 @@ fun UserSearchDialog(
                 OutlinedTextField(
                     value = searchInput,
                     onValueChange = onInputChange,
-                    placeholder = { Text("username", color = MayasTheme.TextSecondary.copy(alpha = 0.5f)) },
+                    placeholder = { Text("@username", color = MayasTheme.TextSecondary.copy(alpha = 0.5f)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     isError = searchError != null,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = Color.Black.copy(alpha = 0.2f),
-                        unfocusedContainerColor = Color.Black.copy(alpha = 0.1f),
+                        focusedContainerColor = MayasTheme.Background,
+                        unfocusedContainerColor = MayasTheme.SurfaceVariant.copy(alpha = 0.5f),
                         focusedBorderColor = MayasTheme.GlowPurple,
-                        unfocusedBorderColor = Color.White.copy(alpha = 0.1f)
+                        unfocusedBorderColor = MayasTheme.Outline
                     )
                 )
-                if (searchError != null) {
-                    Text(
-                        text = searchError,
-                        color = MayasTheme.ErrorRed,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.padding(top = 6.dp)
-                    )
+
+                Spacer(Modifier.height(16.dp))
+
+                if (isSearching) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp).align(Alignment.CenterHorizontally), color = MayasTheme.GlowPurple)
+                } else if (foundUser != null) {
+                    val user = foundUser!!
+                    val userUid = user["uid"] as? String ?: ""
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MayasTheme.Surface)
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        MayasAvatar(
+                            url = if (user["useCustomAvatar"] as? Boolean == true) user["avatarUrl"] as? String else null,
+                            icon = user["profileIcon"] as? String ?: "ghost",
+                            glowColor = MayasTheme.GlowPurple,
+                            isPremium = user["isPremium"] as? Boolean ?: false,
+                            size = 64.dp,
+                            useCustomAvatar = user["useCustomAvatar"] as? Boolean ?: false,
+                            frameType = user["frameType"] as? String ?: "rainbow"
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(user["name"] as? String ?: "", color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold)
+                        Text("@${user["username"]}", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+
+                        Spacer(Modifier.height(12.dp))
+
+                        Button(
+                            onClick = {
+                                if (userUid == myUid) {
+                                    // ничего
+                                } else {
+                                    chatListVM.openOrCreateDirectChat(myUid, userUid) { chatId ->
+                                        onStartChat(chatId)
+                                        onDismiss()
+                                    }
+                                }
+                            },
+                            enabled = userUid != myUid,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.GlowPurple)
+                        ) {
+                            Text(if (userUid == myUid) "Это вы" else "Написать")
+                        }
+                    }
+                } else if (searchInput.length >= 3) {
+                    Text("Никого не нашли :(", color = MayasTheme.TextSecondary, modifier = Modifier.align(Alignment.CenterHorizontally))
                 }
             }
         },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MayasTheme.GlowPurple,
-                    contentColor = Color.White
-                )
-            ) {
-                Text("Найти", fontWeight = FontWeight.Bold)
-            }
-        },
+        confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Отмена", color = MayasTheme.TextSecondary.copy(alpha = 0.8f))
+                Text("Закрыть", color = MayasTheme.TextSecondary)
             }
         },
         containerColor = MayasTheme.Surface,
         shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(20.dp))
+        modifier = Modifier.border(1.dp, MayasTheme.Outline, RoundedCornerShape(20.dp))
     )
 }
 
-fun formatTime(timestamp: com.google.firebase.Timestamp): String {
-    val date = timestamp.toDate()
-    val now = java.util.Calendar.getInstance().time
-    val diff = now.time - date.time
+// УДАЛЕНО: перенесено в UserUtils.kt
+
+/**
+ * Форматирует Long (миллисекунды) в строку времени/даты для отображения в списке чатов.
+ * Сегодня — "14:35", раньше — "вчера" / "пн" / "12.06"
+ */
+fun formatTimestamp(millis: Long): String {
+    if (millis <= 0L) return ""
+    val date = Date(millis)
+    val now = Calendar.getInstance()
+    val then = Calendar.getInstance().apply { time = date }
+
     return when {
-        diff < 24 * 60 * 60 * 1000 ->
-            java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(date)
-        diff < 7 * 24 * 60 * 60 * 1000 ->
-            java.text.SimpleDateFormat("EEE", java.util.Locale("ru")).format(date)
-        else ->
-            java.text.SimpleDateFormat("dd.MM.yy", java.util.Locale.getDefault()).format(date)
+        now.get(Calendar.DATE) == then.get(Calendar.DATE) &&
+                now.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> {
+            SimpleDateFormat("HH:mm", Locale.getDefault()).format(date)
+        }
+        now.get(Calendar.DATE) - then.get(Calendar.DATE) == 1 &&
+                now.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> "вчера"
+        now.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> {
+            SimpleDateFormat("d MMM", Locale("ru")).format(date)
+        }
+        else -> SimpleDateFormat("dd.MM.yy", Locale.getDefault()).format(date)
     }
 }
 

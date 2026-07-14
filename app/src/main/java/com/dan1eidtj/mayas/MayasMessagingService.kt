@@ -14,20 +14,32 @@ class MayasMessagingService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        // TODO: Отправить этот токен в твою таблицу users в Supabase/Firestore,
-        // чтобы бэкенд знал, на какой девайс слать пуш этому юзеру.
+        // TODO: Отправить этот токен в таблицу users в Supabase (fcm_token),
+        // чтобы бэкенд знал, куда слать пуш этому юзеру.
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
 
-        // Достаем данные, которые пришлет нам Supabase Edge Function
+        when (message.data["type"]) {
+            "incoming_call" -> handleIncomingCallPush(message)
+            else -> handleChatMessagePush(message)
+        }
+    }
+
+    private fun handleIncomingCallPush(remoteMessage: RemoteMessage) {
+        val callId = remoteMessage.data["callId"] ?: return
+        val callerId = remoteMessage.data["callerId"] ?: return
+
+        CallConnectionService.startIncoming(applicationContext, callId, callerId)
+    }
+
+    private fun handleChatMessagePush(message: RemoteMessage) {
         val sender = message.data["senderName"] ?: "MAYAS"
         val text = message.data["text"] ?: "Новое сообщение"
 
-        createChannel()
+        createChatChannel()
 
-        // Интегрируем клик по уведомлению, чтобы при нажатии открывалось приложение
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
@@ -37,10 +49,10 @@ class MayasMessagingService : FirebaseMessagingService() {
         )
 
         val notification = NotificationCompat.Builder(this, "mayas_messages")
-            .setSmallIcon(android.R.drawable.sym_action_chat) // Твоя иконка
+            .setSmallIcon(android.R.drawable.sym_action_chat)
             .setContentTitle(sender)
             .setContentText(text)
-            .setAutoCancel(true) // Удалять пуш из шторки при клике
+            .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
@@ -49,7 +61,7 @@ class MayasMessagingService : FirebaseMessagingService() {
         manager.notify(System.currentTimeMillis().toInt(), notification)
     }
 
-    private fun createChannel() {
+    private fun createChatChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 "mayas_messages",

@@ -2,26 +2,26 @@ package com.dan1eidtj.mayas.core_ui.ui.components
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dan1eidtj.mayas.core.ui.theme.*
+import com.dan1eidtj.mayas.core.ui.theme.* // поправь под свой актуальный package для R, см. предыдущий ответ
+import com.dan1eidtj.mayas.ui.R
 import kotlinx.coroutines.delay
 import java.util.Calendar
 
@@ -36,7 +36,8 @@ fun SplashScreen() {
             day == 26 && month == 5 -> "dan1eYT С ДР!" to Color(0xFFFF0000)
             day == 14 && month == 2 -> "dan1e С ДР!" to Color(0xFFFF4081)
             day == 9 && month == 5 -> "С ПОБЕДОЙ!" to Color(0xFFFF9C06)
-            day == 1 && month == 6 -> "ЛЕТО В МАЯС." to Color(0xFF00FFC2)
+            day == 1 && month == 6 -> "ЛЕТО!" to Color(0xFF00FFC2)
+            day == 8 && month == 3 -> "8 февраля." to Color(0xFFFF4081)
             day == 31 && month == 12 -> "С НОВЫМ ГОДОМ!" to Color(0xFF00B1FF)
             else -> "м?" to MayasTheme.RedAccent
         }
@@ -45,29 +46,34 @@ fun SplashScreen() {
     val eventText = eventData.first
     val accentColor = eventData.second
 
-    val infinite = rememberInfiniteTransition(label = "cyber")
+    // Цвет самого лого зависит от темы: чёрное на светлой, белое на тёмной
+    val isDark = isSystemInDarkTheme()
+    val logoColor = if (isDark) Color.White else Color.Black
 
-    val rotation by infinite.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(20000, easing = LinearEasing))
-    )
+    val infinite = rememberInfiniteTransition(label = "cyber")
 
     val neonIntensity by infinite.animateFloat(
         initialValue = 0.7f, targetValue = 1.2f,
         animationSpec = infiniteRepeatable(tween(1500, easing = FastOutSlowInEasing), RepeatMode.Reverse)
     )
 
+    val logoProgress = remember { Animatable(0f) }
     val appearanceProgress = remember { Animatable(0f) }
+
     LaunchedEffect(Unit) {
-        appearanceProgress.animateTo(1f, animationSpec = tween(1200, easing = EaseOutBack))
+        logoProgress.animateTo(
+            1f,
+            animationSpec = tween(750, easing = CubicBezierEasing(0.17f, 1.6f, 0.3f, 1f))
+        )
+        appearanceProgress.animateTo(1f, animationSpec = tween(500, easing = LinearEasing))
     }
 
     var typedText by remember { mutableStateOf("") }
     LaunchedEffect(eventText) {
-        delay(600)
+        delay(950)
         eventText.forEachIndexed { index, _ ->
             typedText = eventText.take(index + 1)
-            delay(60) // Чуть помедленнее, чтобы читалось солидно
+            delay(60)
         }
     }
 
@@ -78,53 +84,69 @@ fun SplashScreen() {
         contentAlignment = Alignment.Center
     ) {
 
-
         StaticParticles(accentColor)
 
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
                 .graphicsLayer {
-                    alpha = appearanceProgress.value
-                    scaleX = 0.8f + (appearanceProgress.value * 0.2f)
-                    scaleY = 0.8f + (appearanceProgress.value * 0.2f)
+                    alpha = logoProgress.value.coerceIn(0f, 1f)
                 }
         ) {
 
-            Box(contentAlignment = Alignment.Center) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(160.dp)
+            ) {
 
-                Text(
-                    "!M",
-                    fontSize = 110.sp,
-                    fontWeight = FontWeight.Black,
-                    color = accentColor.copy(alpha = 0.3f),
-                    modifier = Modifier.blur(20.dp * neonIntensity)
+                // Неоновое свечение — красится в акцентный цвет события, не зависит от темы
+                Image(
+                    painter = painterResource(R.drawable.ic_logo),
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(accentColor.copy(alpha = 0.35f)),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .blur(24.dp * neonIntensity)
+                        .graphicsLayer {
+                            val s = logoTransform(logoProgress.value)
+                            scaleX = s.scale
+                            scaleY = s.scale
+                            translationX = s.translationX
+                            translationY = s.translationY
+                            rotationZ = s.rotation
+                        }
                 )
 
-                Text(
-                    "!M",
-                    fontSize = 110.sp,
-                    fontWeight = FontWeight.Black,
-                    color = accentColor,
-                    style = TextStyle(
-                        shadow = Shadow(accentColor, offset = Offset(0f, 0f), blurRadius = 30f * neonIntensity)
-                    )
+                // Основное изображение — красится под тему: чёрное/белое
+                Image(
+                    painter = painterResource(R.drawable.ic_logo),
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(logoColor),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val s = logoTransform(logoProgress.value)
+                            scaleX = s.scale
+                            scaleY = s.scale
+                            translationX = s.translationX
+                            translationY = s.translationY
+                            rotationZ = s.rotation
+                        }
                 )
             }
 
             Spacer(Modifier.height(20.dp))
-
 
             Text(
                 "МАЯС",
                 fontSize = 28.sp,
                 fontWeight = FontWeight.ExtraLight,
                 letterSpacing = 12.sp,
-                color = MayasTheme.TextPrimary
+                color = MayasTheme.TextPrimary,
+                modifier = Modifier.graphicsLayer { alpha = appearanceProgress.value }
             )
 
             Spacer(Modifier.height(16.dp))
-
 
             Box(contentAlignment = Alignment.CenterStart) {
                 Text(
@@ -136,7 +158,6 @@ fun SplashScreen() {
                 )
             }
         }
-
 
         Box(
             modifier = Modifier
@@ -156,10 +177,32 @@ fun SplashScreen() {
     }
 }
 
+private data class LogoTransform(
+    val scale: Float,
+    val translationX: Float,
+    val translationY: Float,
+    val rotation: Float
+)
+
+private fun logoTransform(progress: Float): LogoTransform {
+    val p = progress.coerceIn(0f, 1f)
+    return LogoTransform(
+        scale = 0.5f + p * 0.5f,
+        translationX = (1f - p) * 140f,
+        translationY = (1f - p) * -160f,
+        rotation = (1f - p) * -35f
+    )
+}
+
 @Composable
 fun StaticParticles(color: Color) {
+    val infinite = rememberInfiniteTransition(label = "particles")
+    val twinkle by infinite.animateFloat(
+        initialValue = 0.1f, targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(tween(2000, easing = FastOutSlowInEasing), RepeatMode.Reverse)
+    )
     val particles = remember { List(20) { Offset((0..1000).random().toFloat(), (0..2000).random().toFloat()) } }
-    Canvas(modifier = Modifier.fillMaxSize().alpha(0.2f)) {
+    Canvas(modifier = Modifier.fillMaxSize().alpha(twinkle)) {
         particles.forEach { offset ->
             drawCircle(
                 color = color,

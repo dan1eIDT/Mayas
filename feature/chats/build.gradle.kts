@@ -5,13 +5,10 @@ plugins {
 
 android {
     namespace = "com.dan1eidtj.chats"
-    compileSdk {
-        version = release(36)
-    }
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 24
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         consumerProguardFiles("consumer-rules.pro")
     }
@@ -39,46 +36,57 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.foundation)
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
+    implementation(libs.androidx.animation)
+    implementation(libs.androidx.ui.unit)
+
     implementation(project(":core:ui"))
     implementation(project(":core:data"))
+    implementation(project(":core:network"))
     implementation(project(":feature:auth"))
     implementation(project(":feature:chat"))
-    debugImplementation("androidx.compose.ui:ui-tooling:1.6.0")
-    implementation("androidx.compose.ui:ui-tooling-preview:1.6.0")
+
+    // Firebase
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
-    implementation(platform("androidx.compose:compose-bom:2024.04.01"))
-    implementation("com.google.firebase:firebase-messaging-ktx")
-    implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth-ktx")
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    implementation("androidx.activity:activity-compose:1.8.2")
-    implementation("androidx.compose.material3:material3:1.1.2")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
-    implementation("androidx.compose.material:material-icons-extended:1.6.1")
-    implementation("androidx.multidex:multidex:2.0.1")
-    implementation ("androidx.compose.material3:material3:1.2.0")
-    implementation ("io.coil-kt:coil-compose:2.5.0")
-    implementation ("io.coil-kt:coil:2.6.0")
-    implementation ("com.google.firebase:firebase-bom:32.7.0")
-    implementation ("com.google.firebase:firebase-auth-ktx")
-    implementation ("com.google.firebase:firebase-firestore-ktx")
-    implementation ("com.google.firebase:firebase-storage-ktx")
-    implementation ("androidx.navigation:navigation-compose:2.7.7")
-    implementation("androidx.activity:activity-compose:1.9.0")
-    implementation("io.coil-kt:coil-compose:2.6.0")
-    debugImplementation("androidx.compose.ui:ui-tooling")
+    implementation("com.google.firebase:firebase-messaging-ktx")
+    implementation("com.google.firebase:firebase-analytics")
+
+    // Compose
+    implementation(platform("androidx.compose:compose-bom:2024.04.01"))
+    implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.ui:ui:1.6.0")
-    implementation("androidx.compose.ui:ui-tooling-preview:1.6.0")
     implementation("androidx.compose.material3:material3:1.2.0")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.activity:activity-compose:1.9.0")
+    implementation("androidx.navigation:navigation-compose:2.7.7")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Lifecycle
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
+
+    // Ktor & Serialization
+    val ktor_version = "3.0.1"
+    implementation("io.ktor:ktor-client-android:$ktor_version")
+    implementation("io.ktor:ktor-client-content-negotiation:$ktor_version")
+    implementation("io.ktor:ktor-serialization-kotlinx-json:$ktor_version")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
+    // Coil
+    implementation("io.coil-kt:coil:2.6.0")
+    implementation("io.coil-kt:coil-compose:2.6.0")
+
+    // Supabase (if needed, as seen in previous version)
     implementation(platform("io.github.jan-tennert.supabase:bom:3.6.0"))
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
-    implementation("io.ktor:ktor-client-android:3.5.0")
-    implementation("io.github.jan-tennert.supabase:storage-kt:3.6.0")
+    implementation("io.github.jan-tennert.supabase:storage-kt")
+
+    implementation("androidx.multidex:multidex:2.0.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
 }

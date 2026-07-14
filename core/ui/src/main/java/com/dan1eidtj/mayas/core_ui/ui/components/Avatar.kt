@@ -1,94 +1,128 @@
 package com.dan1eidtj.mayas.core_ui.ui.components
 
-import android.content.res.Configuration
-import android.net.Uri
-import android.os.Bundle
-import android.util.Log
-
-// === ANDROIDX - ACTIVITY ===
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-
-// === ANDROIDX - COMPOSE: FOUNDATION ===
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.draw.shadow
-
-// === ANDROIDX - COMPOSE: MATERIAL & ICONS ===
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-
-// === ANDROIDX - COMPOSE: RUNTIME & UI ===
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.tooling.preview.Devices
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-
-
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
-// === ANDROIDX - ANIMATION ===
-
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.animation.core.*
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-
-
-// === ANDROIDX - LIFECYCLE & NAVIGATION ===
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavType
-import androidx.navigation.compose.*
-import androidx.navigation.navArgument
-
-// === THIRD-PARTY: COIL ===
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.google.firebase.messaging.FirebaseMessaging
 import coil.request.ImageRequest
-import coil.request.CachePolicy
+import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 
-// === THIRD-PARTY: FIREBASE ===
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.FirebaseUser
-import com.google.firebase.auth.UserProfileChangeRequest
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.Query
-import com.google.firebase.firestore.SetOptions
-import com.google.firebase.storage.FirebaseStorage
-import com.google.firebase.firestore.ListenerRegistration
-import com.google.firebase.Timestamp
+@Composable
+fun MayasAvatar(
+    url: String?,
+    icon: String,
+    glowColor: Color,
+    isPremium: Boolean,
+    modifier: Modifier = Modifier,
+    size: Dp = 116.dp,
+    useCustomAvatar: Boolean = true,
+    frameType: String = "rainbow"
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "PremiumGlow")
+    val angle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "Angle"
+    )
 
+    val frameBrush = when (frameType) {
+        "gold" -> Brush.sweepGradient(MayasTheme.FrameGold)
+        "neon" -> Brush.sweepGradient(MayasTheme.FrameNeon)
+        "fire" -> Brush.sweepGradient(MayasTheme.FrameFire)
+        "black" -> Brush.sweepGradient(MayasTheme.FrameBlack)
+        else -> Brush.sweepGradient(MayasTheme.FrameDefault)
+    }
 
-// === KOTLINX COROUTINES ===
-import kotlinx.coroutines.delay
+    Box(
+        modifier = modifier
+            .size(size),
+        contentAlignment = Alignment.Center
+    ) {
+        // Frame for Premium
+        if (isPremium && frameType != "none") {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .drawWithContent {
+                        if (frameType == "black") {
+                            // Статичное кольцо под анимированным бликом — без него
+                            // чёрная рамка периодически "пропадает" на тёмном фоне,
+                            // когда светлый блик оказывается на дальней стороне круга.
+                            drawCircle(
+                                color = MayasTheme.FrameBlackHalo,
+                                radius = (size.toPx() / 2) - 2.dp.toPx(),
+                                style = Stroke(width = 5.dp.toPx())
+                            )
+                        }
+                        drawCircle(
+                            brush = frameBrush,
+                            radius = (size.toPx() / 2) - 2.dp.toPx(),
+                            style = Stroke(width = 4.dp.toPx())
+                        )
+                        drawContent()
+                    }
+                    .graphicsLayer { rotationZ = angle }
+            )
+        }
+
+        // Main Avatar Circle
+        Box(
+            modifier = Modifier
+                .size(if (isPremium && frameType != "none") size - 12.dp else size)
+                .clip(CircleShape)
+                .then(
+                    if (useCustomAvatar && !url.isNullOrBlank()) {
+                        Modifier.background(Color.Transparent)
+                    } else {
+                        Modifier.background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    glowColor.copy(alpha = 0.8f),
+                                    Color(0xFF1E1F22)
+                                )
+                            )
+                        )
+                    }
+                )
+                .then(
+                    if (!isPremium) Modifier.border(2.5.dp, glowColor, CircleShape)
+                    else Modifier.border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            if (useCustomAvatar && !url.isNullOrBlank()) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(url)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                ProfileIcon(icon = icon, size = if (size < 60.dp) 24.dp else 58.dp)
+            }
+        }
+    }
+}

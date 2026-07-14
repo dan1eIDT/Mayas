@@ -1,4 +1,4 @@
-package com.dan1eidtj.mayas.db // Пакет должен совпадать с Dao, если они в одной папке!
+package com.dan1eidtj.mayas.db
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
@@ -9,19 +9,20 @@ data class ChatEntity(
     val isGroup: Boolean,
     val groupName: String?,
     val groupAvatarUrl: String?,
+    val groupIcon: String? = null,
+    val useCustomAvatar: Boolean = false,
     val lastMessage: String?,
     val unreadCount: Int,
     val updatedAt: Long,
-
-    // Новые поля, которые мы обсуждали для профилей и групп:
-    val description: String? = "",
-    val ownerId: String? = "",
-    val adminsList: String? = "",
+    val description: String? = null,
+    val ownerId: String? = null,
+    val adminsList: List<String> = emptyList(),
     val isPublic: Boolean = false,
-
-    // Кэш для личных чатов
-    val partnerName: String?,
-    val partnerAvatarUrl: String?,
-    val partnerProfileGlow: String?,
-    val partnerEmoji: String?
+    val isPinned: Boolean = false,
+    val partnerUid: String? = null,
+    val partnerName: String? = null,
+    val partnerAvatarUrl: String? = null,
+    val partnerProfileGlow: String? = null,
+    val partnerEmoji: String? = null,
+    val typingText: String? = null
 )

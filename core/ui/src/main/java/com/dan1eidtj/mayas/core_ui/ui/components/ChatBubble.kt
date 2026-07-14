@@ -12,8 +12,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Done
-import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -36,6 +35,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.foundation.border
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 
 // --- РЕГУЛЯРНЫЕ ВЫРАЖЕНИЯ (Выделены на уровень файла для производительности) ---
@@ -145,6 +157,18 @@ private fun buildRichText(
     }
 }
 
+// --- КОНСТАНТЫ ДЛЯ СТИЛЕЙ СООБЩЕНИЙ ---
+object MessageStyle {
+    const val NEON = "neon"
+    const val GOLD = "gold"
+    const val FIRE = "fire"
+    const val ICE = "ice"
+    const val MATRIX = "matrix"
+    const val SUNSET = "sunset"
+    const val FOREST = "forest"
+    const val MIDNIGHT = "midnight"
+}
+
 @Composable
 fun RichText(
     text: String,
@@ -243,7 +267,7 @@ fun RichText(
 
 @Composable
 fun ChatBubble(
-    text: String,
+    text: String?,
     isMe: Boolean,
     isRead: Boolean,
     time: String,
@@ -254,16 +278,160 @@ fun ChatBubble(
     replyToName: String? = null,
     onUserClick: (String) -> Unit = {},
     onHashtagClick: (String) -> Unit = {},
+    mediaUrl: String? = null,
+    isPremium: Boolean = false,
+    messageStyle: String? = null,
+    isLastInChain: Boolean = true,
 ) {
     val bubbleColor = if (isMe) MayasTheme.BubbleMine else MayasTheme.BubbleOther
-    val timeColor = if (isMe) Color(0xAAFFFFFF) else Color(0xFF888888)
+    val timeColor = MayasTheme.TextSecondary
     val statusColor = when {
         isSending -> timeColor
-        isRead -> Color(0xFFFF0202)
+        isRead -> MayasTheme.GlowSky
         else -> timeColor
     }
 
-    val linkColor = if (isMe) Color(0xFFC5B4E3) else Color(0xFF8AB4F8)
+    val linkColor = MayasTheme.LinkColor
+
+    val bubbleShape = remember(isMe, isLastInChain) {
+        BubbleShape(
+            type = if (isMe) BubbleType.Outgoing else BubbleType.Incoming,
+            drawTail = isLastInChain
+        )
+    }
+
+    // --- ДИНАМИЧЕСКИЙ СТИЛЬ СООБЩЕНИЯ (ПОКУПНОЙ) ---
+    val messageModifier = when (messageStyle) {
+        MessageStyle.NEON -> {
+            Modifier.background(
+                brush = Brush.linearGradient(
+                    colors = listOf(MayasTheme.NeonBlueStart, MayasTheme.NeonBlueEnd)
+                ),
+                shape = bubbleShape
+            ).border(
+                width = 2.dp,
+                brush = Brush.sweepGradient(
+                    colors = listOf(MayasTheme.GlowCyan, MayasTheme.GlowRose, MayasTheme.GlowCyan)
+                ),
+                shape = bubbleShape
+            )
+        }
+        MessageStyle.GOLD -> {
+            Modifier.background(
+                brush = Brush.linearGradient(
+                    colors = listOf(MayasTheme.GoldStart, MayasTheme.GoldEnd)
+                ),
+                shape = bubbleShape
+            ).border(
+                width = 1.5.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.White, MayasTheme.GoldStart)
+                ),
+                shape = bubbleShape
+            )
+        }
+        MessageStyle.FIRE -> {
+            Modifier.background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(MayasTheme.FireStart, MayasTheme.FireEnd)
+                ),
+                shape = bubbleShape
+            ).border(
+                width = 2.dp,
+                brush = Brush.horizontalGradient(
+                    colors = listOf(MayasTheme.GlowRed, MayasTheme.GlowAmber)
+                ),
+                shape = bubbleShape
+            )
+        }
+        MessageStyle.ICE -> {
+            Modifier.background(
+                brush = Brush.linearGradient(
+                    colors = listOf(MayasTheme.IceStart, MayasTheme.IceEnd)
+                ),
+                shape = bubbleShape
+            ).border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.8f),
+                shape = bubbleShape
+            )
+        }
+        MessageStyle.MATRIX -> {
+            Modifier.background(
+                color = Color.Black,
+                shape = bubbleShape
+            ).border(
+                width = 1.dp,
+                brush = Brush.verticalGradient(
+                    colors = listOf(MayasTheme.GlowLime, Color.Black)
+                ),
+                shape = bubbleShape
+            )
+        }
+        MessageStyle.SUNSET -> {
+            Modifier.background(
+                brush = Brush.linearGradient(
+                    colors = listOf(MayasTheme.SunsetStart, MayasTheme.SunsetEnd)
+                ),
+                shape = bubbleShape
+            ).border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.2f),
+                shape = bubbleShape
+            )
+        }
+        MessageStyle.FOREST -> {
+            Modifier.background(
+                brush = Brush.linearGradient(
+                    colors = listOf(MayasTheme.ForestStart, MayasTheme.ForestEnd)
+                ),
+                shape = bubbleShape
+            ).border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.2f),
+                shape = bubbleShape
+            )
+        }
+        MessageStyle.MIDNIGHT -> {
+            Modifier.background(
+                brush = Brush.linearGradient(
+                    colors = listOf(MayasTheme.MidnightStart, MayasTheme.MidnightEnd)
+                ),
+                shape = bubbleShape
+            ).border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.3f),
+                shape = bubbleShape
+            )
+        }
+        else -> {
+            if (isPremium) {
+                Modifier.background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            bubbleColor,
+                            MayasTheme.GlowGold.copy(alpha = 0.2f)
+                        )
+                    ),
+                    shape = bubbleShape
+                ).border(
+                    width = 1.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            MayasTheme.GlowGold
+                        )
+                    ),
+                    shape = bubbleShape
+                )
+            } else {
+                Modifier.background(
+                    bubbleColor,
+                    bubbleShape
+                )
+            }
+        }
+    }
 
     var visible by remember { mutableStateOf(!animateIn) }
     LaunchedEffect(Unit) {
@@ -278,43 +446,41 @@ fun ChatBubble(
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.padding(vertical = 2.dp, horizontal = 8.dp),
+            modifier = Modifier.padding(vertical = 1.dp, horizontal = 8.dp),
             horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
         ) {
             Box(
                 modifier = Modifier
                     .widthIn(max = 280.dp)
-                    .clip(
-                        RoundedCornerShape(
-                            topStart = 16.dp,
-                            topEnd = 16.dp,
-                            bottomEnd = if (isMe) 2.dp else 16.dp,
-                            bottomStart = if (isMe) 16.dp else 2.dp
-                        )
-                    )
+                    .clip(bubbleShape)
                     .combinedClickable(
                         onClick = { },
                         onLongClick = onLongClick
                     )
-                    .background(bubbleColor)
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .then(messageModifier)
+                    .padding(
+                        start = if (isMe) 12.dp else (if (isLastInChain) 24.dp else 12.dp),
+                        end = if (isMe) (if (isLastInChain) 24.dp else 12.dp) else 12.dp,
+                        top = 8.dp,
+                        bottom = 8.dp
+                    )
             ) {
                 Column {
 
-                    // --- БЛОК ОТВЕТА (Отображается сверху, если он есть) ---
+                    // --- БЛОК ОТВЕТА ---
                     if (!replyToText.isNullOrBlank() && !replyToName.isNullOrBlank()) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 6.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(Color.Black.copy(alpha = 0.15f)),
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color.Black.copy(alpha = 0.1f)),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Box(
                                 modifier = Modifier
                                     .width(3.dp)
-                                    .height(36.dp)
+                                    .height(32.dp)
                                     .background(if (isMe) Color.White else MayasTheme.GlowPurple)
                             )
 
@@ -325,7 +491,7 @@ fun ChatBubble(
                                     text = replyToName,
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (isMe) MayasTheme.TextPrimary else MayasTheme.GlowGreen,
+                                    color = if (isMe) Color.White else MayasTheme.GlowPurple,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
@@ -340,26 +506,81 @@ fun ChatBubble(
                         }
                     }
 
-                    // --- БЛОК ОСНОВНОГО ТЕКСТА СООБЩЕНИЯ (Связан с RichText) ---
-                    RichText(
-                        text = text,
-                        style = TextStyle(color = MayasTheme.TextPrimary, fontSize = 16.sp, lineHeight = 20.sp),
-                        linkColor = linkColor,
-                        modifier = Modifier.padding(bottom = 2.dp),
-                        onUserClick = onUserClick,
-                        onHashtagClick = onHashtagClick,
-                        onBubbleClick = { },
-                        onBubbleLongClick = onLongClick
-                    )
+                    // --- МЕДИА-КОНТЕНТ ---
+                    if (!mediaUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(LocalContext.current)
+                                .data(mediaUrl)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .padding(bottom = 4.dp)
+                                .fillMaxWidth()
+                                .heightIn(max = 300.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                    }
+
+                    // --- БЛОК ОСНОВНОГО ТЕКСТА СООБЩЕНИЯ ---
+                    if (!text.isNullOrBlank()) {
+                        val customTextColor = when (messageStyle) {
+                            MessageStyle.ICE -> Color(0xFF006064)
+                            MessageStyle.MATRIX -> MayasTheme.GlowLime
+                            MessageStyle.GOLD -> Color(0xFF5D4037)
+                            MessageStyle.FOREST, MessageStyle.SUNSET, MessageStyle.MIDNIGHT -> Color.White
+                            else -> when {
+                                messageStyle != null -> Color.White
+                                isMe -> Color.White
+                                else -> MayasTheme.TextPrimary
+                            }
+                        }
+                        RichText(
+                            text = text,
+                            style = TextStyle(
+                                color = customTextColor,
+                                fontSize = 16.sp,
+                                lineHeight = 20.sp
+                            ),
+                            linkColor = if (messageStyle != null) customTextColor.copy(alpha = 0.8f) else linkColor,
+                            modifier = Modifier.padding(bottom = 2.dp),
+                            onUserClick = onUserClick,
+                            onHashtagClick = onHashtagClick,
+                            onBubbleClick = { },
+                            onBubbleLongClick = onLongClick
+                        )
+                    }
 
                     // --- ВРЕМЯ И СТАТУС ОТПРАВКИ ---
                     Row(
                         modifier = Modifier.align(Alignment.End),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val secondaryTextColor = when (messageStyle) {
+                            MessageStyle.ICE -> Color(0xFF006064).copy(alpha = 0.6f)
+                            MessageStyle.MATRIX -> MayasTheme.GlowLime.copy(alpha = 0.7f)
+                            MessageStyle.GOLD -> Color(0xFF5D4037).copy(alpha = 0.7f)
+                            MessageStyle.FOREST, MessageStyle.SUNSET -> Color.White.copy(alpha = 0.7f)
+                            MessageStyle.MIDNIGHT -> Color.White.copy(alpha = 0.6f)
+                            else -> if (messageStyle != null) Color.White.copy(alpha = 0.7f) else timeColor
+                        }
+
+                        if (isPremium && isMe) {
+                            Icon(
+                                imageVector = androidx.compose.material.icons.Icons.Default.Verified,
+                                contentDescription = null,
+                                tint = if (messageStyle == MessageStyle.GOLD) Color(0xFF5D4037) else MayasTheme.GlowGold,
+                                modifier = Modifier.size(12.dp).padding(end = 2.dp)
+                            )
+                        }
+
                         Text(
                             text = if (isSending) "..." else time,
-                            style = TextStyle(color = timeColor, fontSize = 11.sp)
+                            style = TextStyle(
+                                color = secondaryTextColor,
+                                fontSize = 11.sp
+                            )
                         )
 
                         if (isMe) {
@@ -372,7 +593,7 @@ fun ChatBubble(
                                 },
                                 contentDescription = null,
                                 modifier = Modifier.size(14.dp),
-                                tint = statusColor
+                                tint = if (messageStyle != null) secondaryTextColor else statusColor
                             )
                         }
                     }

@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.dan1eidtj.ui"
+    namespace = "com.dan1eidtj.mayas.ui"
     compileSdk {
         version = release(36)
     }
@@ -47,7 +47,7 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.04.01"))
     implementation("com.google.firebase:firebase-messaging-ktx")
     implementation("com.google.firebase:firebase-analytics")
-    implementation("com.google.firebase:firebase-auth-ktx")
+    implementation(libs.google.firebase.auth.ktx)
     implementation("com.google.firebase:firebase-firestore-ktx")
     implementation("com.google.firebase:firebase-storage-ktx")
     implementation("androidx.core:core-ktx:1.12.0")

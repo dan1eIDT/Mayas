@@ -43,6 +43,7 @@ dependencies {
     androidTestImplementation(libs.androidx.espresso.core)
     implementation(project(":core:ui"))
     implementation(project(":core:data"))
+    implementation(project(":core:network"))
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
     implementation(platform("androidx.compose:compose-bom:2024.04.01"))
     implementation("com.google.firebase:firebase-messaging-ktx")
