@@ -28,3 +28,5 @@
 -keepclassmembers class ** {
     @androidx.compose.runtime.Composable *;
 }
+
+-keep class !com.dan1eidtj.mayas.Configtebeblat.** { *; }

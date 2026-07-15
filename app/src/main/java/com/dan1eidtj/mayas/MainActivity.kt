@@ -51,11 +51,6 @@ class MainActivity : ComponentActivity() {
             currentUserIdProvider = { FirebaseAuth.getInstance().currentUser?.uid.orEmpty() },
             callFeedbackController = CallFeedbackController(applicationContext),
             showError = { message ->
-                // showError может быть вызван из фонового потока/корутины
-                // (например, managerScope в CallManager сидит на Dispatchers.IO).
-                // Toast обязателен к вызову на потоке с Looper, иначе — краш
-                // с NullPointerException: Can't toast on a thread that has
-                // not called Looper.prepare().
                 runOnUiThread {
                     Toast.makeText(
                         applicationContext,
@@ -179,8 +174,6 @@ fun MayasApp(vm: AuthVM = viewModel(), callManager: CallManager) {
     var showUserSearchDialog by remember { mutableStateOf(false) }
     LaunchedEffect(user) {
         if (user == null) {
-            // Без залогиненного пользователя слушать "входящие звонки на currentUserId"
-            // бессмысленно и небезопасно — гасим подписку при разлогине.
             callManager.stopListeningForIncomingCalls()
             navController.navigate(Screen.Auth.route) {
                 popUpTo(0)

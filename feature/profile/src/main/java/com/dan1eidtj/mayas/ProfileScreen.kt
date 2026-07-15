@@ -98,6 +98,7 @@ fun ProfileScreen(
     var verifiedIcon by remember { mutableStateOf("verified") }
     var avatarFrame by remember { mutableStateOf("none") }
     var adsWatchedToday by remember { mutableIntStateOf(0) }
+    var adsResetAt by remember { mutableStateOf(0L) } // millis; когда обнулять adsWatchedToday
     var isInvisible by remember { mutableStateOf(false) }
     var nameColor by remember { mutableStateOf("gold") }
 
@@ -174,6 +175,7 @@ fun ProfileScreen(
                     verifiedIcon = data["verifiedIcon"] as? String ?: "verified"
                     avatarFrame = data["avatarFrame"] as? String ?: "none"
                     adsWatchedToday = (data["adsWatchedToday"] as? Long)?.toInt() ?: 0
+                    adsResetAt = (data["adsResetAt"] as? Timestamp)?.toDate()?.time ?: 0L
                     isInvisible = data["isInvisible"] as? Boolean ?: false
                     nameColor = data["nameColor"] as? String ?: "gold"
                     messagesSent = (data["messagesSent"] as? Long)?.toInt() ?: 0
@@ -185,6 +187,29 @@ fun ProfileScreen(
             }
         }
         onDispose { reg.remove() }
+    }
+
+
+    LaunchedEffect(finalId, isGroup, isMyProfile, adsResetAt, adsWatchedToday) {
+        if (isGroup || !isMyProfile || finalId.isBlank()) return@LaunchedEffect
+        val now = System.currentTimeMillis()
+        val dayMillis = 24 * 60 * 60 * 1000L
+        val needsReset = (adsResetAt == 0L && adsWatchedToday > 0) || (adsResetAt != 0L && now >= adsResetAt)
+        if (needsReset) {
+            val newResetAt = now + dayMillis
+            vm.db.collection("users").document(finalId)
+                .update(
+                    mapOf(
+                        "adsWatchedToday" to 0,
+                        "adsResetAt" to Timestamp(Date(newResetAt))
+                    )
+                )
+                .addOnSuccessListener {
+                    adsWatchedToday = 0
+                    adsResetAt = newResetAt
+                }
+                .addOnFailureListener { e -> Log.e("AdsDebug", "Ошибка сброса таймера рекламы", e) }
+        }
     }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -273,8 +298,8 @@ fun ProfileScreen(
                         membersCount = membersUids.size, messagesSent = messagesSent,
                         groupCreatedAt = groupCreatedAt, isGroupAdmin = isGroupAdmin,
                         onUsernameClick = {
-                            val link = "https://mayas.app/$username"
-                            val clip = ClipData.newPlainText("MayasLink", link)
+                            val link = "@$username"
+                            val clip = ClipData.newPlainText("MayasUN", link)
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(clip)
                             Toast.makeText(context, "Ссылка скопирована", Toast.LENGTH_SHORT).show()
@@ -374,16 +399,26 @@ fun ProfileScreen(
                                     AdsManager.showRewarded(
                                         activity = activity,
                                         onReward = {
+                                            val isFirstOfCycle = adsWatchedToday == 0
                                             val newCount = adsWatchedToday + 1
                                             val newBalance = balance + 250
+                                            val newResetAt = System.currentTimeMillis() + 24 * 60 * 60 * 1000L
 
+                                            val updates = mutableMapOf<String, Any>(
+                                                "adsWatchedToday" to newCount,
+                                                "balance" to newBalance
+                                            )
+                                            if (isFirstOfCycle) {
+                                                updates["adsResetAt"] = Timestamp(Date(newResetAt))
+                                            }
 
                                             vm.db.collection("users").document(finalId)
-                                                .update(mapOf("adsWatchedToday" to newCount, "balance" to newBalance))
+                                                .update(updates)
                                                 .addOnSuccessListener {
                                                     isAdLoading = false
                                                     adsWatchedToday = newCount
                                                     balance = newBalance
+                                                    if (isFirstOfCycle) adsResetAt = newResetAt
                                                     Toast.makeText(context, "Эта реклама была демо, но ладно держи 250.", Toast.LENGTH_SHORT).show()
                                                 }
                                                 .addOnFailureListener { e ->
@@ -941,10 +976,6 @@ fun GroupMembersScreen(
     }
 }
 
-// ── GroupMembersBottomSheet ──────────────────────────────────────────────────
-// Тот же функционал, что и в GroupMembersScreen (список участников + действия
-// админа/модератора), но показывается окошком поверх текущего экрана, без
-// перехода на отдельный роут в навигации.
 
 @Composable
 fun GroupMembersBottomSheet(
@@ -963,10 +994,6 @@ fun GroupMembersBottomSheet(
 
     fun showSnack(text: String) { coroutineScope.launch { snackbarHostState.showSnackbar(text) } }
 
-    // ИСПРАВЛЕНО: рантайм-краш NoSuchMethodError на rememberModalBottomSheetState
-    // (конфликт версий material3 в разных модулях/dex). Заменил ModalBottomSheet
-    // на обычный Dialog, стилизованный под bottom sheet — не зависит от
-    // экспериментального API material3 и не может так падать.
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)

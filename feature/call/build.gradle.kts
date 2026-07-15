@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.dan1eidtj.mayas.feature.call"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 24
