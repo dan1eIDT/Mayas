@@ -75,11 +75,15 @@ import coil.request.ImageRequest
 import com.dan1eidtj.mayas.CallType
 import com.dan1eidtj.mayas.core_ui.ui.components.BubbleShape
 import com.dan1eidtj.mayas.core_ui.ui.components.BubbleType
+import com.dan1eidtj.mayas.core_ui.ui.components.FullScreenImageViewer
 import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
 import com.dan1eidtj.mayas.core_ui.ui.components.MessageStyle
 import com.dan1eidtj.mayas.core_ui.utils.getGlowColor
 import com.dan1eidtj.mayas.core_ui.utils.getNameColorBrush
 import com.dan1eidtj.mayas.feature.auth.AuthVM
+import com.dan1eidtj.mayas.storage.B2Image
+import com.dan1eidtj.mayas.storage.B2MediaClient
+import com.dan1eidtj.mayas.storage.rememberResolvedAvatarUrl
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -273,9 +277,10 @@ fun ChatScreen(
 
     var selectedMessage by remember { mutableStateOf<Message?>(null) }
     var replyMessage by remember { mutableStateOf<Message?>(null) }
+    var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
 
     val chatTitle = if (chatVM.partnerName == "Группа") "" else chatVM.partnerName
-    val chatAvatarUrl = chatVM.partnerAvatarUrl
+    val chatAvatarUrl = rememberResolvedAvatarUrl(chatVM.partnerAvatarUrl, chatVM.partnerUseCustomAvatar)
     val chatUseCustomAvatar = chatVM.partnerUseCustomAvatar
     val chatProfileIcon = chatVM.partnerProfileIcon ?: "default"
     val chatProfileGlow = chatVM.partnerProfileGlow ?: "purple"
@@ -358,7 +363,7 @@ fun ChatScreen(
 
     fun playMessageSound() {
         if (audioManager.ringerMode == AudioManager.RINGER_MODE_NORMAL) {
-            
+
         }
     }
 
@@ -454,25 +459,44 @@ fun ChatScreen(
                             },
                             title = {
                                 Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.clickable {
-                                        val profileTargetId =
-                                            (if (chatVM.isGroupChat) chatId else partnerUid).orEmpty()
-                                        if (profileTargetId.isNotBlank()) {
-                                            onOpenProfile(profileTargetId, chatVM.isGroupChat)
-                                        }
-                                    }
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    MayasAvatar(
-                                        url = chatAvatarUrl,
-                                        icon = chatProfileIcon,
-                                        glowColor = partnerGlowColor,
-                                        isPremium = partnerIsPremium && !chatVM.isGroupChat,
-                                        useCustomAvatar = chatUseCustomAvatar,
-                                        size = 40.dp,
-                                        frameType = if (!chatVM.isGroupChat) chatVM.partnerAvatarFrame else "none"
-                                    )
+                                    Box(
+                                        modifier = Modifier.combinedClickable(
+                                            onClick = {
+                                                val profileTargetId =
+                                                    (if (chatVM.isGroupChat) chatId else partnerUid).orEmpty()
+                                                if (profileTargetId.isNotBlank()) {
+                                                    onOpenProfile(profileTargetId, chatVM.isGroupChat)
+                                                }
+                                            },
+                                            onLongClick = {
+                                                if (chatUseCustomAvatar && !chatAvatarUrl.isNullOrBlank()) {
+                                                    fullScreenImageUrl = chatAvatarUrl
+                                                }
+                                            }
+                                        )
+                                    ) {
+                                        MayasAvatar(
+                                            url = chatAvatarUrl,
+                                            icon = chatProfileIcon,
+                                            glowColor = partnerGlowColor,
+                                            isPremium = partnerIsPremium && !chatVM.isGroupChat,
+                                            useCustomAvatar = chatUseCustomAvatar,
+                                            size = 40.dp,
+                                            frameType = if (!chatVM.isGroupChat) chatVM.partnerAvatarFrame else "none"
+                                        )
+                                    }
                                     Spacer(Modifier.width(12.dp))
+                                    Box(
+                                        modifier = Modifier.clickable {
+                                            val profileTargetId =
+                                                (if (chatVM.isGroupChat) chatId else partnerUid).orEmpty()
+                                            if (profileTargetId.isNotBlank()) {
+                                                onOpenProfile(profileTargetId, chatVM.isGroupChat)
+                                            }
+                                        }
+                                    ) {
                                     Column {
 
                                         Row(
@@ -558,6 +582,7 @@ fun ChatScreen(
                                                 }
                                             }
                                         }
+                                    }
                                     }
                                 }
                             },
@@ -1061,23 +1086,28 @@ fun ChatScreen(
                                                         }
                                                     }
                                                 }
-
                                                 if (!msg.mediaUrl.isNullOrBlank()) {
-                                                    AsyncImage(
-                                                        model = ImageRequest.Builder(LocalContext.current)
-                                                            .data(msg.mediaUrl)
-                                                            .crossfade(true)
-                                                            .build(),
+                                                    B2Image(
+                                                        key = msg.mediaUrl,
                                                         contentDescription = null,
                                                         modifier = Modifier
                                                             .padding(bottom = 6.dp)
                                                             .fillMaxWidth()
                                                             .heightIn(max = 300.dp)
-                                                            .clip(RoundedCornerShape(8.dp)),
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .clickable {
+                                                                val mediaKey = msg.mediaUrl!!
+                                                                if (mediaKey.startsWith("http")) {
+                                                                    fullScreenImageUrl = mediaKey
+                                                                } else {
+                                                                    coroutineScope.launch {
+                                                                        fullScreenImageUrl = B2MediaClient.resolveDownloadUrl(mediaKey)
+                                                                    }
+                                                                }
+                                                            },
                                                         contentScale = ContentScale.Crop
                                                     )
                                                 }
-
                                                 if (!msg.voiceUrl.isNullOrBlank()) {
                                                     VoiceMessageItem(
                                                         url = msg.voiceUrl,
@@ -1558,7 +1588,7 @@ fun ChatScreen(
                                             ActivityResultContracts.RequestPermission()
                                         ) { isGranted ->
                                             if (isGranted) {
-                                                
+
                                             }
                                         }
 
@@ -1762,6 +1792,13 @@ fun ChatScreen(
                     chatVM.setChatTheme(chatId, theme)
                     showThemePicker = false
                 }
+            )
+        }
+
+        fullScreenImageUrl?.let { url ->
+            FullScreenImageViewer(
+                imageUrl = url,
+                onDismiss = { fullScreenImageUrl = null }
             )
         }
     }

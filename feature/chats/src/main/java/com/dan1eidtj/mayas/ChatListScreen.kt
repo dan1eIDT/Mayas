@@ -48,6 +48,7 @@ import com.dan1eidtj.mayas.core_ui.Screen
 import com.dan1eidtj.mayas.core.ui.theme.MayasAppTheme
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
+import com.dan1eidtj.mayas.storage.rememberResolvedAvatarUrl
 import com.dan1eidtj.mayas.core_ui.ui.components.ProfileIcon
 import com.dan1eidtj.mayas.core_ui.utils.isUserOnline
 import com.dan1eidtj.mayas.core_ui.utils.getNameColorBrush
@@ -1129,7 +1130,10 @@ fun ChatItemNew(
     ) {
         Box(contentAlignment = Alignment.Center) {
             MayasAvatar(
-                url = if (userData?.get("useCustomAvatar") as? Boolean == true) userData?.get("avatarUrl") as? String else null,
+                url = rememberResolvedAvatarUrl(
+                    userData?.get("avatarUrl") as? String,
+                    userData?.get("useCustomAvatar") as? Boolean ?: false
+                ),
                 icon = userData?.get("profileIcon") as? String ?: "ghost",
                 glowColor = avatarGlow,
                 isPremium = userData?.get("premium") as? Boolean ?: false,
@@ -1317,10 +1321,11 @@ fun BottomProfileBar(
                     contentAlignment = Alignment.Center
                 ) {
                     val useAvatar = myProfileData["useCustomAvatar"] as? Boolean ?: false
-                    val url = myProfileData["avatarUrl"] as? String ?: ""
-                    if (useAvatar && url.isNotEmpty()) {
+                    val rawUrl = myProfileData["avatarUrl"] as? String ?: ""
+                    val resolvedUrl = rememberResolvedAvatarUrl(rawUrl, useAvatar)
+                    if (useAvatar && resolvedUrl != null) {
                         AsyncImage(
-                            model = url,
+                            model = resolvedUrl,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier
@@ -1601,7 +1606,10 @@ fun UserSearchDialog(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         MayasAvatar(
-                            url = if (user["useCustomAvatar"] as? Boolean == true) user["avatarUrl"] as? String else null,
+                            url = rememberResolvedAvatarUrl(
+                                user["avatarUrl"] as? String,
+                                user["useCustomAvatar"] as? Boolean ?: false
+                            ),
                             icon = user["profileIcon"] as? String ?: "ghost",
                             glowColor = MayasTheme.GlowPurple,
                             isPremium = user["isPremium"] as? Boolean ?: false,

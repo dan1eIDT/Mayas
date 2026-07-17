@@ -59,6 +59,7 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2026.05.00"))
 
     // гугл а вы когда признаетесь что вы у меня удалили уже 2 акка? еще и деньги просили. Уроды
+    implementation(platform(libs.androidx.compose.bom))
     implementation("com.google.firebase:firebase-messaging-ktx")
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-auth-ktx")

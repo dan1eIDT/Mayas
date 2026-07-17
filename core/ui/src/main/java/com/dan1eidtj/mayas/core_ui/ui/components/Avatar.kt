@@ -58,16 +58,12 @@ fun MayasAvatar(
             .size(size),
         contentAlignment = Alignment.Center
     ) {
-        // Frame for Premium
         if (isPremium && frameType != "none") {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .drawWithContent {
                         if (frameType == "black") {
-                            // Статичное кольцо под анимированным бликом — без него
-                            // чёрная рамка периодически "пропадает" на тёмном фоне,
-                            // когда светлый блик оказывается на дальней стороне круга.
                             drawCircle(
                                 color = MayasTheme.FrameBlackHalo,
                                 radius = (size.toPx() / 2) - 2.dp.toPx(),
@@ -84,8 +80,6 @@ fun MayasAvatar(
                     .graphicsLayer { rotationZ = angle }
             )
         }
-
-        // Main Avatar Circle
         Box(
             modifier = Modifier
                 .size(if (isPremium && frameType != "none") size - 12.dp else size)
@@ -115,6 +109,15 @@ fun MayasAvatar(
                     model = ImageRequest.Builder(LocalContext.current)
                         .data(url)
                         .crossfade(true)
+                        .listener(
+                            onError = { _, result ->
+                                android.util.Log.e(
+                                    "MayasAvatar",
+                                    "Coil не смог загрузить аватар по url=$url",
+                                    result.throwable
+                                )
+                            }
+                        )
                         .build(),
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),

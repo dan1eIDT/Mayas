@@ -41,7 +41,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.animation.core)
-    implementation(libs.foundation)
+    implementation(libs.androidx.foundation)
     implementation(libs.firebase.auth)
     debugImplementation(libs.androidx.compose.ui.tooling)
 

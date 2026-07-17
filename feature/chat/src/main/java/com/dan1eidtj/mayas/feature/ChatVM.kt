@@ -18,42 +18,35 @@ import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.Exclude
 import com.google.firebase.firestore.ServerTimestamp
-import io.github.jan.supabase.createSupabaseClient
-import io.github.jan.supabase.functions.Functions
-import io.github.jan.supabase.realtime.Realtime
-import io.github.jan.supabase.storage.storage
-import io.github.jan.supabase.storage.Storage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Date
-import io.github.jan.supabase.functions.functions
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import com.dan1eidtj.mayas.core_ui.utils.formatLastSeen
 import kotlinx.coroutines.tasks.await
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import com.dan1eidtj.mayas.storage.Configtebeblat
 import com.dan1eidtj.mayas.db.ChatRepository
 import com.google.firebase.firestore.PropertyName
-
-
-val supabase = createSupabaseClient(
-    supabaseUrl = Configtebeblat.SUPABASE_URL,
-    supabaseKey = Configtebeblat.SUPABASE_KEY
-) {
-    install(Storage)
-    install(Realtime)
-    install(Functions)
-}
-
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 data class Message(
     @get:Exclude var id: String = "",
     val senderId: String = "",
     val senderName: String = "",
     val text: String? = null,
     val mediaUrl: String? = null,
+    val mediaKey: String? = null,
     @ServerTimestamp val timestamp: Date? = null,
     val readBy: List<String> = emptyList(),
     val replyToText: String? = null,
@@ -64,8 +57,107 @@ data class Message(
     val status: Int = 1,
     val reactions: Map<String, String> = emptyMap(),
     val voiceUrl: String? = null,
+    val voiceKey: String? = null,
     val voiceDuration: Int = 0,
 )
+
+
+private object BackendApi {
+
+    private val BASE_URL: String get() = Configtebeblat.functionUrl.trimEnd('/')
+
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+    private val jsonMediaType = "application/json".toMediaType()
+
+    data class PresignUploadResult(val uploadUrl: String, val key: String)
+
+
+    suspend fun presignUpload(idToken: String, key: String, contentType: String): PresignUploadResult =
+        withContext(Dispatchers.IO) {
+            val requestJson = buildJsonObject {
+                put("key", key)
+                put("contentType", contentType)
+            }.toString()
+
+            val request = Request.Builder()
+                .url("$BASE_URL/presign-upload")
+                .addHeader("Authorization", "Bearer $idToken")
+                .post(requestJson.toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val bodyText = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw Exception("presign-upload: ${response.code} $bodyText")
+                }
+                val json = Json.parseToJsonElement(bodyText).jsonObject
+                PresignUploadResult(
+                    uploadUrl = json.getValue("uploadUrl").jsonPrimitive.content,
+                    key = json.getValue("key").jsonPrimitive.content
+                )
+            }
+        }
+
+    suspend fun presignDownload(idToken: String, key: String): String =
+        withContext(Dispatchers.IO) {
+            val requestJson = buildJsonObject { put("key", key) }.toString()
+
+            val request = Request.Builder()
+                .url("$BASE_URL/presign-download")
+                .addHeader("Authorization", "Bearer $idToken")
+                .post(requestJson.toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val bodyText = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw Exception("presign-download: ${response.code} $bodyText")
+                }
+                Json.parseToJsonElement(bodyText).jsonObject
+                    .getValue("downloadUrl").jsonPrimitive.content
+            }
+        }
+
+
+    suspend fun uploadBytes(uploadUrl: String, bytes: ByteArray, contentType: String) =
+        withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url(uploadUrl)
+                .put(bytes.toRequestBody(contentType.toMediaType()))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw Exception("B2 upload: ${response.code} ${response.body?.string()}")
+                }
+            }
+        }
+
+
+    suspend fun notify(token: String, senderName: String, text: String) =
+        withContext(Dispatchers.IO) {
+            val requestJson = buildJsonObject {
+                put("token", token)
+                put("senderName", senderName)
+                put("text", text)
+            }.toString()
+
+            val request = Request.Builder()
+                .url("$BASE_URL/notify")
+                .post(requestJson.toRequestBody(jsonMediaType))
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw Exception("notify: ${response.code} ${response.body?.string()}")
+                }
+            }
+        }
+}
 
 class ChatVM(application: Application) : AndroidViewModel(application) {
 
@@ -202,8 +294,8 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         isSearching = false
     }
 
-    fun playVoice(url: String) {
-        if (playingUrl == url) {
+    fun playVoice(rawUrlOrKey: String) {
+        if (playingUrl == rawUrlOrKey) {
             if (isVoicePlaying) {
                 mediaPlayer?.pause()
                 isVoicePlaying = false
@@ -217,17 +309,40 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         }
 
         stopVoice()
-        playingUrl = url
-        mediaPlayer = android.media.MediaPlayer().apply {
-            setDataSource(url)
-            prepareAsync()
-            setOnPreparedListener {
-                start()
-                isVoicePlaying = true
-                startProgressUpdate()
+        playingUrl = rawUrlOrKey
+
+        viewModelScope.launch {
+            // Бакет приватный: rawUrlOrKey чаще всего КЛЮЧ файла в B2 ("voice/uid/xxx.m4a"),
+            // а не готовая ссылка — MediaPlayer.setDataSource() умеет играть только реальный
+            // http(s) URL. Старые войсы (залитые ещё до перехода на B2) — настоящие постоянные
+            // ссылки, резолвить их не нужно, играем как есть.
+            val playableUrl = if (rawUrlOrKey.startsWith("http")) {
+                rawUrlOrKey
+            } else {
+                runCatching { com.dan1eidtj.mayas.storage.B2MediaClient.resolveDownloadUrl(rawUrlOrKey) }
+                    .getOrNull()
             }
-            setOnCompletionListener {
-                stopVoice()
+
+            if (playableUrl == null) {
+                Log.e("ChatVM", "Не удалось получить ссылку на голосовое: $rawUrlOrKey")
+                playingUrl = null
+                return@launch
+            }
+
+            // playingUrl мог уже смениться (юзер тапнул другое голосовое, пока резолвилась ссылка)
+            if (playingUrl != rawUrlOrKey) return@launch
+
+            mediaPlayer = android.media.MediaPlayer().apply {
+                setDataSource(playableUrl)
+                prepareAsync()
+                setOnPreparedListener {
+                    start()
+                    isVoicePlaying = true
+                    startProgressUpdate()
+                }
+                setOnCompletionListener {
+                    stopVoice()
+                }
             }
         }
     }
@@ -257,6 +372,30 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         get() = auth.currentUser?.uid
 
     private var myName: String = "Вы"
+
+    // FIX: кэш presigned-ссылок в памяти, чтобы не дёргать /presign-download
+    // на каждый ре-композ одного и того же сообщения. Бэкенд отдаёт ссылку на 15 минут
+    // (см. expiresIn: 900 в handlePresignDownload на main.ts), кэшируем с запасом в 1 минуту.
+    private val downloadUrlCache = mutableMapOf<String, Pair<String, Long>>()
+    private val DOWNLOAD_URL_TTL_MS = 14 * 60_000L // держим 14 из 15 минут, с запасом
+
+    suspend fun resolveDownloadUrl(key: String): String? {
+        val now = System.currentTimeMillis()
+        downloadUrlCache[key]?.let { (url, expiresAt) ->
+            if (expiresAt > now) return url
+        }
+
+        val idToken = auth.currentUser?.getIdToken(false)?.await()?.token ?: return null
+
+        return try {
+            val url = BackendApi.presignDownload(idToken, key)
+            downloadUrlCache[key] = url to (now + DOWNLOAD_URL_TTL_MS)
+            url
+        } catch (e: Exception) {
+            Log.e("ChatVM", "Не удалось получить ссылку на файл: $key", e)
+            null
+        }
+    }
 
     init {
         myUid?.let { uid ->
@@ -479,19 +618,24 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         replyName: String?
     ) {
         val uid = myUid ?: return
+        val currentUser = auth.currentUser ?: return
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val fileName = "media_${uid}_${System.currentTimeMillis()}.jpg"
-                val bucket = supabase.storage.from("mayas-media")
-                bucket.upload(fileName, fileBytes)
-                val publicMediaUrl = bucket.publicUrl(fileName)
+                val idToken = currentUser.getIdToken(false).await().token
+                    ?: throw Exception("Не удалось получить idToken")
 
+                val fileName = "media_${uid}_${System.currentTimeMillis()}.jpg"
+                val key = "media/$uid/$fileName"
+                val contentType = "image/jpeg"
+
+                val presign = BackendApi.presignUpload(idToken, key, contentType)
+                BackendApi.uploadBytes(presign.uploadUrl, fileBytes, contentType)
                 val messageData = mutableMapOf<String, Any?>(
                     "text" to text.ifBlank { null },
                     "senderId" to uid,
                     "senderName" to myName,
-                    "mediaUrl" to publicMediaUrl,
+                    "mediaUrl" to presign.key,
                     "timestamp" to FieldValue.serverTimestamp(),
                     "readBy" to listOf(uid),
                     "isPremium" to myIsPremium,
@@ -625,11 +769,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    supabase.functions.invoke("send-fcmpush", buildJsonObject {
-                        put("token", token)
-                        put("senderName", myName)
-                        put("text", messageText)
-                    })
+                    BackendApi.notify(token = token, senderName = myName, text = messageText)
                 } catch (e: Exception) {
                     Log.e("ChatVM", "Push notification failed", e)
                 }
@@ -706,8 +846,6 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         db.collection("chats").document(chatId)
             .collection("messages").get()
             .addOnSuccessListener { snapshot ->
-                // FIX: guard на пустой батч — commit() на пустом батче не падает,
-                // но лишний round-trip к Firestore не нужен
                 if (snapshot.isEmpty) {
                     onSuccess()
                     return@addOnSuccessListener
@@ -726,8 +864,6 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка блокировки пользователя", e) }
     }
 
-    // FIX: markAsRead теперь принимает uid явно (не тянет из auth каждый раз)
-    // и пропускает commit если нечего обновлять — экономим writes
     private fun markAsRead(chatId: String, list: List<Message>, uid: String) {
         val unread = list.filter { !it.readBy.contains(uid) }
         if (unread.isEmpty()) return
@@ -749,9 +885,6 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteGroup(chatId: String, onSuccess: () -> Unit) {
-        // FIX: раньше удалялся только сам документ чата, а подколлекция messages
-        // оставалась в Firestore навсегда. Если позже кто-то заново создаст чат
-        // с этим же chatId, старые сообщения "воскресали". Чистим сообщения сначала.
         db.collection("chats").document(chatId)
             .collection("messages").get()
             .addOnSuccessListener { snapshot ->
@@ -796,17 +929,24 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         if (audioBytes == null || duration < 1) return
 
         val uid = myUid ?: return
+        val currentUser = auth.currentUser ?: return
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                val idToken = currentUser.getIdToken(false).await().token
+                    ?: throw Exception("Не удалось получить idToken")
+
                 val fileName = "voice_${uid}_${System.currentTimeMillis()}.m4a"
-                val bucket = supabase.storage.from("mayas-voice")
-                bucket.upload(fileName, audioBytes)
-                val publicUrl = bucket.publicUrl(fileName)
+                val key = "voice/$uid/$fileName"
+                val contentType = "audio/mp4" // .m4a, есть в ALLOWED_CONTENT_TYPES на бэке
+
+                val presign = BackendApi.presignUpload(idToken, key, contentType)
+                BackendApi.uploadBytes(presign.uploadUrl, audioBytes, contentType)
+                // FIX: аналогично медиа — храним ключ, ссылка резолвится на лету в UI
 
                 val messageData = mutableMapOf<String, Any?>(
                     "senderId" to uid,
                     "senderName" to myName,
-                    "voiceUrl" to publicUrl,
+                    "voiceUrl" to presign.key,
                     "voiceDuration" to duration,
                     "timestamp" to FieldValue.serverTimestamp(),
                     "readBy" to listOf(uid),

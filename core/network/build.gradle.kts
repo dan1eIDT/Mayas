@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
+    id("org.jetbrains.kotlin.plugin.compose") version "2.2.10"
     alias(libs.plugins.ksp)
 }
 
@@ -31,6 +32,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 }
 
 dependencies {
@@ -38,6 +43,7 @@ dependencies {
      
     // AndroidX Core
     implementation(libs.androidx.core.ktx)
+    implementation(platform(libs.androidx.compose.bom))
     implementation("androidx.core:core-ktx:1.12.0")
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
@@ -99,4 +105,9 @@ dependencies {
     // реклама не переключайтесь
     implementation("com.yandex.android:mobileads:7.16.1")
     implementation("com.google.android.gms:play-services-ads:24.7.0")
+
+    // storage ой блять как бдуто это кто то читать будет ало
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 }

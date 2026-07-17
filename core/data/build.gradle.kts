@@ -34,6 +34,7 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
+    implementation(platform(libs.androidx.compose.bom))
     implementation(libs.material)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.serialization.json)

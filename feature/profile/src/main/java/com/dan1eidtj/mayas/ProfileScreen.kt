@@ -48,11 +48,15 @@ import com.dan1eidtj.mayas.core_ui.utils.formatLastSeen
 import com.dan1eidtj.mayas.core_ui.utils.getGlowColor
 import com.dan1eidtj.mayas.core_ui.utils.isUserOnline
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
+import com.dan1eidtj.mayas.core_ui.ui.components.FullScreenImageViewer
 import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
 import com.dan1eidtj.data.ItemType
 import com.dan1eidtj.mayas.feature.GroupMemberUi
 import com.dan1eidtj.mayas.feature.GroupMembersVM
 import com.dan1eidtj.mayas.feature.auth.AuthVM
+import com.dan1eidtj.mayas.storage.B2MediaClient
+import com.dan1eidtj.mayas.storage.ImageCompressor
+import com.dan1eidtj.mayas.storage.MediaKind
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 import java.util.Date
@@ -98,7 +102,7 @@ fun ProfileScreen(
     var verifiedIcon by remember { mutableStateOf("verified") }
     var avatarFrame by remember { mutableStateOf("none") }
     var adsWatchedToday by remember { mutableIntStateOf(0) }
-    var adsResetAt by remember { mutableStateOf(0L) } // millis; когда обнулять adsWatchedToday
+    var adsResetAt by remember { mutableStateOf(0L) }
     var isInvisible by remember { mutableStateOf(false) }
     var nameColor by remember { mutableStateOf("gold") }
 
@@ -141,6 +145,7 @@ fun ProfileScreen(
     var showIconPicker by remember { mutableStateOf(false) }
     var showShop by remember { mutableStateOf(false) }
     var showGroupMembers by remember { mutableStateOf(false) }
+    var fullScreenAvatarUrl by remember { mutableStateOf<String?>(null) }
 
     val glowColor = getGlowColor(profileGlow)
     var isAdLoading by remember { mutableStateOf(false) }
@@ -213,11 +218,35 @@ fun ProfileScreen(
     }
 
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let {
-            vm.uploadAvatar(finalId, it, isGroup,
-                onSuccess = { newUrl -> avatar = newUrl; useCustomAvatar = true },
-                onError = {}
-            )
+        uri?.let { pickedUri ->
+            coroutineScope.launch {
+                try {
+                    val bytes = ImageCompressor.compressAvatar(context, pickedUri)
+                    val key = B2MediaClient().uploadMedia(
+                        kind = MediaKind.AVATAR,
+                        uid = finalId,
+                        bytes = bytes,
+                        contentType = "image/jpeg",
+                        extension = "jpg"
+                    )
+
+                    val field = if (isGroup) "groupAvatar" else "avatarUrl"
+                    val updates: Map<String, Any> = if (isGroup) {
+                        mapOf(field to key)
+                    } else {
+                        mapOf(field to key, "useCustomAvatar" to true)
+                    }
+                    vm.db.collection(if (isGroup) "chats" else "users").document(finalId)
+                        .update(updates)
+                        .addOnFailureListener { e -> Log.e("ProfileScreen", "Не удалось сохранить ключ аватара", e) }
+
+                    avatar = key
+                    useCustomAvatar = true
+                } catch (e: Exception) {
+                    Log.e("ProfileScreen", "Не удалось загрузить аватар", e)
+                    Toast.makeText(context, "Не удалось загрузить фото", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
@@ -284,6 +313,19 @@ fun ProfileScreen(
                     lastSeenText = lastSeenText, isOnline = isOnline, nameColor = nameColor,
                     isUsernameAvailable = isUsernameAvailable, isCheckingUsername = isCheckingUsername,
                     onAvatarClick = { showImagePicker = true },
+                    onAvatarView = {
+                        val resolved = when {
+                            avatar.startsWith("http") -> avatar
+                            else -> null
+                        }
+                        if (resolved != null) {
+                            fullScreenAvatarUrl = resolved
+                        } else {
+                            coroutineScope.launch {
+                                fullScreenAvatarUrl = B2MediaClient.resolveDownloadUrl(avatar)
+                            }
+                        }
+                    },
                     onNameChange = { name = it },
                     onUsernameChange = { username = it },
                     onDescChange = { desc = it }, desc = desc,
@@ -577,6 +619,13 @@ fun ProfileScreen(
         )
     }
 
+    fullScreenAvatarUrl?.let { url ->
+        FullScreenImageViewer(
+            imageUrl = url,
+            onDismiss = { fullScreenAvatarUrl = null }
+        )
+    }
+
     if (showIconPicker) {
         IconPickerDialog(
             icons = listOf("ghost", "face", "star", "heart", "bolt", "fire", "diamond", "rocket", "crown", "medal", "gamepad", "music", "camera", "brush"),
@@ -664,22 +713,43 @@ fun ProfileHeader(
     isGroup: Boolean, membersCount: Int, username: String,
     lastSeenText: String, isOnline: Boolean, nameColor: String = "gold",
     isUsernameAvailable: Boolean = true, isCheckingUsername: Boolean = false,
-    onAvatarClick: () -> Unit, onNameChange: (String) -> Unit,
+    onAvatarClick: () -> Unit, onAvatarView: () -> Unit = {}, onNameChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit = {},
     onDescChange: (String) -> Unit, desc: String,
     onMembersClick: () -> Unit = {}
 ) {
     val nameBrush = com.dan1eidtj.mayas.core_ui.utils.getNameColorBrush(nameColor)
+
+    // FIX: бакет приватный -> avatar теперь чаще всего КЛЮЧ файла в B2, а не готовая ссылка.
+    // Резолвим его в свежую presigned-ссылку прямо перед показом (с кэшем внутри B2MediaClient).
+    // Старые аватарки, залитые ещё через Supabase, — это настоящие постоянные http(s)-ссылки,
+    // их резолвить не нужно, показываем как есть.
+    val resolvedAvatarUrl by produceState<String?>(initialValue = null, avatar, useCustomAvatar) {
+        android.util.Log.d("ProfileAvatarDebug", "produceState вошёл: avatar='$avatar' useCustomAvatar=$useCustomAvatar")
+        value = when {
+            !useCustomAvatar || avatar.isBlank() -> null
+            avatar.startsWith("http") -> avatar
+            else -> B2MediaClient.resolveDownloadUrl(avatar)
+        }
+        android.util.Log.d("ProfileAvatarDebug", "produceState результат: value=$value")
+    }
+
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            modifier = Modifier.size(120.dp).clickable(enabled = isEditing) { onAvatarClick() },
+            modifier = Modifier.size(120.dp).clickable {
+                if (isEditing) {
+                    onAvatarClick()
+                } else if (useCustomAvatar && !resolvedAvatarUrl.isNullOrBlank()) {
+                    onAvatarView()
+                }
+            },
             contentAlignment = Alignment.Center
         ) {
             MayasAvatar(
-                url = avatar, icon = profileIcon, glowColor = glowColor,
+                url = resolvedAvatarUrl, icon = profileIcon, glowColor = glowColor,
                 isPremium = isPremium, size = 120.dp, useCustomAvatar = useCustomAvatar, frameType = avatarFrame
             )
             if (isEditing) {
@@ -1114,11 +1184,20 @@ private fun GroupMemberRow(
     onClick: () -> Unit, onManageClick: () -> Unit
 ) {
     val glowColor = getGlowColor(member.profileGlow)
+
+    val resolvedAvatarUrl by produceState<String?>(initialValue = null, member.avatarUrl, member.useCustomAvatar) {
+        value = when {
+            !member.useCustomAvatar || member.avatarUrl.isNullOrBlank() -> null
+            member.avatarUrl!!.startsWith("http") -> member.avatarUrl
+            else -> B2MediaClient.resolveDownloadUrl(member.avatarUrl!!)
+        }
+    }
+
     Row(
         modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        MayasAvatar(url = member.avatarUrl, icon = member.profileIcon, glowColor = glowColor,
+        MayasAvatar(url = resolvedAvatarUrl, icon = member.profileIcon, glowColor = glowColor,
             isPremium = member.isPremium, useCustomAvatar = member.useCustomAvatar, size = 46.dp, frameType = "none")
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
