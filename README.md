@@ -56,6 +56,10 @@ GitHub - **https://github.com/dan1eIDT/Mayas/releases**
 
 Google Play - Релиз планируется на 30 июля!
 
+Трешбокс - **https://trashbox.ru/topics/213264/mayas**
+
+Сайт - **https://dan1eidt.github.io/mayas-site/**
+
 ### Пожаловаться на кривожопость разработчика - https://github.com/dan1eIDT/Mayas/discussions/2
 
 ## Авторство
