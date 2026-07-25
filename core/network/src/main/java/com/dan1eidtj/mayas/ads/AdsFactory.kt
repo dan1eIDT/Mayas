@@ -1,8 +1,8 @@
 package com.dan1eidtj.mayas.ads
 
+import com.dan1eidtj.mayas.ads.AdmobAds.AdMobProvider
 import com.dan1eidtj.mayas.ads.YAads.YandexProvider
 import java.util.Locale
-import com.dan1eidtj.mayas.ads.AdmobAds.AdMobProvider
 object AdsFactory {
 
     fun create(): AdsProvider {

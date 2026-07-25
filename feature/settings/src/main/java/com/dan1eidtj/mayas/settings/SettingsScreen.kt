@@ -1,5 +1,6 @@
-package com.dan1eidtj.mayas
+package com.dan1eidtj.mayas.settings
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -33,6 +34,7 @@ import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.mayas.feature.auth.AuthVM
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.text.ifEmpty
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,7 +44,8 @@ fun SettingsScreen(
     onNavigateToPremium: () -> Unit,
     onNavigateToCredits: () -> Unit,
     onNavigateToAuth: () -> Unit,
-    onNavigateToCustomization: () -> Unit
+    onNavigateToCustomization: () -> Unit,
+    onNavigateToThemes: () -> Unit
 ) {
     val context = LocalContext.current
     val versionName = remember {
@@ -215,6 +218,16 @@ fun SettingsScreen(
                     subtitle = "Фоны, пузыри, эффекты",
                     iconColor = MayasTheme.Accent,
                     onClick = onNavigateToCustomization
+                )
+            }
+
+            item {
+                SettingsItem(
+                    icon = Icons.Default.Palette,
+                    title = "Темы",
+                    subtitle = "Тёмная, светлая или своя тема",
+                    iconColor = MayasTheme.Accent,
+                    onClick = onNavigateToThemes
                 )
             }
 
@@ -507,19 +520,45 @@ fun ChatSettingsSubSection(vm: AuthVM) {
                 activeTrackColor = MayasTheme.Accent
             )
         )
+
+        HorizontalDivider(
+            color = MayasTheme.TextSecondary.copy(alpha = 0.1f),
+            modifier = Modifier.padding(vertical = 12.dp)
+        )
+
+        val autoDownloadMedia = vm.userData["autoDownloadMedia"] != "false"
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(top = 8.dp)
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Тёмная тема", color = MayasTheme.TextPrimary, modifier = Modifier.weight(1f))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Автозагрузка медиа", color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text("Фото и видео скачиваются сразу, без тапа", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+            }
             Switch(
-                checked = vm.appTheme == "dark",
-                onCheckedChange = { isDark ->
-                    vm.updateLocalSettings(
-                        description = vm.userData["description"] ?: "",
-                        theme = if (isDark) "dark" else "light",
-                        fontSize = vm.fontSize
-                    )
+                checked = autoDownloadMedia,
+                onCheckedChange = { enabled ->
+                    vm.updateUserData("autoDownloadMedia", enabled.toString())
+                },
+                colors = SwitchDefaults.colors(checkedThumbColor = MayasTheme.Accent)
+            )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        val sendByEnter = vm.userData["sendByEnter"] == "true"
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Отправка по Enter", color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text("Enter отправляет сообщение, Shift+Enter — новая строка", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+            }
+            Switch(
+                checked = sendByEnter,
+                onCheckedChange = { enabled ->
+                    vm.updateUserData("sendByEnter", enabled.toString())
                 },
                 colors = SwitchDefaults.colors(checkedThumbColor = MayasTheme.Accent)
             )
@@ -708,7 +747,7 @@ fun SecuritySubSection(vm: AuthVM) {
                             loading = false
                             if (err == null) {
                                 showEmailDialog = false
-                                android.widget.Toast.makeText(context, "Подтвердите новый Email по ссылке", android.widget.Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Подтвердите новый Email по ссылке", Toast.LENGTH_LONG).show()
                             } else {
                                 error = err
                             }
@@ -761,7 +800,7 @@ fun SecuritySubSection(vm: AuthVM) {
                             loading = false
                             if (err == null) {
                                 showPassDialog = false
-                                android.widget.Toast.makeText(context, "Пароль успешно изменен", android.widget.Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, "Пароль успешно изменен", Toast.LENGTH_SHORT).show()
                             } else {
                                 error = err
                             }
@@ -852,7 +891,7 @@ fun SecuritySubSection(vm: AuthVM) {
                 .clickable {
                     vm.sendPasswordReset { error ->
                         val msg = error ?: "Ссылка для сброса пароля отправлена на почту"
-                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 },
             verticalAlignment = Alignment.CenterVertically

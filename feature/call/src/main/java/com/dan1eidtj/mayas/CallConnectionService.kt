@@ -41,7 +41,7 @@ class CallConnectionService : Service() {
 
     @RequiresApi(Build.VERSION_CODES.R)
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Если прилетел интент на обновление кнопок в шторке (Mute / Спикер)
+
         if (intent?.action == ACTION_UPDATE_NOTIFICATION) {
             refreshCurrentNotification()
             return START_NOT_STICKY
@@ -56,16 +56,16 @@ class CallConnectionService : Service() {
             return START_NOT_STICKY
         }
 
-        // Жёсткий и синхронный запуск старта Foreground, чтобы система не прибила процесс.
-        //
-        // ВАЖНО: тип microphone на Android 14+ можно запрашивать только когда приложение
-        // находится в "eligible"-состоянии (видимо пользователю). Входящий звонок стартует
-        // из пуша, когда приложение может быть полностью в фоне — поэтому для него сначала
-        // просим только phoneCall (для него есть исключение у полноэкранных call-уведомлений),
-        // а microphone "доапгрейживаем" отдельным вызовом startForeground() уже после того,
-        // как пользователь принял звонок (см. observeCallState -> CONNECTING/CONNECTED),
-        // и на экране уже открыта IncomingCallActivity. Для исходящих звонков это не проблема:
-        // пользователь стартует их, уже находясь в приложении, поэтому microphone просим сразу.
+
+
+
+
+
+
+
+
+
+
         try {
             val placeholderNotification = buildCallNotificationSync(
                 isIncoming = isIncoming,
@@ -79,7 +79,7 @@ class CallConnectionService : Service() {
             startForegroundCompat(buildFallbackNotification(), includeMicrophone = !isIncoming)
         }
 
-        // Асинхронно подтягиваем имя из Firestore, не блокируя запуск сервиса[cite: 3]
+
         serviceScope.launch {
             val (peerName, peerPhotoUrl) = fetchPeerInfo(peerId)
             val icon = loadPersonIcon(peerPhotoUrl)
@@ -107,8 +107,8 @@ class CallConnectionService : Service() {
     }
 
 
-    // Стал ли сервис уже "eligible" и добавили ли мы microphone-тип к foreground-сервису.
-    // Нужен, чтобы не дёргать startForeground() повторно на каждое обновление стейта.
+
+
     private var microphoneTypeUpgraded = false
 
     @RequiresApi(Build.VERSION_CODES.R)
@@ -132,8 +132,8 @@ class CallConnectionService : Service() {
                                 callId = session.callId
                             )
 
-                            // Звонок принят (или уже идёт) — пользователь сейчас видит экран звонка,
-                            // значит приложение eligible для microphone-типа. Апгрейдим один раз.
+
+
                             val needsMicUpgrade = isIncoming &&
                                     !microphoneTypeUpgraded &&
                                     (state == CallState.CONNECTING || state == CallState.CONNECTED)
@@ -190,7 +190,7 @@ class CallConnectionService : Service() {
             .setImportant(true)
             .build()
 
-        // Интент, который развернет экран звонка при тапе на само уведомление[cite: 3]
+
         val fullScreenIntent = Intent(this, IncomingCallActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or
                     Intent.FLAG_ACTIVITY_NO_USER_ACTION or
@@ -201,9 +201,9 @@ class CallConnectionService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Бродкасты для кликов по кнопкам. ВАЖНО: "Принять" — НЕ бродкаст, а прямой
-        // PendingIntent.getActivity() (см. ниже) — иначе на Android 12+ запуск Activity
-        // из BroadcastReceiver блокируется системой как notification trampoline.
+
+
+
         val declinePendingIntent = actionPendingIntent(CallActionReceiver.ACTION_DECLINE)
         val mutePendingIntent = actionPendingIntent(CallActionReceiver.ACTION_TOGGLE_MUTE)
         val speakerPendingIntent = actionPendingIntent(CallActionReceiver.ACTION_TOGGLE_SPEAKER)
@@ -213,24 +213,24 @@ class CallConnectionService : Service() {
                     Intent.FLAG_ACTIVITY_NO_USER_ACTION or
                     Intent.FLAG_ACTIVITY_SINGLE_TOP
             putExtra(IncomingCallActivity.EXTRA_AUTO_ACCEPT, true)
-            // БЕЛЫЙ ЭКРАН БЫЛ ИМЕННО ИЗ-ЗА ОТСУТСТВИЯ ЭТОЙ СТРОКИ: без явного callId
-            // acceptCall() внутри CallManager брал callId из _activeCall.value, который
-            // на момент нажатия "Принять" в уведомлении иногда ещё не успевал
-            // заполниться собственным Firestore-слушателем CallManager (уведомление же
-            // строится из push-экстрас сразу, не дожидаясь этого стейта) — acceptCall()
-            // тихо ничего не делал, а Activity вечно ждала звонок, которого для неё
-            // как будто не существовало.
+
+
+
+
+
+
+
             putExtra(EXTRA_CALL_ID, callId)
         }
         val acceptPendingIntent = PendingIntent.getActivity(
-            // requestCode=1, отличный от contentPendingIntent (0) — иначе PendingIntent
-            // считались бы "одинаковыми" (Intent.filterEquals игнорирует extras) и
-            // затирали бы друг друга.
+
+
+
             this, 1, acceptIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // Тексты кнопок меняются на лету в зависимости от стейта в CallManager
+
         val muteText = if (callManager.isMuted.value) "Вкл. микр." else "Выкл. микр."
         val speakerText = if (callManager.isSpeakerOn.value) "Динамик" else "Наушник"
 
@@ -246,19 +246,19 @@ class CallConnectionService : Service() {
             .setAutoCancel(false)
 
         val isRingingIncoming = isIncoming && state == CallState.INCOMING
-        // Разговор уже идёт (не просто "звонит"), и юзер прямо сейчас смотрит на
-        // CallScreen внутри приложения — управление уже есть на самом экране,
-        // дублировать его кнопками в уведомлении не нужно. Полноценное Ongoing-
-        // уведомление с кнопками mute/speaker должно появляться ИМЕННО когда юзер
-        // сворачивает звонок (переключился на другое приложение/домой) — тогда
-        // кнопки в шторке остаются единственным способом управлять звонком.
+
+
+
+
+
+
         val isCallScreenLikelyVisible = CallUiVisibility.isAppForeground.value &&
                 (state == CallState.OUTGOING || state == CallState.CONNECTING || state == CallState.CONNECTED)
 
         when {
-            // Входящий вызов, который ещё не приняли — всегда полноценная системная
-            // шторка "Принять/Отклонить", вне зависимости от foreground: это
-            // единственный способ ответить на звонок, пока CallScreen ещё не открыт.
+
+
+
             isRingingIncoming -> {
                 builder
                     .setStyle(
@@ -269,17 +269,17 @@ class CallConnectionService : Service() {
                         )
                     )
             }
-            // Разговор идёт, и его и так видно на экране — тихая заглушка без кнопок,
-            // нужна только чтобы удержать foreground-сервис (Android не даёт сервису
-            // с типом MICROPHONE/PHONE_CALL жить вообще без видимого уведомления).
+
+
+
             isCallScreenLikelyVisible -> {
                 builder
                     .setStyle(NotificationCompat.CallStyle.forOngoingCall(person, declinePendingIntent))
                     .setSilent(true)
                     .setVibrate(null)
             }
-            // Звонок свёрнут (приложение в фоне) либо уже отвечен, но, например,
-            // экран ещё не успел прогрузиться — полный набор controls.
+
+
             else -> {
                 builder
                     .setStyle(NotificationCompat.CallStyle.forOngoingCall(person, declinePendingIntent))
@@ -329,9 +329,9 @@ class CallConnectionService : Service() {
     @RequiresApi(Build.VERSION_CODES.R)
     private fun startForegroundCompat(notification: Notification, includeMicrophone: Boolean) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            // На Android 14+ microphone-тип можно просить только когда приложение eligible
-            // (видимо пользователю). Для входящего звонка на старте сервиса это не так, поэтому
-            // includeMicrophone=false и тип добавляется позже через отдельный startForeground().
+
+
+
             val type = if (includeMicrophone) {
                 android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL or
                         android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
@@ -340,8 +340,8 @@ class CallConnectionService : Service() {
             }
             startForeground(CallNotifications.CALL_NOTIFICATION_ID, notification, type)
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // На API 29-33 ограничения "eligible state" для microphone-типа нет,
-            // поэтому просим его сразу же вне зависимости от includeMicrophone.
+
+
             startForeground(
                 CallNotifications.CALL_NOTIFICATION_ID,
                 notification,
@@ -374,7 +374,7 @@ class CallConnectionService : Service() {
                 setBypassDnd(true)
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 800, 800)
-                setSound(null, null) // Отключаем звук канала, так как играем его сами через Ringtone
+                setSound(null, null)
             }
         )
     }
@@ -384,7 +384,7 @@ class CallConnectionService : Service() {
         const val EXTRA_CALL_ID = "extra_call_id"
         const val EXTRA_IS_INCOMING = "extra_is_incoming"
 
-        // Экшен, чтобы ресивер мог сказать сервису: "Эй, обнови иконки микрофона/динамика!"
+
         const val ACTION_UPDATE_NOTIFICATION = "com.dan1eidtj.mayas.action.UPDATE_NOTIF"
 
         fun startIncoming(context: Context, callId: String, callerId: String) {

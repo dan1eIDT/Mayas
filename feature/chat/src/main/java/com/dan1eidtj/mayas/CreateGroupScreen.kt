@@ -3,20 +3,27 @@ package com.dan1eidtj.mayas.feature.chat
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.People
+import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -114,7 +121,7 @@ fun CreateGroupScreen(
 
 
 
-                // Для надежности прогоним загрузку документов:
+
                 val loadedUsers = mutableListOf<SelectableUser>()
                 var processedCount = 0
 
@@ -145,9 +152,9 @@ fun CreateGroupScreen(
                             }
 
                             processedCount++
-                            // Когда проверили все ID, обновляем состояние экрана
+
                             if (processedCount == partnerIds.size) {
-                                contacts = loadedUsers.sortedBy { it.name } // Сортируем по алфавиту
+                                contacts = loadedUsers.sortedBy { it.name }
                                 isLoading = false
                             }
                         }
@@ -164,6 +171,7 @@ fun CreateGroupScreen(
                 isLoading = false
             }
     }
+
 
     Scaffold(
         topBar = {
@@ -209,7 +217,7 @@ fun CreateGroupScreen(
                             }
                             val selectedIds = selectedUsers.map { it.uid }
 
-                            // Передаем все необходимые параметры в метод создания группы
+
                             chatVM.createGroupChat(
                                 groupTitle,
                                 groupDescription,
@@ -254,14 +262,26 @@ fun CreateGroupScreen(
                     if (currentStep == 1) {
                         Column(modifier = Modifier.fillMaxSize()) {
 
-                            // Поле поиска теперь внутри структуры шага 1
-                            OutlinedTextField(
+                            TextField(
                                 value = searchQuery,
                                 onValueChange = { searchQuery = it },
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                                placeholder = { Text("Поиск участников...") },
-                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Поиск") },
-                                singleLine = true
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                                    .clip(RoundedCornerShape(20.dp)),
+                                placeholder = { Text("Поиск участников...", color = MayasTheme.TextSecondary) },
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Поиск", tint = MayasTheme.TextSecondary) },
+                                singleLine = true,
+                                shape = RoundedCornerShape(20.dp),
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = MayasTheme.Surface,
+                                    unfocusedContainerColor = MayasTheme.Surface,
+                                    disabledContainerColor = MayasTheme.Surface,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent,
+                                    disabledIndicatorColor = Color.Transparent,
+                                    cursorColor = MayasTheme.GlowPurple
+                                )
                             )
 
                             AnimatedVisibility(visible = selectedUsers.isNotEmpty()) {
@@ -324,13 +344,13 @@ fun CreateGroupScreen(
                                 contentPadding = PaddingValues(12.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                // Важно: используем filteredContacts вместо contacts для отображения результатов поиска
+
                                 items(filteredContacts) { user ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(12.dp))
-                                            .background(if (user.isSelected) MayasTheme.Surface.copy(alpha = 0.5f) else Color.Transparent)
+                                            .background(if (user.isSelected) MayasTheme.GlowPurple.copy(alpha = 0.12f) else Color.Transparent)
                                             .clickable {
                                                 contacts = contacts.map {
                                                     if (it.uid == user.uid) it.copy(isSelected = !it.isSelected) else it
@@ -339,15 +359,30 @@ fun CreateGroupScreen(
                                             .padding(8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        MayasAvatar(
-                                            url = user.avatarUrl,
-                                            icon = user.profileIcon,
-                                            glowColor = getGlowColor(user.profileGlow),
-                                            isPremium = user.isPremium,
-                                            size = 42.dp,
-                                            useCustomAvatar = user.useCustomAvatar,
-                                            frameType = "none"
-                                        )
+                                        Box {
+                                            MayasAvatar(
+                                                url = user.avatarUrl,
+                                                icon = user.profileIcon,
+                                                glowColor = getGlowColor(user.profileGlow),
+                                                isPremium = user.isPremium,
+                                                size = 42.dp,
+                                                useCustomAvatar = user.useCustomAvatar,
+                                                frameType = "none"
+                                            )
+                                            if (user.isSelected) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(16.dp)
+                                                        .align(Alignment.BottomEnd)
+                                                        .clip(CircleShape)
+                                                        .background(MayasTheme.GlowPurple)
+                                                        .border(2.dp, MayasTheme.Background, CircleShape),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(9.dp))
+                                                }
+                                            }
+                                        }
 
                                         Spacer(Modifier.width(14.dp))
 
@@ -358,15 +393,7 @@ fun CreateGroupScreen(
                                             modifier = Modifier.weight(1f)
                                         )
 
-                                        Checkbox(
-                                            checked = user.isSelected,
-                                            onCheckedChange = { checked ->
-                                                contacts = contacts.map {
-                                                    if (it.uid == user.uid) it.copy(isSelected = checked) else it
-                                                }
-                                            },
-                                            colors = CheckboxDefaults.colors(checkedColor = MayasTheme.GlowPurple)
-                                        )
+                                        RadioDot(user.isSelected)
                                     }
                                 }
                             }
@@ -375,67 +402,113 @@ fun CreateGroupScreen(
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                                .verticalScroll(rememberScrollState())
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(90.dp)
-                                    .clip(CircleShape)
-                                    .background(MayasTheme.GlowPurple)
-                                    .clickable { Toast.makeText(context, "Загрузка фото скоро!", Toast.LENGTH_SHORT).show() },
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(Icons.Outlined.CameraAlt, null, tint = Color.White, modifier = Modifier.size(32.dp))
-                            }
 
-                            Spacer(Modifier.height(24.dp))
-
-                            // Объявление переменных groupTitle, groupDescription и isPublic удалено отсюда, так как они теперь на самом верху.
-
-                            OutlinedTextField(
-                                value = groupTitle,
-                                onValueChange = { if (it.length <= 32) groupTitle = it },
-                                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                                label = { Text("Название группы") },
-                                singleLine = true,
-                                supportingText = {
-                                    Text(text = "${groupTitle.length}/32", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.End)
-                                }
-                            )
-
-                            // Поле описания
-                            OutlinedTextField(
-                                value = groupDescription,
-                                onValueChange = { groupDescription = it },
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                                label = { Text("Описание группы (необязательно)") },
-                                maxLines = 3
-                            )
-
-                            // Переключатель приватности
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = if (isPublic) "Публичная группа 🌍" else "Приватная группа 🔒",
-                                    modifier = Modifier.weight(1f)
+                                Box(
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .clip(CircleShape)
+                                        .background(MayasTheme.GlowPurple)
+                                        .clickable { Toast.makeText(context, "Загрузка фото скоро!", Toast.LENGTH_SHORT).show() },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Outlined.CameraAlt, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(22.dp)
+                                            .align(Alignment.BottomEnd)
+                                            .clip(CircleShape)
+                                            .background(MayasTheme.Surface)
+                                            .border(2.dp, MayasTheme.Background, CircleShape),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(Icons.Default.Edit, null, tint = MayasTheme.GlowPurple, modifier = Modifier.size(12.dp))
+                                    }
+                                }
+
+                                Spacer(Modifier.width(16.dp))
+
+                                Column(Modifier.weight(1f)) {
+                                    TextField(
+                                        value = groupTitle,
+                                        onValueChange = { if (it.length <= 32) groupTitle = it },
+                                        placeholder = { Text("Название группы", color = MayasTheme.TextSecondary) },
+                                        singleLine = true,
+                                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
+                                        colors = groupTgTextFieldColors(),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Text(
+                                        text = "${groupTitle.length}/32",
+                                        color = MayasTheme.TextSecondary,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp),
+                                        textAlign = TextAlign.End
+                                    )
+                                }
+                            }
+
+                            TextField(
+                                value = groupDescription,
+                                onValueChange = { groupDescription = it },
+                                placeholder = { Text("Описание группы (необязательно)", color = MayasTheme.TextSecondary) },
+                                maxLines = 3,
+                                colors = groupTgTextFieldColors(),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                            )
+
+                            GroupSectionLabel("ТИП ГРУППЫ")
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MayasTheme.Surface)
+                            ) {
+                                GroupPrivacyRow(
+                                    icon = Icons.Outlined.Public,
+                                    title = "Публичная группа",
+                                    subtitle = "Виден в поиске, вступить может любой",
+                                    selected = isPublic,
+                                    onClick = { isPublic = true }
                                 )
-                                Switch(
-                                    checked = isPublic,
-                                    onCheckedChange = { isPublic = it }
+                                HorizontalDivider(color = MayasTheme.TextSecondary.copy(alpha = 0.1f), modifier = Modifier.padding(start = 60.dp))
+                                GroupPrivacyRow(
+                                    icon = Icons.Outlined.Lock,
+                                    title = "Приватная группа",
+                                    subtitle = "Присоединиться можно только по приглашению",
+                                    selected = !isPublic,
+                                    onClick = { isPublic = false }
                                 )
                             }
 
-                            Spacer(Modifier.height(16.dp))
+                            GroupSectionLabel("УЧАСТНИКИ")
 
-                            Text(
-                                text = "Участников: ${selectedUsers.size}",
-                                color = MayasTheme.TextSecondary,
-                                fontSize = 14.sp,
-                                modifier = Modifier.align(Alignment.Start)
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MayasTheme.Surface)
+                                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Outlined.People, null, tint = MayasTheme.GlowPurple, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Text(
+                                    text = "Участников: ${selectedUsers.size}",
+                                    color = MayasTheme.TextPrimary,
+                                    fontSize = 15.sp
+                                )
+                            }
+
+                            Spacer(Modifier.height(24.dp))
                         }
                     }
                 }
@@ -443,3 +516,86 @@ fun CreateGroupScreen(
         }
     }
 }
+
+@Composable
+private fun GroupSectionLabel(text: String) {
+    Text(
+        text = text,
+        color = MayasTheme.GlowPurple,
+        fontSize = 12.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.5.sp,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 6.dp)
+    )
+}
+
+@Composable
+private fun GroupPrivacyRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(MayasTheme.GlowPurple.copy(alpha = 0.15f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = MayasTheme.GlowPurple, modifier = Modifier.size(18.dp))
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(Modifier.weight(1f)) {
+            Text(title, color = MayasTheme.TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text(subtitle, color = MayasTheme.TextSecondary, fontSize = 12.sp)
+        }
+
+        Spacer(Modifier.width(8.dp))
+
+        RadioDot(selected)
+    }
+}
+
+@Composable
+private fun RadioDot(selected: Boolean) {
+    Box(
+        modifier = Modifier
+            .size(20.dp)
+            .clip(CircleShape)
+            .border(2.dp, if (selected) MayasTheme.GlowPurple else MayasTheme.TextSecondary.copy(alpha = 0.4f), CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        if (selected) {
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .clip(CircleShape)
+                    .background(MayasTheme.GlowPurple)
+            )
+        }
+    }
+}
+
+@Composable
+private fun groupTgTextFieldColors() = TextFieldDefaults.colors(
+    focusedContainerColor = Color.Transparent,
+    unfocusedContainerColor = Color.Transparent,
+    disabledContainerColor = Color.Transparent,
+    focusedIndicatorColor = Color.Transparent,
+    unfocusedIndicatorColor = Color.Transparent,
+    disabledIndicatorColor = Color.Transparent,
+    cursorColor = MayasTheme.GlowPurple,
+    focusedTextColor = MayasTheme.TextPrimary,
+    unfocusedTextColor = MayasTheme.TextPrimary
+)

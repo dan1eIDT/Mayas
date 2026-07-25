@@ -65,6 +65,8 @@ dependencies {
     implementation ("androidx.compose.material3:material3:1.2.0")
     implementation ("io.coil-kt:coil-compose:2.5.0")
     implementation ("io.coil-kt:coil:2.6.0")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
     implementation ("com.google.firebase:firebase-bom:32.7.0")
     implementation ("com.google.firebase:firebase-auth-ktx")
     implementation ("com.google.firebase:firebase-firestore-ktx")
@@ -80,7 +82,5 @@ dependencies {
     implementation(platform("io.github.jan-tennert.supabase:bom:3.6.0"))
     implementation("io.github.jan-tennert.supabase:postgrest-kt")
     implementation("io.ktor:ktor-client-android:3.5.0")
-    implementation("io.github.jan-tennert.supabase:storage-kt:3.6.0")
-    implementation("io.github.jan-tennert.supabase:realtime-kt:3.6.0")
-    implementation("io.github.jan-tennert.supabase:functions-kt:3.6.0")
+
     }

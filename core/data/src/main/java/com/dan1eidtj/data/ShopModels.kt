@@ -4,7 +4,6 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 enum class ItemType {
-    WALLPAPER,
     BUBBLE,
     COLOR_SCHEME,
     ANIMATION,
@@ -14,11 +13,20 @@ enum class ItemType {
 }
 
 @Serializable
+enum class ItemRarity {
+    COMMON,
+    RARE,
+    EPIC,
+    LEGENDARY
+}
+
+@Serializable
 data class ShopItem(
     val id: String,
     val name: String,
     val type: ItemType,
     val price: Int,
     val icon: String? = null,
-    val description: String = ""
+    val description: String = "",
+    val isNew: Boolean = false
 )

@@ -5,13 +5,13 @@ import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 
-// === ANDROIDX - ACTIVITY ===
+
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 
-// === ANDROIDX - COMPOSE: FOUNDATION ===
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,13 +28,13 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.shadow
 
-// === ANDROIDX - COMPOSE: MATERIAL & ICONS ===
+
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 
-// === ANDROIDX - COMPOSE: RUNTIME & UI ===
+
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,7 +51,7 @@ import androidx.compose.ui.unit.sp
 
 
 import androidx.compose.ui.graphics.Brush
-// === ANDROIDX - ANIMATION ===
+
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -64,20 +64,20 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 
 
-// === ANDROIDX - LIFECYCLE & NAVIGATION ===
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 
-// === THIRD-PARTY: COIL ===
+
 import coil.compose.AsyncImage
 import com.google.firebase.messaging.FirebaseMessaging
 import coil.request.ImageRequest
 import coil.request.CachePolicy
 
-// === THIRD-PARTY: FIREBASE ===
+
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.UserProfileChangeRequest
@@ -90,5 +90,5 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.Timestamp
 
 
-// === KOTLINX COROUTINES ===
+
 import kotlinx.coroutines.delay

@@ -23,14 +23,14 @@ fun CallHost(
 
     content()
 
-    // Раньше экран звонка появлялся/пропадал жёстким if — переключение состояния сразу
-    // выкидывало из композиции CallScreen целиком, и когда звонок завершался (например,
-    // при "Отклонён"), сообщение о причине не успевало быть увиденным: экран пропадал
-    // мгновенно вместе со сменой CallScreenState.
-    //
-    // Держим последний непустой Active-стейт в remember: пока идёт fade-out, рисуем
-    // именно ЕГО (там уже isEnded=true и statusText вроде "Отклонён"), а не пустоту —
-    // иначе анимация играется по факту над пустым composable и визуально ничего не видно.
+
+
+
+
+
+
+
+
     val activeState = state as? CallScreenState.Active
     var lastActiveState by remember { mutableStateOf<CallScreenState.Active?>(null) }
     if (activeState != null) lastActiveState = activeState

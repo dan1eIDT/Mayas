@@ -71,7 +71,7 @@ data class MatchResult(
 private fun parseText(text: String): List<MatchResult> {
     val matches = mutableListOf<MatchResult>()
 
-    // 1. Markdown ссылки [text](url)
+
     MARKDOWN_REGEX.findAll(text).forEach { match ->
         val displayText = match.groups[1]?.value ?: ""
         val target = match.groups[2]?.value ?: ""
@@ -79,29 +79,29 @@ private fun parseText(text: String): List<MatchResult> {
         matches.add(MatchResult(match.range, displayText, target, type))
     }
 
-    // 2. Обычные и простые URL (включая google.com)
+
     URL_REGEX.findAll(text).forEach { match ->
         matches.add(MatchResult(match.range, match.value, match.value, LinkType.URL))
     }
 
-    // 3. Email адреса
+
     EMAIL_REGEX.findAll(text).forEach { match ->
         matches.add(MatchResult(match.range, match.value, "mailto:${match.value}", LinkType.EMAIL))
     }
 
-    // 4. Юзернеймы @username
+
     USER_REGEX.findAll(text).forEach { match ->
         val username = match.value.removePrefix("@")
         matches.add(MatchResult(match.range, match.value, username, LinkType.USER))
     }
 
-    // 5. Хэштеги #hashtags
+
     HASHTAG_REGEX.findAll(text).forEach { match ->
         val tag = match.value.removePrefix("#")
         matches.add(MatchResult(match.range, match.value, tag, LinkType.HASHTAG))
     }
 
-    // Исключаем наложение (например, чтобы TLD внутри email не распознавался как ссылка на домен)
+
     val sortedMatches = matches.sortedBy { it.range.first }
     val filteredMatches = mutableListOf<MatchResult>()
     var lastEndIndex = -1
@@ -157,7 +157,7 @@ private fun buildRichText(
     }
 }
 
-// --- КОНСТАНТЫ ДЛЯ СТИЛЕЙ СООБЩЕНИЙ ---
+
 object MessageStyle {
     const val NEON = "neon"
     const val GOLD = "gold"
@@ -300,7 +300,7 @@ fun ChatBubble(
         )
     }
 
-    // --- ДИНАМИЧЕСКИЙ СТИЛЬ СООБЩЕНИЯ (ПОКУПНОЙ) ---
+
     val messageModifier = when (messageStyle) {
         MessageStyle.NEON -> {
             Modifier.background(
@@ -483,7 +483,7 @@ fun ChatBubble(
             ) {
                 Column {
 
-                    // --- БЛОК ОТВЕТА ---
+
                     if (!replyToText.isNullOrBlank() && !replyToName.isNullOrBlank()) {
                         Row(
                             modifier = Modifier
@@ -522,7 +522,7 @@ fun ChatBubble(
                         }
                     }
 
-                    // --- МЕДИА-КОНТЕНТ ---
+
                     if (!mediaUrl.isNullOrBlank()) {
                         AsyncImage(
                             model = ImageRequest.Builder(LocalContext.current)
@@ -539,7 +539,7 @@ fun ChatBubble(
                         )
                     }
 
-                    // --- БЛОК ОСНОВНОГО ТЕКСТА СООБЩЕНИЯ ---
+
                     if (!text.isNullOrBlank()) {
                         val customTextColor = when (messageStyle) {
                             MessageStyle.ICE -> Color(0xFF006064)
@@ -547,9 +547,9 @@ fun ChatBubble(
                             MessageStyle.GOLD -> Color(0xFF5D4037)
                             MessageStyle.FOREST, MessageStyle.SUNSET, MessageStyle.MIDNIGHT -> Color.White
                             null -> if (isMe) Color.White else MayasTheme.TextPrimary
-                            // Купленные стили из магазина без ручного описания —
-                            // берём читаемый цвет текста из ShopConstants (например,
-                            // для folly тёмно-красный текст на светлом фоне и т.п.)
+
+
+
                             else -> ShopConstants.getStyleTextColor(messageStyle)
                         }
                         RichText(
@@ -568,7 +568,7 @@ fun ChatBubble(
                         )
                     }
 
-                    // --- ВРЕМЯ И СТАТУС ОТПРАВКИ ---
+
                     Row(
                         modifier = Modifier.align(Alignment.End),
                         verticalAlignment = Alignment.CenterVertically
@@ -580,8 +580,8 @@ fun ChatBubble(
                             MessageStyle.FOREST, MessageStyle.SUNSET -> Color.White.copy(alpha = 0.7f)
                             MessageStyle.MIDNIGHT -> Color.White.copy(alpha = 0.6f)
                             null -> timeColor
-                            // Тот же цвет текста стиля, но приглушённый — для новых
-                            // купленных стилей из магазина
+
+
                             else -> ShopConstants.getStyleTextColor(messageStyle).copy(alpha = 0.7f)
                         }
 

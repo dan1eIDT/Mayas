@@ -41,24 +41,7 @@ import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 
-/**
- * Полноэкранный просмотрщик изображения (аватар или медиа из чата).
- *
- * Возможности:
- *  - pinch-to-zoom и перетаскивание увеличенного изображения;
- *  - двойной тап — быстрый зум/возврат;
- *  - тап по фону или свайп вниз — закрытие;
- *  - опциональные кнопки "Поделиться" и "Скачать".
- *
- * Использование:
- *   var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
- *   ...
- *   Modifier.clickable { fullScreenImageUrl = url }   // на аватарке/картинке
- *   ...
- *   fullScreenImageUrl?.let { url ->
- *       FullScreenImageViewer(imageUrl = url, onDismiss = { fullScreenImageUrl = null })
- *   }
- */
+
 @Composable
 fun FullScreenImageViewer(
     imageUrl: String,
@@ -176,7 +159,7 @@ fun FullScreenImageViewer(
                 }
             }
 
-            // Верхняя панель: закрыть / поделиться / скачать
+
             IconButton(
                 onClick = onDismiss,
                 modifier = Modifier.align(Alignment.TopStart).statusBarsPadding().padding(4.dp)

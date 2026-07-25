@@ -52,7 +52,7 @@ class CallFeedbackController(private val context: Context) {
             }
             r.play()
         } else {
-            // Если RingtoneManager не смог создать объект, используем MediaPlayer
+
             playLoopingSound(ringtoneUri)
         }
     }
@@ -71,7 +71,7 @@ class CallFeedbackController(private val context: Context) {
         vibrator.cancel()
         try {
             ringtone?.stop()
-        } catch (e: Exception) { /* ignore */ }
+        } catch (e: Exception) {  }
         ringtone = null
         mediaPlayer?.release()
         mediaPlayer = null

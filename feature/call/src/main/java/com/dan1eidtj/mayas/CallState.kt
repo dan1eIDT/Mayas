@@ -1,4 +1,4 @@
-// Файл: CallState.kt
+
 package com.dan1eidtj.mayas
 
 enum class CallState {

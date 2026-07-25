@@ -4,6 +4,7 @@ package com.dan1eidtj.mayas.core_ui.ui.components
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.automirrored.filled.DirectionsBike
@@ -64,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 
 @Composable
 fun ProfileIcon(
@@ -134,6 +136,7 @@ fun ProfileIcon(
         "auto_awesome" -> Icons.Default.AutoAwesome
         "pets" -> Icons.Default.Pets
         "psychology" -> Icons.Default.Psychology
+        "bookmark" -> Icons.Default.Bookmark
 
         else -> Icons.Default.Person
     }
@@ -141,7 +144,7 @@ fun ProfileIcon(
     Icon(
         imageVector = vector,
         contentDescription = null,
-        tint = Color.White,
+        tint = MayasTheme.TextPrimary,
         modifier = Modifier.size(size)
     )
 }

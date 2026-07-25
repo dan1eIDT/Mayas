@@ -8,6 +8,7 @@ data class ChatEntity(
     @PrimaryKey val chatId: String,
     val isGroup: Boolean,
     val groupName: String?,
+    val chatType: String = "DIRECT",
     val groupAvatarUrl: String?,
     val groupIcon: String? = null,
     val useCustomAvatar: Boolean = false,
@@ -24,5 +25,6 @@ data class ChatEntity(
     val partnerAvatarUrl: String? = null,
     val partnerProfileGlow: String? = null,
     val partnerEmoji: String? = null,
-    val typingText: String? = null
+    val typingText: String? = null,
+    val isSavedMessages: Boolean = false
 )

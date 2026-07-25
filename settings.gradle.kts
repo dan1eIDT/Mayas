@@ -43,3 +43,4 @@ include(":feature:chat")
 include(":core:network")
 
 include(":feature:call")
+include(":feature:settings")

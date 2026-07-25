@@ -40,6 +40,7 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.Locale
 data class Message(
     @get:Exclude var id: String = "",
     val senderId: String = "",
@@ -59,7 +60,99 @@ data class Message(
     val voiceUrl: String? = null,
     val voiceKey: String? = null,
     val voiceDuration: Int = 0,
+
+    val type: String = MessageType.TEXT,
+
+    val systemAction: String? = null,
+
+    val systemRefMessageId: String? = null,
+
+    val callType: String? = null,
+    val callStatus: String? = null,
+    val callDurationSec: Int = 0,
+
+    val forwardedFromName: String? = null,
+
+    val viewedBy: List<String> = emptyList(),
 )
+
+object MessageType {
+    const val TEXT = "TEXT"
+    const val SYSTEM = "SYSTEM"
+    const val CALL = "CALL"
+}
+
+
+fun formatCompactCount(count: Int): String {
+    return when {
+        count < 1000 -> count.toString()
+        count < 1_000_000 -> {
+            val v = count / 1000.0
+            "${String.format(Locale.US, "%.1f", v).removeSuffix(".0")}K"
+        }
+        else -> {
+            val v = count / 1_000_000.0
+            "${String.format(Locale.US, "%.1f", v).removeSuffix(".0")}M"
+        }
+    }
+}
+
+object SystemAction {
+    const val PINNED = "PINNED"
+    const val UNPINNED = "UNPINNED"
+    const val GROUP_CREATED = "GROUP_CREATED"
+    const val MEMBER_ADDED = "MEMBER_ADDED"
+    const val MEMBER_REMOVED = "MEMBER_REMOVED"
+    const val MEMBER_LEFT = "MEMBER_LEFT"
+    const val PROMOTED_ADMIN = "PROMOTED_ADMIN"
+    const val DEMOTED_ADMIN = "DEMOTED_ADMIN"
+    const val PROMOTED_MODERATOR = "PROMOTED_MODERATOR"
+    const val DEMOTED_MODERATOR = "DEMOTED_MODERATOR"
+}
+
+object CallStatus {
+    const val MISSED = "MISSED"
+    const val DECLINED = "DECLINED"
+    const val ANSWERED = "ANSWERED"
+}
+
+
+private fun postSystemMessage(
+    db: FirebaseFirestore,
+    chatId: String,
+    text: String,
+    action: String,
+    refMessageId: String? = null,
+) {
+    val chatRef = db.collection("chats").document(chatId)
+    val msgRef = chatRef.collection("messages").document()
+
+    val messageData = mutableMapOf<String, Any?>(
+        "type" to MessageType.SYSTEM,
+        "text" to text,
+        "senderId" to "system",
+        "senderName" to "Система",
+        "systemAction" to action,
+        "timestamp" to FieldValue.serverTimestamp(),
+        "readBy" to emptyList<String>()
+    )
+    if (refMessageId != null) {
+        messageData["systemRefMessageId"] = refMessageId
+    }
+
+    val batch = db.batch()
+    batch.set(msgRef, messageData)
+    batch.update(
+        chatRef,
+        mapOf(
+            "lastMessage" to text,
+            "lastSenderId" to "system",
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+    )
+    batch.commit()
+        .addOnFailureListener { e -> Log.e("SystemMessage", "Не удалось отправить системное сообщение", e) }
+}
 
 
 private object BackendApi {
@@ -178,7 +271,19 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         private set
 
     var isGroupChat by mutableStateOf(false)
-        private set
+    var chatType by mutableStateOf("DIRECT")
+    var chatAdmins by mutableStateOf<List<String>>(emptyList())
+    var chatOwnerId by mutableStateOf<String?>(null)
+    var chatAdminPermissions by mutableStateOf<Map<String, Map<String, Boolean>>>(emptyMap())
+
+    private fun hasChatPermission(perm: String): Boolean {
+        val uid = myUid ?: return false
+        if (uid == chatOwnerId) return true
+        return chatAdminPermissions[uid]?.get(perm) == true
+    }
+
+    val canPostInChat: Boolean
+        get() = chatType != "CHANNEL" || hasChatPermission(AdminPermission.CAN_POST)
 
     var partnerName by mutableStateOf("Загрузка...")
         private set
@@ -312,10 +417,10 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         playingUrl = rawUrlOrKey
 
         viewModelScope.launch {
-            // Бакет приватный: rawUrlOrKey чаще всего КЛЮЧ файла в B2 ("voice/uid/xxx.m4a"),
-            // а не готовая ссылка — MediaPlayer.setDataSource() умеет играть только реальный
-            // http(s) URL. Старые войсы (залитые ещё до перехода на B2) — настоящие постоянные
-            // ссылки, резолвить их не нужно, играем как есть.
+
+
+
+
             val playableUrl = if (rawUrlOrKey.startsWith("http")) {
                 rawUrlOrKey
             } else {
@@ -329,7 +434,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            // playingUrl мог уже смениться (юзер тапнул другое голосовое, пока резолвилась ссылка)
+
             if (playingUrl != rawUrlOrKey) return@launch
 
             mediaPlayer = android.media.MediaPlayer().apply {
@@ -373,11 +478,11 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
     private var myName: String = "Вы"
 
-    // FIX: кэш presigned-ссылок в памяти, чтобы не дёргать /presign-download
-    // на каждый ре-композ одного и того же сообщения. Бэкенд отдаёт ссылку на 15 минут
-    // (см. expiresIn: 900 в handlePresignDownload на main.ts), кэшируем с запасом в 1 минуту.
+
+
+
     private val downloadUrlCache = mutableMapOf<String, Pair<String, Long>>()
-    private val DOWNLOAD_URL_TTL_MS = 14 * 60_000L // держим 14 из 15 минут, с запасом
+    private val DOWNLOAD_URL_TTL_MS = 14 * 60_000L
 
     suspend fun resolveDownloadUrl(key: String): String? {
         val now = System.currentTimeMillis()
@@ -451,7 +556,11 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     messages = list
-                    markAsRead(chatId, list, uid)
+                    if (chatType == "CHANNEL") {
+                        markAsViewed(chatId, list, uid)
+                    } else {
+                        markAsRead(chatId, list, uid)
+                    }
 
 
                 }
@@ -467,19 +576,29 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
                     val type = doc.getString("type") ?: "DIRECT"
                     val isGroupField = doc.getBoolean("isGroup") ?: false
-                    isGroupChat = type == "GROUP" || isGroupField
+                    isGroupChat = type == "GROUP" || type == "CHANNEL" || isGroupField
+                    chatType = type
+
+                    @Suppress("UNCHECKED_CAST")
+                    chatAdmins = (doc.get("admins") as? List<*>)?.map { it.toString() } ?: emptyList()
+                    chatOwnerId = doc.getString("ownerId")
+
+                    @Suppress("UNCHECKED_CAST")
+                    chatAdminPermissions = (doc.get("adminPermissions") as? Map<String, Map<String, Boolean>>) ?: emptyMap()
 
                     if (isGroupChat) {
                         partnerName = doc.getString("title") ?: doc.getString("groupName") ?: "Группа"
                         partnerAvatarUrl = doc.getString("groupAvatar") ?: doc.getString("groupAvatarUrl")
                         partnerUseCustomAvatar = !partnerAvatarUrl.isNullOrBlank()
-                        partnerEmoji = doc.getString("emoji") ?: "👥"
+                        partnerEmoji = doc.getString("emoji") ?: if (type == "CHANNEL") "📢" else "👥"
                         partnerProfileIcon = doc.getString("profileIcon") ?: "default"
                         partnerProfileGlow = doc.getString("profileGlow") ?: "purple"
                         partnerNameColor = doc.getString("nameColor") ?: "gold"
 
                         val members = (doc.get("participants") as? List<*>) ?: (doc.get("members") as? List<*>)
-                        lastSeenText = "${members?.size ?: 0} участников"
+                        val membersCount = members?.size ?: 0
+                        lastSeenText = if (type == "CHANNEL") "${formatCompactCount(membersCount)} подписчиков"
+                        else "${formatCompactCount(membersCount)} участников"
                         typingText = ""
                     } else {
                         setupDirectChatListener(chatId, uid)
@@ -547,6 +666,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         replyName: String?
     ) {
         if (text.isBlank()) return
+        if (!canPostInChat) return
 
         val uid = myUid ?: return
 
@@ -618,6 +738,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         replyName: String?
     ) {
         val uid = myUid ?: return
+        if (!canPostInChat) return
         val currentUser = auth.currentUser ?: return
 
         viewModelScope.launch(Dispatchers.IO) {
@@ -647,7 +768,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                     messageData["replyToName"] = replyName
                 }
 
-                // FIX: используем batch для медиа тоже, как и для текста
+
                 val batch = db.batch()
                 val chatRef = db.collection("chats").document(chatId)
                 val msgRef = chatRef.collection("messages").document()
@@ -673,7 +794,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 batch.commit()
                     .addOnSuccessListener {
                         playSound(messageSentSoundId)
-                        // FIX: пуш не отправлялся для медиа-сообщений
+
                         if (!isGroupChat && partnerUid.isNotBlank()) {
                             sendPushNotification(partnerUid, previewText)
                         }
@@ -714,6 +835,80 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
         return chatId
     }
+
+
+    suspend fun ensureSavedMessagesChat(myUid: String): String {
+        val chatId = "saved_$myUid"
+        val chatRef = db.collection("chats").document(chatId)
+        val snapshot = chatRef.get().await()
+
+        if (!snapshot.exists()) {
+            chatRef.set(
+                mapOf(
+                    "type" to "SAVED",
+                    "isGroup" to true,
+                    "participants" to listOf(myUid),
+                    "ownerId" to myUid,
+                    "groupName" to "Избранное",
+                    "groupIcon" to "bookmark",
+                    "lastMessage" to "",
+                    "lastSenderId" to "",
+                    "updatedAt" to FieldValue.serverTimestamp(),
+                    "pinned_$myUid" to true,
+                    "unreadCount_$myUid" to 0
+                )
+            ).await()
+        }
+
+        return chatId
+    }
+
+
+    fun forwardMessage(message: Message, targetChatId: String) {
+        val uid = myUid ?: return
+
+        val messageData = mutableMapOf<String, Any?>(
+            "senderId" to uid,
+            "senderName" to myName,
+            "timestamp" to FieldValue.serverTimestamp(),
+            "readBy" to listOf(uid),
+            "isPremium" to myIsPremium,
+            "messageStyle" to myMessageStyle,
+            "forwardedFromName" to message.senderName,
+            "type" to MessageType.TEXT
+        )
+
+        if (!message.text.isNullOrBlank()) messageData["text"] = message.text
+
+
+        if (message.mediaUrl != null) messageData["mediaUrl"] = message.mediaUrl
+        if (message.voiceUrl != null) {
+            messageData["voiceUrl"] = message.voiceUrl
+            messageData["voiceDuration"] = message.voiceDuration
+        }
+
+        val previewText = message.text?.takeIf { it.isNotBlank() }
+            ?: if (message.mediaUrl != null) "📷 Фотография"
+            else if (message.voiceUrl != null) "🎤 Голосовое сообщение"
+            else "Сообщение"
+
+        val chatRef = db.collection("chats").document(targetChatId)
+        val msgRef = chatRef.collection("messages").document()
+
+        val batch = db.batch()
+        batch.set(msgRef, messageData)
+        batch.update(
+            chatRef,
+            mapOf(
+                "lastMessage" to previewText,
+                "lastSenderId" to uid,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        )
+        batch.commit()
+            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка пересылки сообщения", e) }
+    }
+
     fun createGroupChat(
         title: String,
         description: String,
@@ -750,15 +945,333 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             .set(groupData)
             .addOnSuccessListener {
                 val systemMessage = mapOf(
+                    "type" to MessageType.SYSTEM,
                     "text" to "$myName создал(а) группу \"$title\"",
                     "senderId" to "system",
                     "senderName" to "Система",
+                    "systemAction" to SystemAction.GROUP_CREATED,
                     "timestamp" to FieldValue.serverTimestamp(),
                     "readBy" to listOf(uid)
                 )
                 db.collection("chats/$newChatId/messages").add(systemMessage)
                 onSuccess(newChatId)
             }
+    }
+
+    fun createChannel(
+        title: String,
+        description: String,
+        isPublic: Boolean,
+        username: String?,
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit = {}
+    ) {
+        val uid = myUid ?: return
+        if (title.isBlank()) return
+
+        val cleanUsername = username?.lowercase()?.trim()?.takeIf { it.isNotBlank() }
+        if (isPublic && cleanUsername.isNullOrBlank()) {
+            onError("У публичного канала должен быть @username")
+            return
+        }
+
+        fun writeChannel() {
+            val newChatId = db.collection("chats").document().id
+
+            val channelData = mutableMapOf<String, Any?>(
+                "chatId" to newChatId,
+                "type" to "CHANNEL",
+                "isGroup" to true,
+                "groupName" to title.trim(),
+                "description" to description.trim(),
+                "ownerId" to uid,
+                "admins" to listOf(uid),
+                "isPublic" to isPublic,
+                "participants" to listOf(uid),
+                "members" to listOf(uid),
+                "pinnedMessage" to null,
+                "lastMessage" to "Канал \"${title.trim()}\" создан",
+                "lastSenderId" to "system",
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (cleanUsername != null) channelData["username"] = cleanUsername
+
+            db.collection("chats").document(newChatId)
+                .set(channelData)
+                .addOnSuccessListener {
+                    val systemMessage = mapOf(
+                        "type" to MessageType.SYSTEM,
+                        "text" to "Канал \"$title\" создан",
+                        "senderId" to "system",
+                        "senderName" to "Система",
+                        "timestamp" to FieldValue.serverTimestamp(),
+                        "readBy" to listOf(uid)
+                    )
+                    db.collection("chats/$newChatId/messages").add(systemMessage)
+                    onSuccess(newChatId)
+                }
+                .addOnFailureListener { e ->
+                    Log.e("ChatVM", "Ошибка создания канала", e)
+                    onError(e.localizedMessage ?: "Ошибка создания канала")
+                }
+        }
+
+        if (cleanUsername != null) {
+            checkChannelUsername(cleanUsername) { isAvailable ->
+                if (isAvailable) writeChannel()
+                else onError("Юзернейм @$cleanUsername уже занят")
+            }
+        } else {
+            writeChannel()
+        }
+    }
+
+
+    fun checkChannelUsername(username: String, excludeChatId: String? = null, onResult: (Boolean) -> Unit) {
+        val clean = username.lowercase().trim()
+        var channelDone = false
+        var userDone = false
+        var isTaken = false
+
+        fun finish() {
+            if (channelDone && userDone) onResult(!isTaken)
+        }
+
+        db.collection("chats")
+            .whereEqualTo("username", clean)
+            .limit(2)
+            .get()
+            .addOnSuccessListener { snap ->
+                if (snap.documents.any { it.id != excludeChatId }) isTaken = true
+                channelDone = true
+                finish()
+            }
+            .addOnFailureListener { channelDone = true; finish() }
+
+        db.collection("users")
+            .whereEqualTo("username", clean)
+            .limit(1)
+            .get()
+            .addOnSuccessListener { snap ->
+                if (!snap.isEmpty) isTaken = true
+                userDone = true
+                finish()
+            }
+            .addOnFailureListener { userDone = true; finish() }
+    }
+
+    fun updateChannelUsername(
+        chatId: String,
+        newUsername: String,
+        makePublic: Boolean,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val cleanUsername = newUsername.lowercase().trim().takeIf { it.isNotBlank() }
+        if (makePublic && cleanUsername.isNullOrBlank()) {
+            onError("У публичного канала должен быть @username")
+            return
+        }
+
+        fun write() {
+            val updates = mutableMapOf<String, Any?>("isPublic" to makePublic)
+            updates["username"] = cleanUsername
+            db.collection("chats").document(chatId)
+                .update(updates)
+                .addOnSuccessListener { onSuccess() }
+                .addOnFailureListener { e -> onError(e.localizedMessage ?: "Ошибка сохранения") }
+        }
+
+        if (cleanUsername != null) {
+            checkChannelUsername(cleanUsername, excludeChatId = chatId) { isAvailable ->
+                if (isAvailable) write() else onError("Юзернейм @$cleanUsername уже занят")
+            }
+        } else {
+            write()
+        }
+    }
+
+
+    object AdminPermission {
+        const val CAN_POST = "canPost"
+        const val CAN_DELETE_MESSAGES = "canDeleteMessages"
+        const val CAN_BAN_USERS = "canBanUsers"
+        const val CAN_ADD_ADMINS = "canAddAdmins"
+        const val CAN_EDIT_INFO = "canEditInfo"
+        const val CAN_INVITE_USERS = "canInviteUsers"
+
+        fun default(): Map<String, Boolean> = mapOf(
+            CAN_POST to true,
+            CAN_DELETE_MESSAGES to true,
+            CAN_BAN_USERS to false,
+            CAN_ADD_ADMINS to false,
+            CAN_EDIT_INFO to false,
+            CAN_INVITE_USERS to true
+        )
+    }
+
+    fun promoteToAdmin(
+        chatId: String,
+        uid: String,
+        permissions: Map<String, Boolean> = AdminPermission.default(),
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit = {}
+    ) {
+        db.collection("chats").document(chatId)
+            .update(
+                mapOf(
+                    "admins" to FieldValue.arrayUnion(uid),
+                    "adminPermissions.$uid" to permissions
+                )
+            )
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { e -> onError(e.localizedMessage ?: "Не удалось назначить админа") }
+    }
+
+    fun updateAdminPermissions(
+        chatId: String,
+        uid: String,
+        permissions: Map<String, Boolean>,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit = {}
+    ) {
+        db.collection("chats").document(chatId)
+            .update("adminPermissions.$uid", permissions)
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { e -> onError(e.localizedMessage ?: "Не удалось обновить права") }
+    }
+
+    fun removeAdmin(
+        chatId: String,
+        uid: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit = {}
+    ) {
+        db.collection("chats").document(chatId)
+            .update(
+                mapOf(
+                    "admins" to FieldValue.arrayRemove(uid),
+                    "adminPermissions.$uid" to FieldValue.delete()
+                )
+            )
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { e -> onError(e.localizedMessage ?: "Не удалось снять права") }
+    }
+
+    fun banUser(
+        chatId: String,
+        uid: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit = {}
+    ) {
+        db.collection("chats").document(chatId)
+            .update(
+                mapOf(
+                    "bannedUids" to FieldValue.arrayUnion(uid),
+                    "participants" to FieldValue.arrayRemove(uid),
+                    "members" to FieldValue.arrayRemove(uid),
+
+                    "admins" to FieldValue.arrayRemove(uid),
+                    "adminPermissions.$uid" to FieldValue.delete()
+                )
+            )
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { e -> onError(e.localizedMessage ?: "Не удалось забанить") }
+    }
+
+    fun unbanUser(
+        chatId: String,
+        uid: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit = {}
+    ) {
+        db.collection("chats").document(chatId)
+            .update("bannedUids", FieldValue.arrayRemove(uid))
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { e -> onError(e.localizedMessage ?: "Не удалось разбанить") }
+    }
+
+
+    fun generateInviteCode(
+        chatId: String,
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit = {}
+    ) {
+        val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        val code = (1..10).map { chars.random() }.joinToString("")
+        db.collection("chats").document(chatId)
+            .update("inviteCode", code)
+            .addOnSuccessListener { onSuccess(code) }
+            .addOnFailureListener { e -> onError(e.localizedMessage ?: "Не удалось создать ссылку") }
+    }
+
+
+    fun getInviteInfo(code: String, onResult: (InvitePreview?) -> Unit) {
+        db.collection("chats")
+            .whereEqualTo("inviteCode", code)
+            .limit(1)
+            .get()
+            .addOnSuccessListener { snap ->
+                val doc = snap.documents.firstOrNull()
+                if (doc == null) {
+                    onResult(null)
+                    return@addOnSuccessListener
+                }
+                val type = doc.getString("type") ?: "GROUP"
+                @Suppress("UNCHECKED_CAST")
+                val participants = (doc.get("participants") as? List<String>)
+                    ?: (doc.get("members") as? List<String>) ?: emptyList()
+
+                onResult(
+                    InvitePreview(
+                        chatId = doc.id,
+                        name = doc.getString("title") ?: doc.getString("groupName") ?: "Чат",
+                        avatarUrl = doc.getString("groupAvatar") ?: doc.getString("groupAvatarUrl"),
+                        icon = doc.getString("groupIcon") ?: "group",
+                        glowColor = doc.getString("glowColor") ?: "accent",
+                        membersCount = participants.size,
+                        isChannel = type == "CHANNEL",
+                    )
+                )
+            }
+            .addOnFailureListener { onResult(null) }
+    }
+
+
+    fun joinByInviteCode(
+        code: String,
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val uid = myUid ?: return onError("Не авторизован")
+        db.collection("chats")
+            .whereEqualTo("inviteCode", code)
+            .limit(1)
+            .get()
+            .addOnSuccessListener { snap ->
+                val doc = snap.documents.firstOrNull()
+                if (doc == null) {
+                    onError("Ссылка недействительна")
+                    return@addOnSuccessListener
+                }
+                @Suppress("UNCHECKED_CAST")
+                val banned = (doc.get("bannedUids") as? List<String>) ?: emptyList()
+                if (uid in banned) {
+                    onError("Вы забанены в этом чате")
+                    return@addOnSuccessListener
+                }
+                doc.reference
+                    .update(
+                        mapOf(
+                            "participants" to FieldValue.arrayUnion(uid),
+                            "members" to FieldValue.arrayUnion(uid),
+                            "unreadCount_$uid" to 0
+                        )
+                    )
+                    .addOnSuccessListener { onSuccess(doc.id) }
+                    .addOnFailureListener { e -> onError(e.localizedMessage ?: "Не удалось вступить") }
+            }
+            .addOnFailureListener { e -> onError(e.localizedMessage ?: "Ошибка проверки ссылки") }
     }
 
     private fun sendPushNotification(receiverUid: String, messageText: String) {
@@ -816,11 +1329,82 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 "pinnedMessageId", message.id,
                 "pinnedMessage", message.text ?: if (message.mediaUrl != null) "📷 Фотография" else "Голосовое сообщение"
             )
+            .addOnSuccessListener {
+                postSystemMessage(
+                    db, chatId,
+                    text = "$myName закрепил(а) сообщение",
+                    action = SystemAction.PINNED,
+                    refMessageId = message.id
+                )
+            }
+            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка закрепления сообщения", e) }
     }
 
     fun unpinMessage(chatId: String) {
         db.collection("chats").document(chatId)
             .update("pinnedMessageId", null, "pinnedMessage", null)
+            .addOnSuccessListener {
+                postSystemMessage(db, chatId, text = "$myName открепил(а) сообщение", action = SystemAction.UNPINNED)
+            }
+            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка открепления сообщения", e) }
+    }
+
+
+    fun logCallMessage(
+        chatId: String,
+        callType: String,
+        status: String,
+        durationSec: Int = 0
+    ) {
+        val uid = myUid ?: return
+
+        val text = when (status) {
+            CallStatus.MISSED -> "Пропущенный звонок"
+            CallStatus.DECLINED -> "Звонок отклонён"
+            else -> {
+                val minutes = durationSec / 60
+                val seconds = durationSec % 60
+                "Звонок, $minutes:${seconds.toString().padStart(2, '0')}"
+            }
+        }
+
+        val messageData = mutableMapOf<String, Any?>(
+            "type" to MessageType.CALL,
+            "text" to text,
+            "senderId" to uid,
+            "senderName" to myName,
+            "callType" to callType,
+            "callStatus" to status,
+            "callDurationSec" to durationSec,
+            "timestamp" to FieldValue.serverTimestamp(),
+            "readBy" to listOf(uid)
+        )
+
+        val chatRef = db.collection("chats").document(chatId)
+        val msgRef = chatRef.collection("messages").document()
+        val previewIcon = if (callType == "VIDEO") "📹" else "📞"
+
+        val batch = db.batch()
+        batch.set(msgRef, messageData)
+        batch.update(
+            chatRef,
+            mapOf(
+                "lastMessage" to "$previewIcon $text",
+                "lastSenderId" to uid,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        )
+        if (!isGroupChat && partnerUid.isNotBlank() && status == CallStatus.MISSED) {
+            batch.update(chatRef, "unreadCount_$partnerUid", FieldValue.increment(1))
+        }
+
+        batch.commit()
+            .addOnSuccessListener {
+                if (!isGroupChat && partnerUid.isNotBlank() && status == CallStatus.MISSED) {
+                    sendPushNotification(partnerUid, text)
+                }
+            }
+            .addOnFailureListener { e -> Log.e("ChatVM", "Не удалось сохранить сообщение о звонке", e) }
     }
 
     fun setChatTheme(chatId: String, theme: String) {
@@ -852,7 +1436,13 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 }
                 val batch = db.batch()
                 snapshot.documents.forEach { batch.delete(it.reference) }
-                batch.commit().addOnSuccessListener { onSuccess() }
+                batch.commit()
+                    .addOnSuccessListener {
+                        viewModelScope.launch {
+                            repository.clearChatHistoryLocally(chatId)
+                        }
+                        onSuccess()
+                    }
             }
             .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка очистки чата", e) }
     }
@@ -876,6 +1466,19 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         batch.commit()
     }
 
+
+    private fun markAsViewed(chatId: String, list: List<Message>, uid: String) {
+        val unviewed = list.filter { it.senderId != uid && !it.viewedBy.contains(uid) }
+        if (unviewed.isEmpty()) return
+
+        val batch = db.batch()
+        unviewed.forEach { msg ->
+            val ref = db.collection("chats/$chatId/messages").document(msg.id)
+            batch.update(ref, "viewedBy", FieldValue.arrayUnion(uid))
+        }
+        batch.commit()
+    }
+
     fun setTyping(chatId: String, isTyping: Boolean) {
         val uid = myUid ?: return
         if (!isGroupChat) {
@@ -893,7 +1496,12 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 batch.commit()
                     .addOnCompleteListener {
                         db.collection("chats").document(chatId).delete()
-                            .addOnSuccessListener { onSuccess() }
+                            .addOnSuccessListener {
+                                viewModelScope.launch {
+                                    repository.clearChatHistoryLocally(chatId)
+                                }
+                                onSuccess()
+                            }
                             .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка удаления группы", e) }
                     }
             }
@@ -937,11 +1545,11 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
                 val fileName = "voice_${uid}_${System.currentTimeMillis()}.m4a"
                 val key = "voice/$uid/$fileName"
-                val contentType = "audio/mp4" // .m4a, есть в ALLOWED_CONTENT_TYPES на бэке
+                val contentType = "audio/mp4"
 
                 val presign = BackendApi.presignUpload(idToken, key, contentType)
                 BackendApi.uploadBytes(presign.uploadUrl, audioBytes, contentType)
-                // FIX: аналогично медиа — храним ключ, ссылка резолвится на лету в UI
+
 
                 val messageData = mutableMapOf<String, Any?>(
                     "senderId" to uid,
@@ -982,7 +1590,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 batch.commit()
                     .addOnSuccessListener {
                         playSound(messageSentSoundId)
-                        // FIX: пуш не отправлялся для голосовых сообщений
+
                         if (!isGroupChat && partnerUid.isNotBlank()) {
                             sendPushNotification(partnerUid, "🎤 Голосовое сообщение ($duration сек.)")
                         }
@@ -1000,7 +1608,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         messagesListener?.remove()
         userListener?.remove()
         chatDocListener?.remove()
-        myProfileListener?.remove() // FIX: снимаем слушатель профиля
+        myProfileListener?.remove()
         soundPool?.release()
         soundPool = null
         stopVoice()
@@ -1015,263 +1623,242 @@ data class GroupMemberUi(
     val avatarUrl: String?,
     val useCustomAvatar: Boolean,
     val profileIcon: String,
-    val profileGlow: String,
     val isPremium: Boolean,
-    val isModerator: Boolean,
-    val isAdmin: Boolean,
+    val profileGlow: String,
     val isOwner: Boolean,
+    val isAdmin: Boolean,
+    val isModerator: Boolean
 )
 
-class GroupMembersVM : ViewModel() {
 
+class GroupMembersVM(application: Application) : AndroidViewModel(application) {
     private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
-
-    var groupName by mutableStateOf("Группа")
-        private set
-
-    var ownerId by mutableStateOf("")
-        private set
-
-    var adminIds by mutableStateOf<List<String>>(emptyList())
-        private set
-
-    var moderatorIds by mutableStateOf<List<String>>(emptyList())
-        private set
-
-    var memberIds by mutableStateOf<List<String>>(emptyList())
-        private set
-
-    var members by mutableStateOf<List<GroupMemberUi>>(emptyList())
-        private set
+    val myUid: String get() = auth.currentUser?.uid ?: ""
 
     var isLoading by mutableStateOf(true)
         private set
-
     var errorMessage by mutableStateOf<String?>(null)
         private set
-
-    val myUid: String? get() = auth.currentUser?.uid
-
-    val isMyAdmin: Boolean get() = myUid != null && myUid in adminIds
+    var members by mutableStateOf<List<GroupMemberUi>>(emptyList())
+        private set
+    var memberIds by mutableStateOf<List<String>>(emptyList())
+        private set
+    var bannedMembers by mutableStateOf<List<GroupMemberUi>>(emptyList())
+        private set
+    var inviteCode by mutableStateOf<String?>(null)
+        private set
+    var isMyAdmin by mutableStateOf(false)
+        private set
+    var isMyOwner by mutableStateOf(false)
+        private set
+    var canIBan by mutableStateOf(false)
+        private set
+    var canIInvite by mutableStateOf(false)
+        private set
 
     private var chatListener: ListenerRegistration? = null
-    private var currentChatId: String? = null
+    private var ownerId: String = ""
+    private var adminsList: List<String> = emptyList()
+    private var adminPermissions: Map<String, Map<String, Boolean>> = emptyMap()
+    private var bannedIds: List<String> = emptyList()
 
     fun observeGroup(chatId: String) {
-        if (currentChatId == chatId && chatListener != null) return
-        currentChatId = chatId
-
         chatListener?.remove()
+        isLoading = true
         chatListener = db.collection("chats").document(chatId)
             .addSnapshotListener { doc, err ->
-                if (err != null) {
-                    Log.e("GroupMembersVM", "Ошибка слушателя группы", err)
-                    errorMessage = "Не удалось загрузить группу"
+                if (err != null || doc == null || !doc.exists()) {
+                    errorMessage = "Не удалось загрузить участников"
                     isLoading = false
                     return@addSnapshotListener
                 }
-                if (doc != null && doc.exists()) {
-                    errorMessage = null
-                    groupName = doc.getString("groupName") ?: doc.getString("title") ?: "Группа"
-                    ownerId = doc.getString("ownerId") ?: ""
+                ownerId = doc.getString("ownerId") ?: ""
+                @Suppress("UNCHECKED_CAST")
+                adminsList = (doc.get("admins") as? List<String>) ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                adminPermissions = (doc.get("adminPermissions") as? Map<String, Map<String, Boolean>>) ?: emptyMap()
+                @Suppress("UNCHECKED_CAST")
+                val participants = (doc.get("participants") as? List<String>)
+                    ?: (doc.get("members") as? List<String>) ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                bannedIds = (doc.get("bannedUids") as? List<String>) ?: emptyList()
+                inviteCode = doc.getString("inviteCode")
+                memberIds = participants
 
-                    @Suppress("UNCHECKED_CAST")
-                    adminIds = (doc.get("admins") as? List<String>) ?: emptyList()
+                isMyOwner = myUid == ownerId
+                val myPerms = adminPermissions[myUid] ?: emptyMap()
+                isMyAdmin = isMyOwner || myUid in adminsList
+                canIBan = isMyOwner || myPerms[ChatVM.AdminPermission.CAN_BAN_USERS] == true
+                canIInvite = isMyOwner || myPerms[ChatVM.AdminPermission.CAN_INVITE_USERS] == true
 
-                    @Suppress("UNCHECKED_CAST")
-                    moderatorIds = (doc.get("moderators") as? List<String>) ?: emptyList()
-
-                    @Suppress("UNCHECKED_CAST")
-                    val ids = (doc.get("participants") as? List<String>)
-                        ?: (doc.get("members") as? List<String>)
-                        ?: emptyList()
-                    memberIds = ids
-                    loadMemberProfiles(ids)
-                } else {
-                    isLoading = false
-                    errorMessage = "Группа не найдена"
-                }
+                loadProfiles(participants, bannedIds)
             }
     }
 
-    private fun loadMemberProfiles(ids: List<String>) {
-        if (ids.isEmpty()) {
-            members = emptyList()
-            isLoading = false
-            return
-        }
-        isLoading = true
-
-        // whereIn по documentId() ограничен 30 значениями — бьём на чанки по 10
-        val chunks = ids.distinct().chunked(10)
-        val collected = mutableMapOf<String, GroupMemberUi>()
-        var remaining = chunks.size
-
-        chunks.forEach { chunk ->
-            db.collection("users")
-                .whereIn(FieldPath.documentId(), chunk)
-                .get()
-                .addOnSuccessListener { snap ->
-                    snap.documents.forEach { d ->
-                        val uid = d.id
-                        collected[uid] = GroupMemberUi(
-                            uid = uid,
-                            name = d.getString("name") ?: d.getString("username") ?: "Без имени",
-                            username = d.getString("username") ?: "",
-                            avatarUrl = d.getString("avatarUrl"),
-                            useCustomAvatar = d.getBoolean("useCustomAvatar") ?: true,
-                            profileIcon = d.getString("profileIcon") ?: "face",
-                            profileGlow = d.getString("profileGlow") ?: "purple",
-                            isPremium = d.getBoolean("isPremium") ?: false,
-                            isModerator = uid in moderatorIds,
-                            isAdmin = uid in adminIds,
-                            isOwner = uid == ownerId,
-                        )
-                    }
-                    remaining--
-                    if (remaining <= 0) finishLoadingMembers(collected)
-                }
-                .addOnFailureListener { e ->
-                    Log.e("GroupMembersVM", "Не удалось загрузить участников", e)
-                    remaining--
-                    if (remaining <= 0) finishLoadingMembers(collected)
-                }
+    private fun loadProfiles(participantIds: List<String>, bannedUids: List<String>) {
+        viewModelScope.launch {
+            try {
+                members = participantIds.mapNotNull { uid -> fetchMemberUi(uid) }
+                isLoading = false
+            } catch (e: Exception) {
+                errorMessage = "Не удалось загрузить участников"
+                isLoading = false
+            }
+            bannedMembers = bannedUids.mapNotNull { uid -> fetchMemberUi(uid) }
         }
     }
 
-    private fun finishLoadingMembers(collected: Map<String, GroupMemberUi>) {
-        members = collected.values.sortedWith(
-            compareByDescending<GroupMemberUi> { it.isOwner }
-                .thenByDescending { it.isAdmin }
-                .thenByDescending { it.isModerator }
-                .thenBy { it.name.lowercase() }
-        )
-        isLoading = false
-    }
-
-    fun promoteToAdmin(chatId: String, uid: String, onResult: (Boolean) -> Unit = {}) {
-        db.collection("chats").document(chatId)
-            .update("admins", FieldValue.arrayUnion(uid))
-            .addOnSuccessListener { onResult(true) }
-            .addOnFailureListener { e ->
-                Log.e("GroupMembersVM", "Не удалось назначить админа", e)
-                onResult(false)
-            }
-    }
-
-    fun demoteAdmin(chatId: String, uid: String, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
-        if (uid == ownerId) {
-            onResult(false, "Нельзя снять права у создателя группы")
-            return
+    private suspend fun fetchMemberUi(uid: String): GroupMemberUi? {
+        return try {
+            val snap = db.collection("users").document(uid).get().await()
+            val perms = adminPermissions[uid] ?: emptyMap()
+            val fullAdmin = perms[ChatVM.AdminPermission.CAN_ADD_ADMINS] == true
+            GroupMemberUi(
+                uid = uid,
+                name = snap.getString("name") ?: snap.getString("username") ?: "Без имени",
+                username = snap.getString("username") ?: "",
+                avatarUrl = snap.getString("avatarUrl"),
+                useCustomAvatar = snap.getBoolean("useCustomAvatar") ?: false,
+                profileIcon = snap.getString("profileIcon") ?: "ghost",
+                isPremium = snap.getBoolean("isPremium") ?: false,
+                profileGlow = snap.getString("profileGlow") ?: "purple",
+                isOwner = uid == ownerId,
+                isAdmin = uid != ownerId && uid in adminsList && fullAdmin,
+                isModerator = uid != ownerId && uid in adminsList && !fullAdmin
+            )
+        } catch (e: Exception) {
+            null
         }
-        db.collection("chats").document(chatId)
-            .update("admins", FieldValue.arrayRemove(uid))
-            .addOnSuccessListener { onResult(true, null) }
-            .addOnFailureListener { e ->
-                Log.e("GroupMembersVM", "Не удалось снять права админа", e)
-                onResult(false, "Ошибка сети, попробуйте ещё раз")
-            }
     }
 
-    fun promoteToModerator(chatId: String, uid: String, onResult: (Boolean) -> Unit = {}) {
-        db.collection("chats").document(chatId)
-            .update("moderators", FieldValue.arrayUnion(uid))
-            .addOnSuccessListener { onResult(true) }
-            .addOnFailureListener { e ->
-                Log.e("GroupMembersVM", "Не удалось назначить модератора", e)
-                onResult(false)
-            }
-    }
-
-    fun demoteModerator(chatId: String, uid: String, onResult: (Boolean) -> Unit = {}) {
-        db.collection("chats").document(chatId)
-            .update("moderators", FieldValue.arrayRemove(uid))
-            .addOnSuccessListener { onResult(true) }
-            .addOnFailureListener { e ->
-                Log.e("GroupMembersVM", "Не удалось снять права модератора", e)
-                onResult(false)
-            }
-    }
-
-    fun kickMember(chatId: String, uid: String, onResult: (Boolean, String?) -> Unit = { _, _ -> }) {
-        if (uid == ownerId) {
-            onResult(false, "Нельзя исключить создателя группы")
-            return
-        }
-        if (uid in adminIds) {
-            onResult(false, "Сначала снимите права администратора")
-            return
-        }
-        db.collection("chats").document(chatId)
-            .update(mapOf(
-                "participants" to FieldValue.arrayRemove(uid),
-                "members" to FieldValue.arrayRemove(uid),
-                "admins" to FieldValue.arrayRemove(uid)
-            ))
-            .addOnSuccessListener { onResult(true, null) }
-            .addOnFailureListener { e ->
-                Log.e("GroupMembersVM", "Не удалось исключить участника", e)
-                onResult(false, "Ошибка сети, попробуйте ещё раз")
-            }
-    }
-
-    fun addMembers(chatId: String, uids: List<String>, onResult: (Boolean) -> Unit = {}) {
-        if (uids.isEmpty()) { onResult(true); return }
-        db.collection("chats").document(chatId)
-            .update(mapOf(
-                "participants" to FieldValue.arrayUnion(*uids.toTypedArray()),
-                "members" to FieldValue.arrayUnion(*uids.toTypedArray())
-            ))
-            .addOnSuccessListener { onResult(true) }
-            .addOnFailureListener { e ->
-                Log.e("GroupMembersVM", "Не удалось добавить участников", e)
-                onResult(false)
-            }
-    }
-
-    fun searchAddableUsers(
-        excludeIds: List<String>,
-        query: String,
-        onResult: (List<GroupMemberUi>) -> Unit
-    ) {
-        val trimmed = query.trim().lowercase()
-        val request = if (trimmed.isEmpty()) {
-            db.collection("users").limit(30)
-        } else {
-            db.collection("users")
-                .orderBy("username")
-                .startAt(trimmed)
-                .endAt(trimmed + "\uf8ff")
-                .limit(30)
-        }
-
-        request.get()
+    fun searchAddableUsers(existingIds: List<String>, query: String, onResult: (List<GroupMemberUi>) -> Unit) {
+        val clean = query.trim().lowercase().removePrefix("@")
+        if (clean.length < 2) { onResult(emptyList()); return }
+        db.collection("users")
+            .orderBy("username")
+            .startAt(clean)
+            .endAt(clean + "\uf8ff")
+            .limit(15)
+            .get()
             .addOnSuccessListener { snap ->
-                val result = snap.documents
-                    .filter { it.id !in excludeIds }
-                    .map { d ->
-                        val uid = d.id
-                        GroupMemberUi(
-                            uid = uid,
-                            name = d.getString("name") ?: d.getString("username") ?: "Без имени",
-                            username = d.getString("username") ?: "",
-                            avatarUrl = d.getString("avatarUrl"),
-                            useCustomAvatar = d.getBoolean("useCustomAvatar") ?: true,
-                            profileIcon = d.getString("profileIcon") ?: "face",
-                            profileGlow = d.getString("profileGlow") ?: "purple",
-                            isPremium = d.getBoolean("isPremium") ?: false,
-                            isModerator = false,
-                            isAdmin = false,
-                            isOwner = false,
-                        )
-                    }
-                onResult(result)
+                val found = snap.documents.mapNotNull { doc ->
+                    if (doc.id in existingIds) return@mapNotNull null
+                    GroupMemberUi(
+                        uid = doc.id,
+                        name = doc.getString("name") ?: doc.getString("username") ?: "Без имени",
+                        username = doc.getString("username") ?: "",
+                        avatarUrl = doc.getString("avatarUrl"),
+                        useCustomAvatar = doc.getBoolean("useCustomAvatar") ?: false,
+                        profileIcon = doc.getString("profileIcon") ?: "ghost",
+                        isPremium = doc.getBoolean("isPremium") ?: false,
+                        profileGlow = doc.getString("profileGlow") ?: "purple",
+                        isOwner = false, isAdmin = false, isModerator = false
+                    )
+                }
+                onResult(found)
             }
-            .addOnFailureListener { e ->
-                Log.e("GroupMembersVM", "Не удалось найти пользователей", e)
-                onResult(emptyList())
-            }
+            .addOnFailureListener { onResult(emptyList()) }
+    }
+
+    fun addMembers(chatId: String, uids: List<String>, onResult: (Boolean) -> Unit) {
+        if (uids.isEmpty()) { onResult(false); return }
+        db.collection("chats").document(chatId)
+            .update(
+                mapOf(
+                    "participants" to FieldValue.arrayUnion(*uids.toTypedArray()),
+                    "members" to FieldValue.arrayUnion(*uids.toTypedArray())
+                )
+            )
+            .addOnSuccessListener { onResult(true) }
+            .addOnFailureListener { onResult(false) }
+    }
+
+    fun promoteToAdmin(chatId: String, uid: String, onResult: (Boolean) -> Unit) {
+        val perms = ChatVM.AdminPermission.default() + mapOf(
+            ChatVM.AdminPermission.CAN_ADD_ADMINS to true,
+            ChatVM.AdminPermission.CAN_EDIT_INFO to true
+        )
+        db.collection("chats").document(chatId)
+            .update(mapOf("admins" to FieldValue.arrayUnion(uid), "adminPermissions.$uid" to perms))
+            .addOnSuccessListener { onResult(true) }
+            .addOnFailureListener { onResult(false) }
+    }
+
+    fun promoteToModerator(chatId: String, uid: String, onResult: (Boolean) -> Unit) {
+        val perms = mapOf(
+            ChatVM.AdminPermission.CAN_POST to true,
+            ChatVM.AdminPermission.CAN_DELETE_MESSAGES to true,
+            ChatVM.AdminPermission.CAN_BAN_USERS to true,
+            ChatVM.AdminPermission.CAN_ADD_ADMINS to false,
+            ChatVM.AdminPermission.CAN_EDIT_INFO to false,
+            ChatVM.AdminPermission.CAN_INVITE_USERS to true
+        )
+        db.collection("chats").document(chatId)
+            .update(mapOf("admins" to FieldValue.arrayUnion(uid), "adminPermissions.$uid" to perms))
+            .addOnSuccessListener { onResult(true) }
+            .addOnFailureListener { onResult(false) }
+    }
+
+    fun demoteAdmin(chatId: String, uid: String, onResult: (Boolean, String?) -> Unit) {
+        db.collection("chats").document(chatId)
+            .update(
+                mapOf(
+                    "admins" to FieldValue.arrayRemove(uid),
+                    "adminPermissions.$uid" to FieldValue.delete()
+                )
+            )
+            .addOnSuccessListener { onResult(true, null) }
+            .addOnFailureListener { e -> onResult(false, e.localizedMessage) }
+    }
+
+    fun demoteModerator(chatId: String, uid: String, onResult: (Boolean) -> Unit) {
+        demoteAdmin(chatId, uid) { success, _ -> onResult(success) }
+    }
+
+    fun kickMember(chatId: String, uid: String, onResult: (Boolean, String?) -> Unit) {
+        db.collection("chats").document(chatId)
+            .update(
+                mapOf(
+                    "participants" to FieldValue.arrayRemove(uid),
+                    "members" to FieldValue.arrayRemove(uid),
+                    "admins" to FieldValue.arrayRemove(uid),
+                    "adminPermissions.$uid" to FieldValue.delete()
+                )
+            )
+            .addOnSuccessListener { onResult(true, null) }
+            .addOnFailureListener { e -> onResult(false, e.localizedMessage) }
+    }
+
+    fun banMember(chatId: String, uid: String, onResult: (Boolean, String?) -> Unit) {
+        db.collection("chats").document(chatId)
+            .update(
+                mapOf(
+                    "participants" to FieldValue.arrayRemove(uid),
+                    "members" to FieldValue.arrayRemove(uid),
+                    "admins" to FieldValue.arrayRemove(uid),
+                    "adminPermissions.$uid" to FieldValue.delete(),
+                    "bannedUids" to FieldValue.arrayUnion(uid)
+                )
+            )
+            .addOnSuccessListener { onResult(true, null) }
+            .addOnFailureListener { e -> onResult(false, e.localizedMessage) }
+    }
+
+    fun unbanMember(chatId: String, uid: String, onResult: (Boolean) -> Unit) {
+        db.collection("chats").document(chatId)
+            .update("bannedUids", FieldValue.arrayRemove(uid))
+            .addOnSuccessListener { onResult(true) }
+            .addOnFailureListener { onResult(false) }
+    }
+
+    fun generateInviteLink(chatId: String, onResult: (String?) -> Unit) {
+        val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        val code = (1..10).map { chars.random() }.joinToString("")
+        db.collection("chats").document(chatId)
+            .update("inviteCode", code)
+            .addOnSuccessListener { onResult(code) }
+            .addOnFailureListener { onResult(null) }
     }
 
     override fun onCleared() {

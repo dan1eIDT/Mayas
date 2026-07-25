@@ -24,25 +24,25 @@ class IncomingCallActivity : ComponentActivity() {
         val callManager = (application as CallManagerProvider).callManager
         val currentUserId = FirebaseAuth.getInstance().currentUser?.uid.orEmpty()
 
-        // Кнопка "Принять" в уведомлении ведёт СЮДА напрямую через
-        // PendingIntent.getActivity(...) с extra=true (см. CallConnectionService),
-        // а не через BroadcastReceiver — на Android 12+ система блокирует запуск
-        // Activity из BroadcastReceiver как notification trampoline, и "Принять" просто
-        // не открыло бы экран. Дёргаем acceptCall(callId) ровно один раз здесь, в
-        // onCreate — НЕ внутри setContent/композиции, иначе он вызывался бы повторно
-        // на каждой рекомпозиции.
-        //
-        // callId берём ЯВНО из EXTRA_CALL_ID интента, а не из callManager.activeCall —
-        // именно это раньше вызывало белый экран навсегда: CallConnectionService строит
-        // уведомление прямо из push-экстрас, не дожидаясь, пока CallManager.attachToCall()
-        // сам заполнит activeCall своим Firestore-снапшотом. Если "Принять" жали раньше,
-        // чем этот снапшот успевал прийти, acceptCall() без явного callId просто не
-        // находил, какой звонок принимать, и тихо ничего не делал.
-        //
-        // savedInstanceState == null гарантирует, что это действительно первое создание
-        // Activity, а не пересоздание при повороте экрана — иначе тот же intent с тем
-        // же extra=true пересоздал бы соединение (повторный webRtcClient.init() поверх
-        // уже идущего звонка) при каждом повороте телефона во время разговора.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
         if (savedInstanceState == null && intent?.getBooleanExtra(EXTRA_AUTO_ACCEPT, false) == true) {
             val callId = intent?.getStringExtra(CallConnectionService.EXTRA_CALL_ID)
             if (callId != null) {
@@ -56,20 +56,20 @@ class IncomingCallActivity : ComponentActivity() {
             )
             val state by viewModel.uiState.collectAsState()
 
-            // БАГ, который вырубал экран сразу после открытия: uiState — это StateFlow
-            // из stateIn(initialValue = NoCall). Для этой Activity создаётся НОВЫЙ
-            // CallViewModel, и в первый же кадр композиции state синхронно ещё равен
-            // NoCall — реальное "звонок активен" прилетает на кадр позже, асинхронно,
-            // когда комбинирующий Flow внутри CallViewModel успевает подписаться и
-            // получить значения из CallManager. Старый код делал finish() прямо по
-            // этому первому NoCall — то есть закрывал Activity ДО того, как она вообще
-            // успевала увидеть, что звонок есть. Снаружи это выглядело как "открылось
-            // и тут же само выключилось".
-            //
-            // Фикс: не закрываемся на самый первый NoCall. Закрываемся только если
-            // реально уже видели Active хотя бы раз, а потом он пропал — то есть звонок
-            // действительно закончился (принят и основная Activity уже поверх, либо
-            // отклонён/завершён с другой стороны), а не просто "ещё не подгрузилось".
+
+
+
+
+
+
+
+
+
+
+
+
+
+
             var hasSeenActiveCall by remember { mutableStateOf(false) }
 
             LaunchedEffect(state) {
@@ -88,9 +88,9 @@ class IncomingCallActivity : ComponentActivity() {
                     onToggleSpeaker = viewModel::onSpeakerToggleClicked
                 )
             }
-            // Пока state == NoCall и hasSeenActiveCall == false — просто ничего не
-            // рисуем и ничего не закрываем, ждём первую реальную эмиссию из
-            // CallManager. Это доли секунды, отдельный лоадер тут избыточен.
+
+
+
         }
     }
 

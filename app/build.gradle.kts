@@ -15,7 +15,7 @@ android {
         applicationId = "com.dan1eidtj.mayas"
         minSdk = 24
         versionCode = 1
-        versionName = "14.07.2026b"
+        versionName = "25.07.2026b"
         multiDexEnabled = true
         val properties = Properties()
         val localPropertiesFile = rootProject.file("local.properties")
@@ -52,6 +52,7 @@ dependencies {
     implementation(project(":feature:profile"))
     implementation(project(":feature:chats"))
     implementation(project(":feature:call"))
+    implementation(project(":feature:settings"))
 
     // Firebase
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
@@ -77,7 +78,7 @@ dependencies {
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
     // core
-    implementation("androidx.core:core-ktx:1.12.0")
+    implementation("androidx.core:core-ktx:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
 

@@ -43,6 +43,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -58,12 +59,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.dan1eidtj.data.SharedContentManager
+import com.dan1eidtj.data.ShopConstants
+import androidx.compose.ui.res.painterResource
 import com.dan1eidtj.mayas.core.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
@@ -198,6 +203,130 @@ private fun compressImageBytes(
     } catch (e: Exception) {
         Log.e("ChatScreen", "Не удалось сжать изображение", e)
         null
+    }
+}
+
+
+@Composable
+private fun StatusBadge(
+    value: String?,
+    modifier: Modifier = Modifier,
+    fontSize: TextUnit = 16.sp,
+    iconSize: Dp = fontSize.value.dp
+) {
+    if (value.isNullOrBlank()) return
+    if (ShopConstants.isIconStatus(value)) {
+        val context = LocalContext.current
+        val resourceName = ShopConstants.iconStatusResourceName(value)
+        val resId = remember(resourceName) {
+            context.resources.getIdentifier(resourceName, "drawable", context.packageName)
+        }
+        if (resId != 0) {
+            Image(
+                painter = painterResource(id = resId),
+                contentDescription = null,
+                modifier = modifier.size(iconSize)
+            )
+        }
+    } else {
+        Text(text = value, fontSize = fontSize, modifier = modifier)
+    }
+}
+
+private fun systemMessageIcon(message: Message): ImageVector? = when {
+    message.type == MessageType.CALL -> when (message.callStatus) {
+        CallStatus.MISSED, CallStatus.DECLINED -> Icons.Default.CallMissed
+        else -> if (message.callType == "VIDEO") Icons.Default.Videocam else Icons.Default.Call
+    }
+    message.systemAction == SystemAction.PINNED -> Icons.Default.PushPin
+    message.systemAction == SystemAction.UNPINNED -> Icons.Outlined.PushPin
+    message.systemAction == SystemAction.MEMBER_ADDED -> Icons.Default.PersonAdd
+    message.systemAction == SystemAction.MEMBER_REMOVED || message.systemAction == SystemAction.MEMBER_LEFT -> Icons.Default.PersonRemove
+    message.systemAction == SystemAction.GROUP_CREATED -> Icons.Default.Groups
+    message.systemAction == SystemAction.PROMOTED_ADMIN || message.systemAction == SystemAction.PROMOTED_MODERATOR -> Icons.Default.AdminPanelSettings
+    message.systemAction == SystemAction.DEMOTED_ADMIN || message.systemAction == SystemAction.DEMOTED_MODERATOR -> Icons.Default.RemoveModerator
+    else -> null
+}
+
+
+@Composable
+private fun SystemMessageRow(
+    message: Message,
+    chipColor: Color,
+    textColor: Color,
+    onClick: (() -> Unit)? = null,
+) {
+    val isMissedCall = message.type == MessageType.CALL &&
+            (message.callStatus == CallStatus.MISSED || message.callStatus == CallStatus.DECLINED)
+    val contentColor = if (isMissedCall) MayasTheme.GlowRed else textColor
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(14.dp))
+                .background(chipColor)
+                .then(
+                    if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+                )
+                .padding(horizontal = 14.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            systemMessageIcon(message)?.let { icon ->
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = contentColor.copy(alpha = 0.9f)
+                )
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(
+                text = message.text.orEmpty(),
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = contentColor.copy(alpha = 0.95f),
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+@Composable
+fun ChannelReadOnlyBar(
+    surfaceColor: Color,
+    textSecondaryColor: Color
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().imePadding().navigationBarsPadding(),
+        color = surfaceColor,
+        tonalElevation = 8.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Campaign,
+                null,
+                tint = textSecondaryColor,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = "Только администраторы канала могут публиковать сообщения",
+                color = textSecondaryColor,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 
@@ -497,92 +626,91 @@ fun ChatScreen(
                                             }
                                         }
                                     ) {
-                                    Column {
+                                        Column {
 
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.Start
-                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.Start
+                                            ) {
 
-                                            val titleColor =
-                                                if (partnerIsPremium && !chatVM.isGroupChat) {
-                                                    getNameColorBrush(chatNameColor)
+                                                val titleColor =
+                                                    if (partnerIsPremium && !chatVM.isGroupChat) {
+                                                        getNameColorBrush(chatNameColor)
+                                                    } else {
+                                                        null
+                                                    }
+
+                                                if (titleColor != null) {
+                                                    Text(
+                                                        text = chatTitle,
+                                                        fontSize = 16.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        style = TextStyle(brush = titleColor),
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
                                                 } else {
-                                                    null
+                                                    Text(
+                                                        text = chatTitle,
+                                                        fontSize = 16.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = overWallpaperColor,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
                                                 }
 
-                                            if (titleColor != null) {
-                                                Text(
-                                                    text = chatTitle,
-                                                    fontSize = 16.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    style = TextStyle(brush = titleColor),
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            } else {
-                                                Text(
-                                                    text = chatTitle,
-                                                    fontSize = 16.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = overWallpaperColor,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                            }
-
-                                            if (partnerIsPremium && !chatVM.isGroupChat) {
-                                                Spacer(Modifier.width(4.dp))
-                                                val vIcon = when(chatVM.partnerVerifiedIcon) {
-                                                    "star" -> Icons.Default.Star
-                                                    "diamond" -> Icons.Default.Diamond
-                                                    "auto_awesome" -> Icons.Default.AutoAwesome
-                                                    else -> Icons.Default.Verified
-                                                }
-                                                Icon(
-                                                    imageVector = vIcon,
-                                                    contentDescription = "Premium",
-                                                    tint = MayasTheme.GlowGold,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-
-                                            if (!chatEmoji.isNullOrBlank()) {
-                                                val emoji = chatEmoji
-                                                Spacer(Modifier.width(4.dp))
-                                                Text(
-                                                    text = emoji,
-                                                    fontSize = 16.sp
-                                                )
-                                            }
-                                        }
-
-                                        val statusText =
-                                            if (!typingText.isNullOrBlank()) typingText else lastSeenText.orEmpty()
-                                        AnimatedContent<String>(
-                                            targetState = statusText,
-                                            label = "StatusAnimation",
-                                            transitionSpec = {
-                                                fadeIn(animationSpec = tween(200)) togetherWith fadeOut(
-                                                    animationSpec = tween(200)
-                                                )
-                                            }
-                                        ) { text ->
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text,
-                                                    fontSize = 12.sp,
-                                                    color = overWallpaperSecondaryColor
-                                                )
-                                                if (isPartnerTyping) {
+                                                if (partnerIsPremium && !chatVM.isGroupChat) {
                                                     Spacer(Modifier.width(4.dp))
-                                                    TypingIndicator(
-                                                        dotColor = overWallpaperSecondaryColor
+                                                    val vIcon = when(chatVM.partnerVerifiedIcon) {
+                                                        "star" -> Icons.Default.Star
+                                                        "diamond" -> Icons.Default.Diamond
+                                                        "auto_awesome" -> Icons.Default.AutoAwesome
+                                                        else -> Icons.Default.Verified
+                                                    }
+                                                    Icon(
+                                                        imageVector = vIcon,
+                                                        contentDescription = "Premium",
+                                                        tint = MayasTheme.GlowGold,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+
+                                                if (!chatEmoji.isNullOrBlank()) {
+                                                    Spacer(Modifier.width(4.dp))
+                                                    StatusBadge(
+                                                        value = chatEmoji,
+                                                        fontSize = 16.sp
                                                     )
                                                 }
                                             }
+
+                                            val statusText =
+                                                if (!typingText.isNullOrBlank()) typingText else lastSeenText.orEmpty()
+                                            AnimatedContent<String>(
+                                                targetState = statusText,
+                                                label = "StatusAnimation",
+                                                transitionSpec = {
+                                                    fadeIn(animationSpec = tween(200)) togetherWith fadeOut(
+                                                        animationSpec = tween(200)
+                                                    )
+                                                }
+                                            ) { text ->
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        text,
+                                                        fontSize = 12.sp,
+                                                        color = overWallpaperSecondaryColor
+                                                    )
+                                                    if (isPartnerTyping) {
+                                                        Spacer(Modifier.width(4.dp))
+                                                        TypingIndicator(
+                                                            dotColor = overWallpaperSecondaryColor
+                                                        )
+                                                    }
+                                                }
+                                            }
                                         }
-                                    }
                                     }
                                 }
                             },
@@ -739,6 +867,37 @@ fun ChatScreen(
                             reverseLayout = true
                         ) {
                             itemsIndexed(messages, key = { _, msg -> msg.id }) { index, msg ->
+                                if (msg.type == MessageType.SYSTEM || msg.type == MessageType.CALL) {
+                                    val onSystemClick: (() -> Unit)? = when {
+                                        msg.systemAction == SystemAction.PINNED && msg.systemRefMessageId != null -> {
+                                            {
+                                                messages.indexOfFirst { it.id == msg.systemRefMessageId }
+                                                    .takeIf { it != -1 }
+                                                    ?.let { idx ->
+                                                        coroutineScope.launch { listState.animateScrollToItem(idx) }
+                                                    }
+                                            }
+                                        }
+                                        msg.type == MessageType.CALL && !chatVM.isGroupChat -> {
+                                            {
+                                                val ct = runCatching {
+                                                    CallType.valueOf(msg.callType ?: "AUDIO")
+                                                }.getOrDefault(CallType.AUDIO)
+                                                onStartCall(chatVM.partnerUid, ct)
+                                            }
+                                        }
+                                        else -> null
+                                    }
+
+                                    SystemMessageRow(
+                                        message = msg,
+                                        chipColor = surfaceColor,
+                                        textColor = textSecondaryColor,
+                                        onClick = onSystemClick
+                                    )
+                                    return@itemsIndexed
+                                }
+
                                 val isMe = msg.senderId == myUid
                                 val isGroupChat = chatVM.isGroupChat
 
@@ -865,7 +1024,21 @@ fun ChatScreen(
                                             )
                                         }
                                         else -> {
-                                            if (isPremiumMsg) {
+                                            if (messageStyle != null) {
+                                                val accent = ShopConstants.getStyleColor(messageStyle)
+                                                Modifier.background(
+                                                    brush = Brush.linearGradient(
+                                                        colors = ShopConstants.getStyleGradient(messageStyle)
+                                                    ),
+                                                    shape = bubbleShape
+                                                ).border(
+                                                    width = 1.dp,
+                                                    brush = Brush.verticalGradient(
+                                                        colors = listOf(Color.White.copy(alpha = 0.25f), accent)
+                                                    ),
+                                                    shape = bubbleShape
+                                                )
+                                            } else if (isPremiumMsg) {
                                                 Modifier.background(
                                                     brush = Brush.linearGradient(
                                                         colors = listOf(bubbleColor, MayasTheme.GlowGold.copy(alpha = 0.2f))
@@ -1049,6 +1222,26 @@ fun ChatScreen(
                                                     }
                                                 }
 
+                                                if (!msg.forwardedFromName.isNullOrBlank()) {
+                                                    Row(
+                                                        modifier = Modifier.padding(bottom = 4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Outlined.Bookmark,
+                                                            null,
+                                                            tint = (if (isMe) Color.White else MayasTheme.GlowPurple).copy(alpha = 0.7f),
+                                                            modifier = Modifier.size(12.dp)
+                                                        )
+                                                        Spacer(Modifier.width(4.dp))
+                                                        Text(
+                                                            "Переслано от ${msg.forwardedFromName}",
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = (if (isMe) Color.White else MayasTheme.GlowPurple).copy(alpha = 0.7f)
+                                                        )
+                                                    }
+                                                }
                                                 if (!msg.replyToText.isNullOrBlank()) {
                                                     Row(
                                                         modifier = Modifier
@@ -1126,10 +1319,11 @@ fun ChatScreen(
                                                         MessageStyle.MATRIX -> MayasTheme.GlowLime
                                                         MessageStyle.GOLD -> Color(0xFF5D4037)
                                                         MessageStyle.FOREST, MessageStyle.SUNSET, MessageStyle.MIDNIGHT -> Color.White
-                                                        else -> {
+                                                        null -> {
                                                             if (isMe) Color.White
                                                             else textPrimaryColor
                                                         }
+                                                        else -> ShopConstants.getStyleTextColor(messageStyle)
                                                     }
 
                                                     val parsedText = rememberParsedMessageText(
@@ -1204,10 +1398,11 @@ fun ChatScreen(
                                                     MessageStyle.GOLD -> Color(0xFF5D4037).copy(alpha = 0.7f)
                                                     MessageStyle.FOREST, MessageStyle.SUNSET -> Color.White.copy(alpha = 0.7f)
                                                     MessageStyle.MIDNIGHT -> Color.White.copy(alpha = 0.6f)
-                                                    else -> {
+                                                    null -> {
                                                         if (isMe) Color.White.copy(alpha = 0.7f)
                                                         else timeColor
                                                     }
+                                                    else -> ShopConstants.getStyleTextColor(messageStyle).copy(alpha = 0.7f)
                                                 }
 
                                                 val timeFormat = msg.timestamp?.let { ts ->
@@ -1223,6 +1418,23 @@ fun ChatScreen(
                                                     color = secondaryTextColor,
                                                     textAlign = TextAlign.End
                                                 )
+
+                                                if (chatVM.chatType == "CHANNEL") {
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Icon(
+                                                        imageVector = Icons.Default.RemoveRedEye,
+                                                        contentDescription = null,
+                                                        tint = secondaryTextColor,
+                                                        modifier = Modifier.size(12.dp)
+                                                    )
+                                                    Spacer(Modifier.width(2.dp))
+                                                    Text(
+                                                        text = formatCompactCount(msg.viewedBy.size),
+                                                        fontSize = 11.sp,
+                                                        color = secondaryTextColor,
+                                                        textAlign = TextAlign.End
+                                                    )
+                                                }
 
                                                 if (isMe) {
                                                     if (msg.isPremium) {
@@ -1390,6 +1602,31 @@ fun ChatScreen(
                                                 selectedMessage = null
                                             }
                                         )
+                                        DropdownMenuItem(
+                                            text = { Text("Переслать в Избранное", color = textPrimaryColor) },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.Outlined.Bookmark,
+                                                    null,
+                                                    tint = textSecondaryColor
+                                                )
+                                            },
+                                            onClick = {
+                                                selectedMessage = null
+                                                val uidForForward = myUid
+                                                if (uidForForward != null) {
+                                                    coroutineScope.launch {
+                                                        val savedChatId = chatVM.ensureSavedMessagesChat(uidForForward)
+                                                        chatVM.forwardMessage(msg, savedChatId)
+                                                        Toast.makeText(
+                                                            context,
+                                                            "Переслано в Избранное",
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
+                                                    }
+                                                }
+                                            }
+                                        )
                                         if (isMe) {
                                             HorizontalDivider(color = textPrimaryColor.copy(0.1f))
                                             DropdownMenuItem(
@@ -1485,6 +1722,7 @@ fun ChatScreen(
                             EmojiPicker { input += it }
                         }
 
+                        if (chatVM.canPostInChat) {
                         Surface(
                             modifier = Modifier.fillMaxWidth().imePadding(),
                             color = surfaceColor,
@@ -1646,6 +1884,12 @@ fun ChatScreen(
                                     }
                                 }
                             }
+                        }
+                        } else {
+                            ChannelReadOnlyBar(
+                                surfaceColor = surfaceColor,
+                                textSecondaryColor = textSecondaryColor
+                            )
                         }
                     }
                 }
@@ -1877,22 +2121,22 @@ fun ThemePickerDialog(
 @Composable
 fun EmojiPicker(onEmojiSelected: (String) -> Unit) {
     val emojis = listOf(
-        // Лица и эмоции
+
         "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🥲", "🥹", "😊", "😇", "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥸", "🤩", "🥳", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫", "😩", "🥺", "😢", "😭", "😮‍💨", "😤", "😠", "😡", "🤬", "🤯", "😳", "🥵", "🥶", "😱", "😨", "😰", "😥", "😓", "🫣", "🤗", "🫡", "🤔", "🫣", "🤭", "🤫", "🤥", "😶", "😶‍🌫️", "😐", "😑", "😬", "🫨", "🫠", "🙄", "😯", "😦", "😧", "😮", "😲", "🥱", "😴", "🤤", "😪", "😮‍💨", "😵", "😵‍💫", "🫥", "🤐", "🥴", "🤢", "🤮", "🤧", "😷", "🤒", "🤕", "🤑", "🤠", "😈", "👿", "👹", "👺", "🤡", "💩", "👻", "💀", "☠️", "👽", "👾", "🤖", "🎃", "😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾",
 
-        // Жесты и люди
+
         "👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🫰", "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "✍️", "💅", "🤳", "💪", "🦾", "🦿", "🦵", "🦶", "👂", "🦻", "👃", "🧠", "🫀", "🫁", "🦷", "🦴", "👀", "👁️", "👅", "👄", "💋", "🩸",
 
-        // Сердечки и одежда
+
         "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❤️‍🔥", "❤️‍🩹", "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "👑", "👒", "🎩", "🎓", "🧢", "⛑️", "📿", "💄", "💍", "💼", "🎒", "🧳", "👓", "🕶️", "🥽", "🥼", "🦺", "👔", "👕", "👖", "🧣", "🧤", "🧥", "🧦", "👗", "👘", "🥻", "🩱", "🩲", "🩳", "👙",
 
-        // Животные и природа
+
         "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐻‍❄️", "🐨", "🐯", "🦁", "🐮", "🐷", "🐽", "🐸", "🐵", "🙈", "🙉", "🙊", "🐒", "🐔", "🐧", "🐦", "🐤", "🐣", "🐥", "🦆", "🦅", "🦉", "🦤", "🪶", "🦩", "🦚", "🦜", "🐊", "🐢", "🦎", "🐍", "🐲", "🐉", "🦕", "🦖", "🐳", "🐋", "🐬", "🦭", "🐟", "🐠", "🐡", "🦈", "🐙", "🐚", "🪸", "🐌", "🦋", "🐛", "🐜", "🐝", "🪲", "🐞", "🦗", "🕷️", "🕸️", "🦂", "🦟", "🪰", "🪱", "🦠", "💐", "🌸", "💮", "🪷", "🌹", "🥀", "🌺", "🌻", "🌼", "🌷", "🌱", "🪴", "🌲", "🌳", "🌴", "🌵", "🌾", "🌿", "☘️", "🍀", "🍁", "🍂", "🍃", "🍄", "🌰", "🦀", "🦞", "🦐", "🦑",
 
-        // Еда и напитки
+
         "🍏", "🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈", "🍒", "🍑", "🥭", "🍍", "🥥", "🥝", "🍅", "🍆", "🥑", "🥦", "🥬", "🥒", "🌶️", "🫑", "🌽", "🥕", "🫒", "🧄", "🧅", "🥔", "🍠", "🥐", "🥯", "🍞", "🥖", "🥨", "🥞", "🧇", "🧀", "🍖", "🥩", "🍗", "🍔", "🍟", "🍕", "🌭", "🥪", "🌮", "🌯", "🫔", "🥙", "🧆", "🥚", "🍳", "🥘", "🍲", "🫕", "🥣", "🥗", "🍿", "🧈", "🧂", "🥫", "🍱", "🍘", "🍙", "🍚", "🍛", "🍜", "🍝", "🍣", "🍤", "🥮", "🍡", "🥟", "🥠", "🥡", "🍦", "🍧", "🍨", "🍩", "🍪", "🎂", "🍰", "🧁", "🥧", "🍫", "🍬", "🍭", "🍮", "🍯", "🍼", "🥛", "☕", "🫖", "🍵", "🍶", "🍾", "🍷", "🍸", "🍹", "🍺", "🍻", "🥂", "🥃", "🫗", "🥤", "🧋", "🧃", "🧉", "🧊",
 
-        // Космос, погода, спорт и транспорт
+
         "🌍", "🌎", "🌏", "🌐", "🗺️", "🗾", "🧭", "🏔️", "⛰️", "🌋", "🗻", "🏕️", "🏖️", "🏜️", "🏝️", "🏞️", "🏟️", "🏛️", "🏗️", "🧱", "🪨", "🪵", "🛖", "🏘️", "🏚️", "🏠", "🏡", "🏢", "🏣", "🏤", "🏥", "🏦", "🏨", "🏩", "🏪", "🏫", "🏬", "🏭", "🏯", "🏰", "💒", "🗼", "🗽", "⛪", "🕌", "🛕", "🕍", "⛩️", "🕋", "⛲", "⛺", "🌁", "🌃", "🏙️", "🌄", "🌅", "🌆", "🌇", "🌉", "🌌", "🎠", "🎡", "🎢", "🚂", "🚃", "🚄", "🚅", "🚆", "🚇", "🚈", "🚉", "🚊", "🦽", "🦼", "🚲", "🛵", "🏍️", "🛺", "🚨", "🚔", "🚍", "🚘", "🚖", "🚡", "🚠", "🚟", "🚃", "🌌", "🎈", "🎉", "🎊", "🎇", "🎆", "🧨", "✨", "🌟", "⭐", "🌙", "🌛", "🌜", "🌚", "🌕", "☀️", "🌤️", "⛅", "🌥️", "☁️", "🌦️", "🌧️", "⛈️", "🌩️", "❄️", "☃️", "⛄", "🌬️", "💨", "🌪️", "🌫️", "🌊", "💧", "💦", "☔", "⚡", "🔥", "💥"
     )
     Card(

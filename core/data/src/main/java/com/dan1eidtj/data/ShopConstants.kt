@@ -1,6 +1,7 @@
 package com.dan1eidtj.data
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import java.util.Calendar
 import kotlin.random.Random
 
@@ -25,19 +26,69 @@ object ShopConstants {
         ShopItem("folly", "Фолли", ItemType.BUBBLE, 280, description = "Красный на белом"),
         ShopItem("dani", "Дани", ItemType.BUBBLE, 320, description = "Чёрный терминал с зелёным текстом"),
         ShopItem("sakura", "Сакура", ItemType.BUBBLE, 240, description = "Розовый закат"),
-        ShopItem("intel", "Intel", ItemType.BUBBLE, 260, description = "Синий с голубым текстом")
+        ShopItem("intel", "Intel", ItemType.BUBBLE, 260, description = "Синий с голубым текстом"),
+        ShopItem("aurora", "Аврора", ItemType.BUBBLE, 340, description = "Северное сияние", isNew = true),
+        ShopItem("void", "Пустота", ItemType.BUBBLE, 380, description = "Чёрная дыра с фиолетовым свечением", isNew = true)
     )
+
     val EMOJI_STATUSES = listOf(
-        "⚡" to 30, "🔥" to 30, "💎" to 50, "👑" to 10000,
-        "🛸" to 40, "🍀" to 25, "🧿" to 35, "🚀" to 60,
-        "👻" to 20, "💀" to 20, "🐱" to 25, "🌈" to 45,
-        // новые
-        "🎯" to 30, "🎮" to 35, "🦄" to 90, "🐉" to 120,
-        "🌊" to 30, "⭐" to 25, "🍉" to 20, "🎧" to 40,
-        "🛹" to 35, "🧠" to 55, "🦋" to 45, "🍩" to 20,
-        "🎃" to 15, "❄️" to 30, "🌸" to 30, "🥷" to 70,
-        "🛡️" to 50, "🏆" to 500, "💯" to 35, "🍄" to 25
+
+        "🍩" to 15, "🍉" to 15, "🎃" to 15,
+        "👻" to 20, "💀" to 20, "🍄" to 20,
+        "⭐" to 25, "🍀" to 25, "🌸" to 25,
+        "🐱" to 30, "❄️" to 30, "🌊" to 30,
+
+        "⚡" to 40, "🔥" to 40,
+        "🎯" to 45, "🎧" to 45, "🛹" to 45,
+        "🌈" to 50, "🦋" to 50,
+        "🎮" to 55, "🧠" to 60,
+        "🧿" to 65, "🛡️" to 75,
+
+
+        "🛸" to 100, "🚀" to 120,
+        "🥷" to 150, "💎" to 2000,
+        "💯" to 100,
+
+
+        "🦄" to 350, "🐉" to 500,
+        "🏆" to 800,
+
+        "👑" to 5000,
+        "✨" to 7500,
+        "💸" to 10000
     ).map { (emoji, price) -> ShopItem(emoji, "Эмодзи $emoji", ItemType.EMOJI_STATUS, price) }
+
+
+    val ICON_STATUSES = listOf(
+        ShopItem("icon:status_folly", "Фолли", ItemType.EMOJI_STATUS, 120, isNew = true)
+    )
+
+    private const val ICON_STATUS_PREFIX = "icon:"
+
+    fun isIconStatus(id: String): Boolean = id.startsWith(ICON_STATUS_PREFIX)
+
+    fun iconStatusResourceName(id: String): String = id.removePrefix(ICON_STATUS_PREFIX)
+
+    val ALL_STATUSES: List<ShopItem> get() = EMOJI_STATUSES + ICON_STATUSES
+
+
+    val FONT_STYLES = listOf(
+        ShopItem("default", "Стандартный", ItemType.FONT, 0),
+        ShopItem("sans", "Геометрический", ItemType.FONT, 120),
+        ShopItem("serif", "Классический", ItemType.FONT, 140),
+        ShopItem("mono", "Кодовый", ItemType.FONT, 160, description = "Моноширинный, как в терминале"),
+        ShopItem("cursive", "Рукописный", ItemType.FONT, 180, isNew = true)
+    )
+
+    val EFFECT_STYLES = listOf(
+        ShopItem("none", "Без эффекта", ItemType.EFFECT, 0),
+        ShopItem("confetti", "Конфетти", ItemType.EFFECT, 100, icon = "🎉"),
+        ShopItem("hearts", "Сердечки", ItemType.EFFECT, 90, icon = "💕"),
+        ShopItem("snow", "Снегопад", ItemType.EFFECT, 110, icon = "❄️"),
+        ShopItem("fireworks", "Салют", ItemType.EFFECT, 150, icon = "🎆", isNew = true),
+        ShopItem("sparkles", "Блёстки", ItemType.EFFECT, 80, icon = "✨")
+    )
+
     fun getStyleColor(id: String): Color = when (id) {
         "neon" -> Color(0xFF39FF8A)
         "gold" -> Color(0xFFF5C842)
@@ -59,6 +110,8 @@ object ShopConstants {
         "dani" -> Color(0xFF39FF14)
         "sakura" -> Color(0xFFFF6FB5)
         "intel" -> Color(0xFF00AEEF)
+        "aurora" -> Color(0xFF35E0C8)
+        "void" -> Color(0xFF9B5CFF)
         else -> Color.Gray
     }
 
@@ -83,6 +136,8 @@ object ShopConstants {
         "dani" -> listOf(Color(0xFF050505), Color(0xFF1A1A1A))
         "sakura" -> listOf(Color(0xFFFF6FB5), Color(0xFFFFD1E8))
         "intel" -> listOf(Color(0xFF003D82), Color(0xFF0071C5))
+        "aurora" -> listOf(Color(0xFF0F2027), Color(0xFF2C5364), Color(0xFF35E0C8))
+        "void" -> listOf(Color(0xFF0A0014), Color(0xFF3D0A5C), Color(0xFF9B5CFF))
         else -> listOf(getStyleColor(id), getStyleColor(id))
     }
 
@@ -91,8 +146,52 @@ object ShopConstants {
         "intel" -> Color(0xFF00E5FF)
         "folly" -> Color(0xFF7A0000)
         "sakura" -> Color(0xFFFFFFFF)
+
+        "lavender" -> Color(0xFF3D2C5C)
+        "mint" -> Color(0xFF0F5C48)
+        "coral" -> Color(0xFF7A2E22)
+        "steel" -> Color(0xFF2B2F36)
+        "amber" -> Color(0xFF5C3D00)
+        "lime" -> Color(0xFF4B5314)
+        "sky" -> Color(0xFF0D3A66)
+        "plum" -> Color(0xFF3D1F5C)
         else -> Color.White
     }
+
+
+    fun getWallpaperGradient(id: String): List<Color> = when (id) {
+        "dusk" -> listOf(Color(0xFF2C3E70), Color(0xFF8759A8), Color(0xFFE8836E))
+        "ocean" -> listOf(Color(0xFF003F5C), Color(0xFF2F9E8F), Color(0xFF7FE0C4))
+        "candy" -> listOf(Color(0xFFFF6FB5), Color(0xFFFFA6D9), Color(0xFFFFD9EC))
+        "carbon" -> listOf(Color(0xFF0D0D0D), Color(0xFF2B2B2B), Color(0xFF3F3F3F))
+        "peach" -> listOf(Color(0xFFFFB199), Color(0xFFFFD9B0), Color(0xFFFFF0DC))
+        "emerald" -> listOf(Color(0xFF014D40), Color(0xFF0E8A6D), Color(0xFF4EE0A8))
+        "galaxy" -> listOf(Color(0xFF03001C), Color(0xFF301E67), Color(0xFF5B8FB9))
+        "lava" -> listOf(Color(0xFF1A0000), Color(0xFFB3200A), Color(0xFFFF7A18))
+        else -> listOf(Color(0xFF3A3A3A), Color(0xFF1F1F1F))
+    }
+
+
+    fun getFontFamily(id: String): FontFamily = when (id) {
+        "sans" -> FontFamily.SansSerif
+        "serif" -> FontFamily.Serif
+        "mono" -> FontFamily.Monospace
+        "cursive" -> FontFamily.Cursive
+        else -> FontFamily.Default
+    }
+
+
+    fun getEffectPreview(id: String): String = EFFECT_STYLES.find { it.id == id }?.icon ?: "✨"
+
+
+    fun rarityOf(item: ShopItem): ItemRarity = when {
+        item.price <= 0 -> ItemRarity.COMMON
+        item.price < 100 -> ItemRarity.COMMON
+        item.price < 220 -> ItemRarity.RARE
+        item.price < 400 -> ItemRarity.EPIC
+        else -> ItemRarity.LEGENDARY
+    }
+
     private fun dailySeed(): Long {
         val cal = Calendar.getInstance()
         return cal.get(Calendar.YEAR) * 1000L + cal.get(Calendar.DAY_OF_YEAR)
@@ -102,8 +201,11 @@ object ShopConstants {
         val discountedPrice: Int
             get() = (item.price * (100 - discountPercent) / 100).coerceAtLeast(1)
     }
+
     fun getDailyDeals(count: Int = 4): List<DailyDeal> {
-        val pool = BUBBLE_STYLES + EMOJI_STATUSES
+
+        val pool = (BUBBLE_STYLES + EMOJI_STATUSES + ICON_STATUSES + FONT_STYLES + EFFECT_STYLES)
+            .filter { it.price > 0 }
         val seed = dailySeed()
         val chosen = pool.shuffled(Random(seed)).take(count)
         return chosen.map { item ->
@@ -113,6 +215,7 @@ object ShopConstants {
             DailyDeal(item, discount)
         }
     }
+
     fun millisUntilNextDailyReset(): Long {
         val cal = Calendar.getInstance()
         cal.set(Calendar.HOUR_OF_DAY, 0)

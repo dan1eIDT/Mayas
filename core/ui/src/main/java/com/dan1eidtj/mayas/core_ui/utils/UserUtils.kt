@@ -52,19 +52,19 @@ fun getNameColorBrush(colorName: String): Brush {
 fun isUserOnline(userData: Map<String, Any?>?): Boolean {
     if (userData == null) return false
 
-    // Если включен режим невидимки, всегда офлайн
+
     if (userData["isInvisible"] as? Boolean == true) return false
 
-    // 1. Проверяем строковое поле активности
+
     val activity = userData["activity"] as? String
     if (activity == "в сети" || activity == "online") return true
 
-    // 2. Проверяем Timestamp последнего входа (lastSeen)
+
     val lastSeen = userData["lastSeen"] as? Timestamp
     if (lastSeen != null) {
-        // Берем по модулю (abs) на случай, если время на девайсе спешит относительно Firebase
+
         val diff = Math.abs(System.currentTimeMillis() - lastSeen.toDate().time)
-        return diff < 60_000 // Считаем онлайн, если активность была менее 1 минуты (60 сек) назад
+        return diff < 60_000
     }
     return false
 }
@@ -72,8 +72,8 @@ fun isUserOnline(userData: Map<String, Any?>?): Boolean {
 fun formatLastSeen(ts: Timestamp?): String {
     if (ts == null) return "был(а) недавно"
     
-    // Проверка на онлайн через ту же логику, что и в isUserOnline, 
-    // но упрощенно для текста, если мы знаем что isInvisible=false
+
+
     val now = System.currentTimeMillis()
     val last = ts.toDate().time
     val diff = now - last

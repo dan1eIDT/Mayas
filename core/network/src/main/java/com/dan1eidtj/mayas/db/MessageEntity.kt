@@ -21,5 +21,7 @@ data class MessageEntity(
     val readBy: List<String> = emptyList(),
     val mediaUrl: String? = null,
     val isPremium: Boolean = false,
-    val messageStyle: String? = null
+    val messageStyle: String? = null,
+
+    val forwardedFromName: String? = null
 )

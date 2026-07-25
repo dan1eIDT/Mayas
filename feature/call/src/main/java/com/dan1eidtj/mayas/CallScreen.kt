@@ -90,7 +90,7 @@ fun CallScreen(
 
 @Composable
 private fun CallHeader(
-    state: CallScreenState.Active, // Передаем весь стейт для удобства
+    state: CallScreenState.Active,
     modifier: Modifier = Modifier
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
@@ -104,7 +104,7 @@ private fun CallHeader(
         label = "scale"
     )
 
-    // Определяем цвет свечения точно так же, как в ChatScreen
+
     val glowColor = when (state.profileGlow) {
         "pink" -> MayasTheme.GlowPink
         "blue" -> MayasTheme.GlowBlue
@@ -120,16 +120,16 @@ private fun CallHeader(
         verticalArrangement = Arrangement.Center
     ) {
         Box(contentAlignment = Alignment.Center) {
-            // Пульсирующий фоновый круг — теперь использует ЛИЧНЫЙ цвет свечения юзера
+
             Box(
                 modifier = Modifier
-                    .size(130.dp) // Чуть больше аватара
+                    .size(130.dp)
                     .graphicsLayer(scaleX = pulseScale, scaleY = pulseScale)
                     .clip(CircleShape)
                     .background(glowColor.copy(alpha = 0.4f))
             )
 
-            // Основной аватар, который используется везде по приложению
+
             MayasAvatar(
                 url = state.avatarUrl,
                 icon = state.profileIcon,
@@ -141,7 +141,7 @@ private fun CallHeader(
             )
         }
 
-        // Рендеринг градиентного или обычного имени, как в ChatScreen
+
         val titleColor = if (state.isPremium) {
             remember {
                 Brush.linearGradient(colors = listOf(MayasTheme.GlowGold, Color(0xFFFFE082)))
@@ -171,7 +171,7 @@ private fun CallHeader(
             if (state.isPremium) {
                 Spacer(Modifier.width(6.dp))
                 Icon(
-                    imageVector = Icons.Default.Verified, // Или кастомная иконка state.verifiedIcon
+                    imageVector = Icons.Default.Verified,
                     contentDescription = "Premium",
                     tint = MayasTheme.GlowGold,
                     modifier = Modifier.size(20.dp)
@@ -180,7 +180,7 @@ private fun CallHeader(
         }
 
         val statusTextColor by animateColorAsState(
-            targetValue = if (state.isEnded) MayasTheme.Error else MayasTheme.TextSecondary,
+            targetValue = if (state.isEnded) MayasTheme.ErrorRed else MayasTheme.TextSecondary,
             animationSpec = tween(300)
         )
 

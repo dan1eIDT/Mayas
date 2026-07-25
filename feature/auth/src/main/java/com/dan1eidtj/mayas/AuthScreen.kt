@@ -79,7 +79,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Логотип-бейдж
+
         Box(
             modifier = Modifier
                 .size(72.dp)
@@ -100,7 +100,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}) {
 
         Spacer(Modifier.height(4.dp))
 
-        // Подзаголовок меняется вместе с режимом, с плавной анимацией
+
         AnimatedContent(
             targetState = vm.isLoginMode,
             transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
@@ -115,7 +115,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}) {
 
         Spacer(Modifier.height(28.dp))
 
-        // Карточка с формой
+
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp),
@@ -124,7 +124,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}) {
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
 
-                // Поля только для регистрации — плавно раскрываются/сворачиваются
+
                 AnimatedVisibility(
                     visible = !vm.isLoginMode,
                     enter = fadeIn(tween(200)) + expandVertically(tween(250)),
@@ -172,7 +172,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}) {
                     }
                 }
 
-                // Основное поле: Email
+
                 OutlinedTextField(
                     value = vm.emailInput,
                     onValueChange = vm::onEmailChange,
@@ -193,7 +193,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}) {
 
                 Spacer(Modifier.height(12.dp))
 
-                // Основное поле: Пароль
+
                 OutlinedTextField(
                     value = vm.passInput,
                     onValueChange = vm::onPassChange,
@@ -224,7 +224,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}) {
                     })
                 )
 
-                // Отображение ошибки — с плавным появлением
+
                 AnimatedVisibility(
                     visible = vm.authError != null,
                     enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { -it / 2 },
@@ -240,7 +240,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}) {
 
                 Spacer(Modifier.height(20.dp))
 
-                // Кнопка авторизации
+
                 Button(
                     onClick = {
                         focusManager.clearFocus()
@@ -278,7 +278,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}) {
 
         Spacer(Modifier.height(16.dp))
 
-        // Кнопка переключения режима
+
         TextButton(onClick = { vm.toggleAuthMode() }) {
             AnimatedContent(
                 targetState = vm.isLoginMode,

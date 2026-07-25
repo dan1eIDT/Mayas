@@ -51,7 +51,7 @@ import com.dan1eidtj.mayas.core.ui.theme.*
 fun CreditsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
 
-    // Получаем версию приложения динамически
+
     val appVersion = remember(context) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -70,7 +70,7 @@ fun CreditsScreen(onBack: () -> Unit) {
 
     val infinite = rememberInfiniteTransition(label = "InfiniteTransition")
 
-    // 🌌 Анимация фона
+
     val bgAlpha by infinite.animateFloat(
         initialValue = 0.05f,
         targetValue = 0.15f,
@@ -92,14 +92,14 @@ fun CreditsScreen(onBack: () -> Unit) {
         label = "LogoPulse"
     )
 
-    // ✍️ Печатающийся текст
+
     var visibleText by remember { mutableStateOf("") }
     val fullText = "Дошутился."
 
     LaunchedEffect(Unit) {
         fullText.forEachIndexed { i, _ ->
             visibleText = fullText.substring(0, i + 1)
-            delay(150) // 150мс — в самый раз!
+            delay(150)
         }
     }
 
@@ -108,7 +108,7 @@ fun CreditsScreen(onBack: () -> Unit) {
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // 🌌 Мягкий glow фон
+
         Box(
             Modifier
                 .fillMaxSize()
@@ -123,7 +123,7 @@ fun CreditsScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.Center
         ) {
 
-            // 💜 Логотип с эффектом пульсации
+
             Text(
                 "МАЯС",
                 fontSize = 50.sp,
@@ -137,7 +137,7 @@ fun CreditsScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(12.dp))
 
-            // ✍️ Печать текста
+
             Text(
                 visibleText,
                 fontSize = 18.sp,
@@ -146,7 +146,7 @@ fun CreditsScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(40.dp))
 
-            // 👥 Кредиты (плавное появление)
+
             AnimatedVisibility(
                 visible = visibleText.length == fullText.length,
                 enter = fadeIn() + slideInVertically { it / 2 }
@@ -175,7 +175,7 @@ fun CreditsScreen(onBack: () -> Unit) {
 
             Spacer(Modifier.height(50.dp))
 
-            // 💥 Кнопка с эффектом масштаба
+
             val buttonScale by animateFloatAsState(
                 targetValue = if (visibleText.length == fullText.length) 1f else 0.0f,
                 label = "ButtonScaleAnimation"

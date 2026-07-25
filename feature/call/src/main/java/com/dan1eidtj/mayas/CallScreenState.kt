@@ -2,12 +2,7 @@ package com.dan1eidtj.mayas
 
 import com.dan1eidtj.mayas.CallType
 
-/**
- * ы
- * э
- * а
- * н
- */
+
 sealed interface CallScreenState {
 
 

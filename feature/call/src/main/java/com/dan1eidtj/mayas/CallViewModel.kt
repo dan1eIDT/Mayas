@@ -14,11 +14,7 @@ import kotlinx.coroutines.launch
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
 
-/**
- * ViewModel экрана звонка, аутист,
- * 67
- * АМЕРИКА СОСААААТЬ
- */
+
 class CallViewModel(
     private val callManager: CallManager,
     private val currentUserId: String,
@@ -41,7 +37,7 @@ class CallViewModel(
         val avatarFrame: String = "none"
     )
 
-    // Вспомогательный класс для объединения потоков из менеджера
+
     private data class BaseInfo(
         val state: CallState,
         val session: CallSession?,
@@ -50,7 +46,7 @@ class CallViewModel(
         val elapsedSeconds: Long
     )
 
-    // Комбинируем ровно 5 потоков, как и положено в стандартном combine
+
     private val baseInfo = combine(
         callManager.callState,
         callManager.activeCall,
@@ -74,9 +70,9 @@ class CallViewModel(
                 viewModelScope.launch { fetchPeerProfile(peerId) }
             }
 
-            // Собираем стейт для экрана CallScreen
+
             CallScreenState.Active(
-                peerId = profile.name ?: peerId, // Пока имя грузится, показываем ID
+                peerId = profile.name ?: peerId,
                 avatarUrl = profile.avatarUrl,
                 useCustomAvatar = profile.useCustomAvatar,
                 profileIcon = profile.profileIcon,
@@ -122,7 +118,7 @@ class CallViewModel(
     }
 
     init {
-        // Управление таймером в зависимости от стейта звонка
+
         viewModelScope.launch {
             callManager.callState.collect { state ->
                 if (state == CallState.CONNECTED) {
@@ -143,7 +139,7 @@ class CallViewModel(
     }
 
     fun onDeclineOrEndClicked() {
-        // Если звонок входящий и мы его сбрасываем, вызываем rejectCall() для отправки REJECTED статуса
+
         val currentState = callManager.callState.value
         val session = callManager.activeCall.value
         val isIncoming = session?.receiverId == currentUserId
@@ -181,8 +177,8 @@ class CallViewModel(
             CallState.RINGING -> "Гудки..."
             CallState.CONNECTING -> "Соединение..."
             CallState.CONNECTED -> elapsedSeconds.toCallDurationText()
-            // rejectCall() дергает только принимающая сторона, поэтому isReceiverRole==true
-            // здесь всегда значит "я сам только что отклонил" — текст не должен врать про собеседника
+
+
             CallState.REJECTED -> if (isReceiverRole) "Звонок отклонён" else "Отклонено собеседником"
             CallState.ENDED, CallState.IDLE -> "Звонок завершён"
         }

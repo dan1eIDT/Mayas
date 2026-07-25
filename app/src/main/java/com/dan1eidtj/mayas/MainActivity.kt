@@ -7,6 +7,11 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import com.dan1eidtj.mayas.core.ui.theme.MayasAppTheme
+import com.dan1eidtj.mayas.core.ui.theme.MayasColorScheme
+import com.dan1eidtj.mayas.core.ui.theme.DarkMayasColorScheme
+import com.dan1eidtj.mayas.core.ui.theme.LightMayasColorScheme
+import com.dan1eidtj.mayas.core.ui.theme.ThemeEditorScreen
+import androidx.compose.foundation.isSystemInDarkTheme
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
@@ -17,8 +22,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.EaseInOutQuart
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -29,12 +37,15 @@ import com.dan1eidtj.data.SharedContentManager
 import com.dan1eidtj.mayas.core_ui.ui.components.*
 import com.dan1eidtj.mayas.feature.auth.*
 import com.dan1eidtj.mayas.feature.ChatScreen
+import com.dan1eidtj.mayas.feature.ChatVM
+import com.dan1eidtj.mayas.feature.JoinInviteFlow
 import com.dan1eidtj.mayas.feature.chats.ChatListScreen.ChatListScreen
 import com.dan1eidtj.mayas.ads.AdsManager
-import com.dan1eidtj.mayas.CallManager
-import com.dan1eidtj.mayas.CallType
-import com.dan1eidtj.mayas.FirestoreCallRepository
 import com.dan1eidtj.mayas.core_ui.Screen
+import com.dan1eidtj.mayas.settings.CustomizationScreen
+import com.dan1eidtj.mayas.settings.SettingsScreen
+import com.dan1eidtj.mayas.settings.ThemesScreen
+import com.dan1eidtj.mayas.ui.theme.ThemePreferences
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -76,16 +87,43 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        checkAndRequestNotifications() // проверка уведомлений
+        checkAndRequestNotifications()
 
-        handleIncomingIntent(intent) // а хуй знает
+        handleIncomingIntent(intent)
 
-        AdsManager.initialize(this) // реклама
+        AdsManager.initialize(this)
 
         setContent {
-            MayasAppTheme {
-                var isSplash by remember { mutableStateOf(true) }
+            var isSplash by remember { mutableStateOf(true) }
 
+
+
+
+
+
+            val themePrefsContext = LocalContext.current
+            val systemDark = isSystemInDarkTheme()
+            var currentColorScheme by remember {
+                mutableStateOf(
+                    ThemePreferences.loadSelectedScheme(themePrefsContext)
+                        ?: if (systemDark) DarkMayasColorScheme else LightMayasColorScheme
+                )
+            }
+            var customThemes by remember {
+                mutableStateOf(ThemePreferences.loadCustomThemes(themePrefsContext))
+            }
+
+            LaunchedEffect(currentColorScheme) {
+                ThemePreferences.saveSelectedScheme(themePrefsContext, currentColorScheme)
+            }
+            LaunchedEffect(customThemes) {
+                ThemePreferences.saveCustomThemes(themePrefsContext, customThemes)
+            }
+
+            MayasAppTheme(
+                darkTheme = systemDark,
+                colorScheme = currentColorScheme
+            ) {
                 LaunchedEffect(Unit) {
                     delay(1500)
                     isSplash = false
@@ -94,7 +132,13 @@ class MainActivity : ComponentActivity() {
                 if (isSplash) {
                     SplashScreen()
                 } else {
-                    MayasApp(callManager = callManager)
+                    MayasApp(
+                        callManager = callManager,
+                        currentColorScheme = currentColorScheme,
+                        onColorSchemeChange = { currentColorScheme = it },
+                        customThemes = customThemes,
+                        onCustomThemesChange = { customThemes = it }
+                    )
                 }
             }
         }
@@ -114,6 +158,17 @@ class MainActivity : ComponentActivity() {
             if ("text/plain" == type) {
                 intent.getStringExtra(Intent.EXTRA_TEXT)?.let { sharedText ->
                     SharedContentManager.sharedText = sharedText
+                }
+            }
+        }
+
+        if (Intent.ACTION_VIEW == action) {
+            val data = intent.data
+
+            if (data?.scheme == "mayas" && data.host == "join") {
+                val code = data.lastPathSegment
+                if (!code.isNullOrBlank()) {
+                    SharedContentManager.pendingInviteCode = code
                 }
             }
         }
@@ -166,7 +221,14 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MayasApp(vm: AuthVM = viewModel(), callManager: CallManager) {
+fun MayasApp(
+    vm: AuthVM = viewModel(),
+    callManager: CallManager,
+    currentColorScheme: MayasColorScheme,
+    onColorSchemeChange: (MayasColorScheme) -> Unit,
+    customThemes: List<Pair<String, MayasColorScheme>>,
+    onCustomThemesChange: (List<Pair<String, MayasColorScheme>>) -> Unit,
+) {
 
     val navController = rememberNavController()
     val monetizationVm: MonetizationVM = viewModel()
@@ -190,156 +252,227 @@ fun MayasApp(vm: AuthVM = viewModel(), callManager: CallManager) {
     }
 
     CallHost(callManager = callManager, currentUserId = user?.uid.orEmpty()) {
-        NavHost(
-            navController = navController,
-            startDestination = if (user == null) Screen.Auth.route else Screen.Chats.route,
-            enterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(400, easing = EaseInOutQuart)
-                ) + fadeIn(animationSpec = tween(400))
-            },
-            exitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Left,
-                    animationSpec = tween(400, easing = EaseInOutQuart)
-                ) + fadeOut(animationSpec = tween(400))
-            },
-            popEnterTransition = {
-                slideIntoContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(400, easing = EaseInOutQuart)
-                ) + fadeIn(animationSpec = tween(400))
-            },
-            popExitTransition = {
-                slideOutOfContainer(
-                    AnimatedContentTransitionScope.SlideDirection.Right,
-                    animationSpec = tween(400, easing = EaseInOutQuart)
-                ) + fadeOut(animationSpec = tween(400))
-            }
-        ) {
-            composable(Screen.Auth.route) {
-                AuthScreen(vm)
-            }
-
-            composable(Screen.Chats.route) {
-                ChatListScreen(
-                    vm = vm,
-                    onStartChat = { chatId -> navController.navigate(Screen.Chat.create(chatId)) },
-                    onOpenProfile = { uid -> navController.navigate(Screen.Profile.create(uid, isGroup = false)) },
-                    onOpenSettings = { navController.navigate(Screen.Profile.create(vm.user?.uid ?: "")) },
-                    onOpenCredits = { navController.navigate(Screen.Credits.route) },
-                    onLogout = {
-                        vm.logout()
-                        navController.navigate(Screen.Auth.route) { popUpTo(0) }
-                    },
-                    onOpenUserSearch = { showUserSearchDialog = true },
-                    onDismissUserSearch = { showUserSearchDialog = false }
-                )
-            }
-
-            composable(
-                Screen.Chat.route,
-                arguments = listOf(navArgument("chatId") { type = NavType.StringType })
-            ) { backStack ->
-                val chatId = backStack.arguments?.getString("chatId") ?: return@composable
-                val context = LocalContext.current
-                var pendingCall by remember { mutableStateOf<Pair<String, CallType>?>(null) }
-                val recordAudioLauncher = rememberLauncherForActivityResult(
-                    ActivityResultContracts.RequestPermission()
-                ) { granted ->
-                    if (granted) {
-                        pendingCall?.let { (peerId, type) -> callManager.startOutgoingCall(peerId, type) }
-                    }
-                    pendingCall = null
+        Box(modifier = Modifier.fillMaxSize()) {
+            NavHost(
+                navController = navController,
+                startDestination = if (user == null) Screen.Auth.route else Screen.Chats.route,
+                enterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(400, easing = EaseInOutQuart)
+                    ) + fadeIn(animationSpec = tween(400))
+                },
+                exitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Left,
+                        animationSpec = tween(400, easing = EaseInOutQuart)
+                    ) + fadeOut(animationSpec = tween(400))
+                },
+                popEnterTransition = {
+                    slideIntoContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(400, easing = EaseInOutQuart)
+                    ) + fadeIn(animationSpec = tween(400))
+                },
+                popExitTransition = {
+                    slideOutOfContainer(
+                        AnimatedContentTransitionScope.SlideDirection.Right,
+                        animationSpec = tween(400, easing = EaseInOutQuart)
+                    ) + fadeOut(animationSpec = tween(400))
+                }
+            ) {
+                composable(Screen.Auth.route) {
+                    AuthScreen(vm)
                 }
 
-                ChatScreen(
-                    chatId = chatId,
-                    onBack = { navController.popBackStack() },
-                    onOpenProfile = { uid, isGroup ->
-                        navController.navigate(Screen.Profile.create(uid, isGroup)) },
-                    onStartCall = { peerId, callType ->
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
-                            == PackageManager.PERMISSION_GRANTED
-                        ) {
-                            callManager.startOutgoingCall(peerId, callType)
-                        } else {
-                            pendingCall = peerId to callType
-                            recordAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                composable(Screen.Chats.route) {
+                    ChatListScreen(
+                        vm = vm,
+                        onStartChat = { chatId -> navController.navigate(Screen.Chat.create(chatId)) },
+                        onOpenProfile = { uid -> navController.navigate(Screen.Profile.create(uid, isGroup = false)) },
+                        onOpenSettings = { navController.navigate(Screen.Profile.create(vm.user?.uid ?: "")) },
+                        onOpenCredits = { navController.navigate(Screen.Credits.route) },
+                        onLogout = {
+                            vm.logout()
+                            navController.navigate(Screen.Auth.route) { popUpTo(0) }
+                        },
+                        onOpenUserSearch = { showUserSearchDialog = true },
+                        onDismissUserSearch = { showUserSearchDialog = false }
+                    )
+                }
+
+                composable(
+                    Screen.Chat.route,
+                    arguments = listOf(navArgument("chatId") { type = NavType.StringType })
+                ) { backStack ->
+                    val chatId = backStack.arguments?.getString("chatId") ?: return@composable
+                    val context = LocalContext.current
+                    var pendingCall by remember { mutableStateOf<Pair<String, CallType>?>(null) }
+                    val recordAudioLauncher = rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission()
+                    ) { granted ->
+                        if (granted) {
+                            pendingCall?.let { (peerId, type) -> callManager.startOutgoingCall(peerId, type) }
                         }
+                        pendingCall = null
                     }
-                )
+
+                    ChatScreen(
+                        chatId = chatId,
+                        onBack = { navController.popBackStack() },
+                        onOpenProfile = { uid, isGroup ->
+                            navController.navigate(Screen.Profile.create(uid, isGroup)) },
+                        onStartCall = { peerId, callType ->
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
+                                == PackageManager.PERMISSION_GRANTED
+                            ) {
+                                callManager.startOutgoingCall(peerId, callType)
+                            } else {
+                                pendingCall = peerId to callType
+                                recordAudioLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        }
+                    )
+                }
+
+                composable(
+                    Screen.Profile.route,
+                    arguments = listOf(
+                        navArgument("uid") { type = NavType.StringType },
+                        navArgument("isGroup") { type = NavType.BoolType; defaultValue = false }
+                    )
+                ) { backStack ->
+                    val uid = backStack.arguments?.getString("uid") ?: return@composable
+                    val isGroup = backStack.arguments?.getBoolean("isGroup") ?: false
+                    ProfileScreen(
+                        targetId = uid,
+                        isGroup = isGroup,
+                        vm = vm,
+                        onBack = { navController.popBackStack() },
+                        onNavigateToProfile = { targetUid, targetIsGroup ->
+                            navController.navigate(Screen.Profile.create(targetUid, targetIsGroup))
+                        },
+                        onNavigateToChat = { chatId ->
+
+                            navController.navigate(Screen.Chat.create(chatId))
+                        },
+                        onNavigateToCredits = {
+                            navController.navigate(Screen.Credits.route)
+                        },
+                        onNavigateToPremium = {
+                            navController.navigate(Screen.Premium.route)
+                        },
+                        onNavigateToSettings = {
+                            navController.navigate(Screen.Settings.route)
+                        },
+                        onNavigateToCustomization = {
+                            navController.navigate(Screen.Customization.route)
+                        }
+                    )
+                }
+
+                composable(Screen.Settings.route) {
+                    SettingsScreen(
+                        vm = vm,
+                        onBack = { navController.popBackStack() },
+                        onNavigateToPremium = { navController.navigate(Screen.Premium.route) },
+                        onNavigateToCredits = { navController.navigate(Screen.Credits.route) },
+                        onNavigateToAuth = {
+                            navController.navigate(Screen.Auth.route) {
+                                popUpTo(0)
+                            }
+                        },
+                        onNavigateToCustomization = {
+                            navController.navigate(Screen.Customization.route)
+                        },
+                        onNavigateToThemes = {
+                            navController.navigate(Screen.Themes.route)
+                        }
+                    )
+                }
+
+                composable(Screen.Customization.route) {
+                    CustomizationScreen(
+                        vm = vm,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Screen.Themes.route) {
+                    ThemesScreen(
+                        currentScheme = currentColorScheme,
+                        customThemes = customThemes,
+                        onSelectScheme = { scheme -> onColorSchemeChange(scheme) },
+                        onNavigateToEditor = { navController.navigate(Screen.ThemeEditor.create()) },
+                        onEditCustomTheme = { name -> navController.navigate(Screen.ThemeEditor.create(name)) },
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(
+                    Screen.ThemeEditor.route,
+                    arguments = listOf(
+                        navArgument("themeName") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        }
+                    )
+                ) { backStack ->
+                    val themeName = backStack.arguments?.getString("themeName")
+                    val initialScheme = themeName
+                        ?.let { name -> customThemes.firstOrNull { it.first == name }?.second }
+                        ?: currentColorScheme
+
+                    ThemeEditorScreen(
+                        initialScheme = initialScheme,
+                        onSave = { scheme ->
+                            val name = themeName ?: "Тема ${customThemes.size + 1}"
+                            onCustomThemesChange(customThemes.filterNot { it.first == name } + (name to scheme))
+                            onColorSchemeChange(scheme)
+                            navController.popBackStack()
+                        },
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Screen.Credits.route) {
+                    CreditsScreen(onBack = { navController.popBackStack() })
+                }
+
+                composable(Screen.Premium.route) {
+                    PremiumScreen(vm = monetizationVm, onBack = { navController.popBackStack() })
+                }
+
             }
 
-            composable(
-                Screen.Profile.route,
-                arguments = listOf(
-                    navArgument("uid") { type = NavType.StringType },
-                    navArgument("isGroup") { type = NavType.BoolType; defaultValue = false }
-                )
-            ) { backStack ->
-                val uid = backStack.arguments?.getString("uid") ?: return@composable
-                val isGroup = backStack.arguments?.getBoolean("isGroup") ?: false
-                ProfileScreen(
-                    targetId = uid,
-                    isGroup = isGroup,
-                    vm = vm,
-                    onBack = { navController.popBackStack() },
-                    onNavigateToProfile = { targetUid, targetIsGroup ->
-                        navController.navigate(Screen.Profile.create(targetUid, targetIsGroup))
+
+
+
+            val pendingInviteCode = SharedContentManager.pendingInviteCode
+            if (pendingInviteCode != null && user != null) {
+                val chatVmForInvite: ChatVM = viewModel()
+                JoinInviteFlow(
+                    inviteCode = pendingInviteCode,
+                    onLoadPreview = { code, onResult ->
+                        chatVmForInvite.getInviteInfo(code, onResult)
                     },
-                    onNavigateToChat = { chatId ->
-                        // Переход непосредственно в чат
+                    onConfirmJoin = { code, onResult ->
+                        chatVmForInvite.joinByInviteCode(
+                            code = code,
+                            onSuccess = { chatId -> onResult(chatId) },
+                            onError = { onResult(null) },
+                        )
+                    },
+                    onFinished = { chatId, _ ->
+                        SharedContentManager.pendingInviteCode = null
                         navController.navigate(Screen.Chat.create(chatId))
                     },
-                    onNavigateToCredits = {
-                        navController.navigate(Screen.Credits.route)
+                    onCancelled = {
+                        SharedContentManager.pendingInviteCode = null
                     },
-                    onNavigateToPremium = {
-                        navController.navigate(Screen.Premium.route)
-                    },
-                    onNavigateToSettings = {
-                        navController.navigate(Screen.Settings.route)
-                    },
-                    onNavigateToCustomization = {
-                        navController.navigate(Screen.Customization.route)
-                    }
                 )
             }
-
-            composable(Screen.Settings.route) {
-                SettingsScreen(
-                    vm = vm,
-                    onBack = { navController.popBackStack() },
-                    onNavigateToPremium = { navController.navigate(Screen.Premium.route) },
-                    onNavigateToCredits = { navController.navigate(Screen.Credits.route) },
-                    onNavigateToAuth = {
-                        navController.navigate(Screen.Auth.route) {
-                            popUpTo(0)
-                        }
-                    },
-                    onNavigateToCustomization = {
-                        navController.navigate(Screen.Customization.route)
-                    }
-                )
-            }
-
-            composable(Screen.Customization.route) {
-                CustomizationScreen(
-                    vm = vm,
-                    onBack = { navController.popBackStack() }
-                )
-            }
-
-            composable(Screen.Credits.route) {
-                CreditsScreen(onBack = { navController.popBackStack() })
-            }
-
-            composable(Screen.Premium.route) {
-                PremiumScreen(vm = monetizationVm, onBack = { navController.popBackStack() })
-            }
-
         }
     }
 }

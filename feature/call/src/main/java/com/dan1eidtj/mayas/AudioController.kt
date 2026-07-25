@@ -32,11 +32,11 @@ class SystemAudioController(
     private var previousSpeakerphoneOn = false
     private var focusRequest: AudioFocusRequest? = null
 
-    // Раньше результат requestAudioFocus() никак не проверялся и не было
-    // OnAudioFocusChangeListener — при потере фокуса (входящий будильник, другой
-    // звонок, музыка с AUDIOFOCUS_GAIN) мы никак не реагировали. Полноценный
-    // duck/pause тут не нужен (это голосовой звонок), но хотя бы логируем потерю,
-    // чтобы было видно в логах при разборе жалоб "звук пропал во время звонка".
+
+
+
+
+
     private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         when (focusChange) {
             AudioManager.AUDIOFOCUS_LOSS,
@@ -62,14 +62,14 @@ class SystemAudioController(
 
     override fun setLoudspeakerEnabled(enabled: Boolean) {
         audioManager.isSpeakerphoneOn = enabled
-        // Если включили громкую связь — трубку к уху больше не прислоняют,
-        // proximity-сенсор должен отпустить экран
+
+
         if (enabled) releaseProximityWakeLock() else acquireProximityWakeLock()
     }
 
     override fun onWiredHeadsetStateChanged(connected: Boolean) {
-        // При подключении проводной гарнитуры принудительно выключаем громкую связь,
-        // чтобы звук не шёл одновременно в динамик и в наушники.
+
+
         if (connected) {
             audioManager.isSpeakerphoneOn = false
         }

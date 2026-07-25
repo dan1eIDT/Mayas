@@ -27,10 +27,11 @@ class ChatRepository(context: Context) {
             val entities = snapshot.documents.mapNotNull { doc ->
                 try {
                     val type = doc.getString("type") ?: "DIRECT"
-                    val isGroup = type == "GROUP" || (doc.getBoolean("isGroup") ?: false)
+                    val isSavedMessages = type == "SAVED"
+                    val isGroup = isSavedMessages || type == "GROUP" || (doc.getBoolean("isGroup") ?: false)
 
                     @Suppress("UNCHECKED_CAST")
-                    val admins = (doc.get("adminsList") as? List<*>)
+                    val admins = (doc.get("admins") as? List<*>)
                         ?.map { it.toString() }
                         ?: emptyList()
 
@@ -46,6 +47,7 @@ class ChatRepository(context: Context) {
                     ChatEntity(
                         chatId = doc.id,
                         isGroup = isGroup,
+                        chatType = type,
                         groupName = doc.getString("groupName") ?: doc.getString("title"),
                         groupAvatarUrl = doc.getString("groupAvatarUrl") ?: doc.getString("groupAvatar"),
                         groupIcon = doc.getString("groupIcon"),
@@ -64,7 +66,8 @@ class ChatRepository(context: Context) {
                         partnerAvatarUrl = existing?.partnerAvatarUrl,
                         partnerProfileGlow = existing?.partnerProfileGlow,
                         partnerEmoji = existing?.partnerEmoji,
-                        typingText = null
+                        typingText = null,
+                        isSavedMessages = isSavedMessages
                     )
                 } catch (e: Exception) {
                     Log.e("ChatRepository", "Ошибка конвертации чата ${doc.id}", e)
@@ -139,7 +142,8 @@ class ChatRepository(context: Context) {
                         readBy = readBy,
                         mediaUrl = doc.getString("mediaUrl"),
                         isPremium = doc.getBoolean("isPremium") ?: false,
-                        messageStyle = doc.getString("messageStyle")
+                        messageStyle = doc.getString("messageStyle"),
+                        forwardedFromName = doc.getString("forwardedFromName")
                     )
                 } catch (e: Exception) {
                     Log.e("ChatRepository", "Ошибка конвертации сообщения ${doc.id}", e)
@@ -160,6 +164,14 @@ class ChatRepository(context: Context) {
             messageDao.deleteMessageById(messageId)
         } catch (e: Exception) {
             Log.e("ChatRepository", "Ошибка удаления сообщения из кэша $messageId", e)
+        }
+    }
+
+    suspend fun clearChatHistoryLocally(chatId: String) {
+        try {
+            messageDao.clearChatHistory(chatId)
+        } catch (e: Exception) {
+            Log.e("ChatRepository", "Ошибка очистки локальной истории чата $chatId", e)
         }
     }
     suspend fun clearAll() {

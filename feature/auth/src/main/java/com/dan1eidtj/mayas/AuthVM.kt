@@ -396,13 +396,38 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         }
     }
 
+
     fun checkUsername(username: String, onResult: (Boolean) -> Unit) {
+        val clean = username.lowercase().trim()
+        var userDone = false
+        var channelDone = false
+        var isTaken = false
+
+        fun finish() {
+            if (userDone && channelDone) onResult(!isTaken)
+        }
+
         db.collection("users")
-            .whereEqualTo("username", username.lowercase().trim())
+            .whereEqualTo("username", clean)
             .limit(1)
             .get()
-            .addOnSuccessListener { snap -> onResult(snap.isEmpty) }
-            .addOnFailureListener { onResult(true) }
+            .addOnSuccessListener { snap ->
+                if (!snap.isEmpty) isTaken = true
+                userDone = true
+                finish()
+            }
+            .addOnFailureListener { userDone = true; finish() }
+
+        db.collection("chats")
+            .whereEqualTo("username", clean)
+            .limit(1)
+            .get()
+            .addOnSuccessListener { snap ->
+                if (!snap.isEmpty) isTaken = true
+                channelDone = true
+                finish()
+            }
+            .addOnFailureListener { channelDone = true; finish() }
     }
 
     fun handleAuthAction(onSuccess: () -> Unit) {
@@ -466,6 +491,31 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                 onError("Ошибка поиска: ${e.localizedMessage}")
             } finally {
                 isLoading = false
+            }
+        }
+    }
+
+
+    fun ensureSavedMessagesChat(myUid: String) {
+        val chatId = "saved_$myUid"
+        val chatRef = db.collection("chats").document(chatId)
+        chatRef.get().addOnSuccessListener { snapshot ->
+            if (!snapshot.exists()) {
+                chatRef.set(
+                    mapOf(
+                        "type" to "SAVED",
+                        "isGroup" to true,
+                        "participants" to listOf(myUid),
+                        "ownerId" to myUid,
+                        "groupName" to "Избранное",
+                        "groupIcon" to "bookmark",
+                        "lastMessage" to "",
+                        "lastSenderId" to "",
+                        "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
+                        "pinned_$myUid" to true,
+                        "unreadCount_$myUid" to 0
+                    )
+                )
             }
         }
     }
@@ -539,13 +589,16 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         val field = when (type) {
             com.dan1eidtj.data.ItemType.BUBBLE -> "messageStyle"
             com.dan1eidtj.data.ItemType.EMOJI_STATUS -> "emojiStatus"
-            com.dan1eidtj.data.ItemType.WALLPAPER -> "wallpaper"
             com.dan1eidtj.data.ItemType.FONT -> "fontId"
             com.dan1eidtj.data.ItemType.COLOR_SCHEME -> "colorSchemeId"
             com.dan1eidtj.data.ItemType.ANIMATION -> "animationId"
             com.dan1eidtj.data.ItemType.EFFECT -> "effectId"
         }
-        db.collection("users").document(uid).update(field, id)
+
+
+
+        val value: Any = if (id == "default" || id == "none") FieldValue.delete() else id
+        db.collection("users").document(uid).update(field, value)
     }
 
     fun getFcmToken() {

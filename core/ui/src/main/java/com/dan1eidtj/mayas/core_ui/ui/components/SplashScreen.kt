@@ -20,7 +20,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dan1eidtj.mayas.core.ui.theme.* // поправь под свой актуальный package для R, см. предыдущий ответ
+import com.dan1eidtj.mayas.core.ui.theme.*
 import com.dan1eidtj.mayas.ui.R
 import kotlinx.coroutines.delay
 import java.util.Calendar
@@ -39,14 +39,15 @@ fun SplashScreen() {
             day == 1 && month == 6 -> "ЛЕТО!" to Color(0xFF00FFC2)
             day == 8 && month == 3 -> "8 февраля." to Color(0xFFFF4081)
             day == 31 && month == 12 -> "С НОВЫМ ГОДОМ!" to Color(0xFF00B1FF)
-            else -> "м?" to MayasTheme.RedAccent
+            day == 30 && month == 7 -> "День Х" to Color(0xFF00FF19)
+            else -> "Также попробуйте TG!" to MayasTheme.RedAccent
         }
     }
 
     val eventText = eventData.first
     val accentColor = eventData.second
 
-    // Цвет самого лого зависит от темы: чёрное на светлой, белое на тёмной
+
     val isDark = isSystemInDarkTheme()
     val logoColor = if (isDark) Color.White else Color.Black
 
@@ -99,7 +100,7 @@ fun SplashScreen() {
                 modifier = Modifier.size(160.dp)
             ) {
 
-                // Неоновое свечение — красится в акцентный цвет события, не зависит от темы
+
                 Image(
                     painter = painterResource(R.drawable.ic_logo),
                     contentDescription = null,
@@ -117,7 +118,7 @@ fun SplashScreen() {
                         }
                 )
 
-                // Основное изображение — красится под тему: чёрное/белое
+
                 Image(
                     painter = painterResource(R.drawable.ic_logo),
                     contentDescription = null,

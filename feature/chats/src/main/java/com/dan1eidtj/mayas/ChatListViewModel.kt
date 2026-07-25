@@ -24,7 +24,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
 
     private val myUid: String? get() = auth.currentUser?.uid
 
-    // --- UI-состояние ---
+
 
 
     val syncState = MutableStateFlow(SyncState.IDLE)
@@ -38,10 +38,10 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
             initialValue = emptyList()
         )
 
-    // --- Firestore слушатели ---
+
     private var chatsListener: ListenerRegistration? = null
 
-    // uid → слушатель профиля партнёра
+
     private val partnerListeners = mutableMapOf<String, ListenerRegistration>()
 
     init {
@@ -60,7 +60,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                 if (error != null) {
                     Log.e("ChatListVM", "Ошибка снапшота чатов", error)
                     syncState.value = SyncState.OFFLINE
-                    // Room Flow продолжает отдавать кэш — ничего не делаем
+
                     return@addSnapshotListener
                 }
 
@@ -68,12 +68,12 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
 
                 syncState.value = SyncState.ONLINE
 
-                // Пишем в Room асинхронно — Room Flow автоматом обновит UI
+
                 viewModelScope.launch {
                     repository.syncChatsFromSnapshot(snapshot, uid)
                 }
 
-                // Подписываемся на профили партнёров для личных чатов
+
                 val partnerUids = snapshot.documents
                     .filter { doc ->
                         val type = doc.getString("type") ?: "DIRECT"
@@ -88,14 +88,14 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                     }
                     .toSet()
 
-                // Снимаем слушатели тех кто больше не в списке
+
                 val toRemove = partnerListeners.keys - partnerUids
                 toRemove.forEach { partnerUid ->
                     partnerListeners[partnerUid]?.remove()
                     partnerListeners.remove(partnerUid)
                 }
 
-                // Добавляем новые слушатели
+
                 partnerUids.forEach { partnerUid ->
                     if (!partnerListeners.containsKey(partnerUid)) {
                         partnerListeners[partnerUid] = db.collection("users")
@@ -103,7 +103,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                             .addSnapshotListener { userDoc, _ ->
                                 if (userDoc == null || !userDoc.exists()) return@addSnapshotListener
 
-                                // Находим chatId для этого партнёра
+
                                 val chatId = snapshot.documents
                                     .firstOrNull { doc ->
                                         val participants = doc.get("participants") as? List<*>
@@ -111,7 +111,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                                                 participants.contains(uid)
                                     }?.id ?: return@addSnapshotListener
 
-                                // Обновляем партнёрские данные в Room
+
                                 viewModelScope.launch {
                                     repository.updatePartnerInfoFromSnapshot(
                                         chatId = chatId,
@@ -156,6 +156,44 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                 Log.e("ChatListVM", "Ошибка создания чата", e)
             }
         }
+    }
+
+
+    fun findPublicChannelByUsername(username: String, onResult: (Map<String, Any?>?) -> Unit) {
+        val query = username.lowercase().trim().removePrefix("@")
+        if (query.isBlank()) { onResult(null); return }
+
+        db.collection("chats")
+            .whereEqualTo("username", query)
+            .whereEqualTo("type", "CHANNEL")
+            .whereEqualTo("isPublic", true)
+            .limit(1)
+            .get()
+            .addOnSuccessListener { snap ->
+                val doc = snap.documents.firstOrNull()
+                if (doc == null) {
+                    onResult(null)
+                } else {
+                    val data = doc.data?.toMutableMap() ?: mutableMapOf()
+                    data["chatId"] = doc.id
+                    onResult(data)
+                }
+            }
+            .addOnFailureListener { onResult(null) }
+    }
+
+    fun joinPublicChannel(chatId: String, myUid: String, onSuccess: (String) -> Unit, onError: (String) -> Unit) {
+        db.collection("chats").document(chatId)
+            .update(
+                "participants", com.google.firebase.firestore.FieldValue.arrayUnion(myUid),
+                "members", com.google.firebase.firestore.FieldValue.arrayUnion(myUid),
+                "unreadCount_$myUid", 0
+            )
+            .addOnSuccessListener { onSuccess(chatId) }
+            .addOnFailureListener { e ->
+                Log.e("ChatListVM", "Ошибка подписки на канал", e)
+                onError(e.localizedMessage ?: "Не удалось подписаться")
+            }
     }
 }
 enum class SyncState { IDLE, SYNCING, ONLINE, OFFLINE }

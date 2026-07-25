@@ -66,10 +66,10 @@ class WebRtcClientImpl(
     private val appContext: Context
 ) : WebRtcClient {
 
-    // STUN нужен для NAT traversal между двумя телефонами в разных сетях.
-    // Для сценариев за симметричным NAT/корпоративным файрволом STUN не хватит —
-    // потребуется свой TURN-сервер (например, coturn). Это уже инфраструктурная
-    // задача, отдельная от кода клиента.
+
+
+
+
     private val iceServers = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
     )
@@ -81,15 +81,15 @@ class WebRtcClientImpl(
     private var localAudioTrack: AudioTrack? = null
     private var listener: WebRtcClient.Listener? = null
 
-    // close() может прилететь параллельно с двух разных корутин CallManager'а
-    // (локальный endCall() и снапшот-листенер, среагировавший на удаление
-    // документа звонка практически в то же мгновение — оба висят на
-    // managerScope с Dispatchers.IO, то есть на РАЗНЫХ потоках). Без этого лока
-    // оба потока могли одновременно попасть в close(), один из них словить
-    // исключение на уже disposed нативном объекте (например, второй dispose()
-    // localAudioSource) и прерваться ДО peerConnectionFactory?.dispose() —
-    // а именно dispose() фабрики реально останавливает захват с микрофона.
-    // Итог был: звонок выглядит завершённым, а AudioRecord всё ещё открыт.
+
+
+
+
+
+
+
+
+
     private val closeLock = Any()
 
     override fun init(listener: WebRtcClient.Listener) {
@@ -124,18 +124,18 @@ class WebRtcClientImpl(
                 override fun onIceConnectionChange(newState: PeerConnection.IceConnectionState) {
                     when (newState) {
                         PeerConnection.IceConnectionState.CONNECTED -> listener.onIceConnected()
-                        // FAILED — действительно тупик, соединение не восстановится само.
-                        // DISCONNECTED может быть временным (кратковременная потеря сети) и часто
-                        // восстанавливается сам по себе — не рвём звонок сразу на нём.
+
+
+
                         PeerConnection.IceConnectionState.FAILED -> listener.onIceFailed()
                         else -> Unit
                     }
                 }
 
                 override fun onAddStream(stream: MediaStream) {
-                    // При sdpSemantics = UNIFIED_PLAN этот колбэк ненадёжен (это legacy API
-                    // из Plan B) — реальный удалённый трек приходит через onAddTrack ниже.
-                    // Оставлен пустым намеренно, не убираем — часть интерфейса Observer.
+
+
+
                 }
 
                 override fun onSignalingChange(newState: PeerConnection.SignalingState) = Unit
@@ -149,12 +149,12 @@ class WebRtcClientImpl(
                     receiver: org.webrtc.RtpReceiver,
                     streams: Array<out MediaStream>
                 ) {
-                    // Это актуальный колбэк для получения удалённого трека под
-                    // UNIFIED_PLAN (onAddStream выше — legacy Plan B, ненадёжен здесь).
-                    // Аудио-трек проигрывается через системный аудио-вывод автоматически
-                    // самим WebRTC-движком, вручную подключать AudioTrack не нужно —
-                    // но именно сюда, а не в onAddStream, стоит добавлять любую будущую
-                    // логику, завязанную на появление удалённого трека (видео-рендер и т.п.).
+
+
+
+
+
+
                 }
             }
         )
@@ -300,23 +300,23 @@ class WebRtcClientImpl(
 
     override fun close() {
         synchronized(closeLock) {
-            // Уже закрыто (например, второй параллельный вызов) — выходим тихо,
-            // без повторного дёргивания нативных dispose().
+
+
             if (peerConnectionFactory == null && peerConnection == null && localAudioTrack == null) {
                 return
             }
 
-            // Каждый шаг обёрнут в runCatching намеренно: раньше исключение на любом
-            // одном dispose() (например, при гонке с другим потоком) прерывало весь
-            // close() и peerConnectionFactory?.dispose() ниже — единственный вызов,
-            // который реально останавливает захват с микрофона — просто не выполнялся.
-            // Микрофон оставался открытым уже после того, как звонок считался завершённым.
+
+
+
+
+
             runCatching { peerConnection?.close() }
                 .onFailure { android.util.Log.w(TAG, "peerConnection.close() failed", it) }
             peerConnection = null
 
-            // Трек раньше вообще не диспозился, только зануляется ссылка — отдельная
-            // утечка нативного ресурса, чинится тем же патчем.
+
+
             runCatching { localAudioTrack?.dispose() }
                 .onFailure { android.util.Log.w(TAG, "localAudioTrack.dispose() failed", it) }
             localAudioTrack = null
@@ -325,9 +325,9 @@ class WebRtcClientImpl(
                 .onFailure { android.util.Log.w(TAG, "localAudioSource.dispose() failed", it) }
             localAudioSource = null
 
-            // Именно этот dispose() останавливает нативный аудио-движок WebRTC
-            // (в т.ч. AudioRecord/захват с микрофона) — должен выполниться всегда,
-            // даже если что-то выше упало.
+
+
+
             runCatching { peerConnectionFactory?.dispose() }
                 .onFailure { android.util.Log.w(TAG, "peerConnectionFactory.dispose() failed", it) }
             peerConnectionFactory = null

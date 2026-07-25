@@ -40,27 +40,27 @@ class CallManager(
     private var remoteDescriptionSet = false
     private val pendingRemoteCandidates = mutableListOf<IceCandidateData>()
 
-    // Гвард от повторного acceptCall() на тот же callId. Кнопка "Принять" на экране
-    // не пропадает мгновенно — она пропадает только когда локальный _callState дойдёт
-    // до CONNECTING/CONNECTED, а это зависит от round-trip записи в Firestore. Пока
-    // этот round-trip не завершился, пользователь видит всё ту же кнопку и может
-    // нажать её ещё раз (или сработает повторный EXTRA_AUTO_ACCEPT). Без гварда
-    // повторный вызов заново гонял webRtcClient.init()/startLocalAudio() поверх уже
-    // идущего соединения — WebRtcClientImpl теперь тоже идемпотентен (см. его код),
-    // но дублировать саму попытку accept всё равно незачем.
+
+
+
+
+
+
+
+
     private var acceptingCallId: String? = null
 
-    // resetLocalState() может быть вызван почти одновременно с двух разных корутин
-    // на managerScope (Dispatchers.IO — то есть буквально с разных потоков):
-    // 1) локально из endCall()/rejectCall() сразу после deleteCall(),
-    // 2) из attachToCall() -> handleCallEndedRemotely(), которую триггерит тот же
-    //    deleteCall() через снапшот-листенер Firestore практически мгновенно.
-    // Без лока webRtcClient.close() и audioController.release() могли исполняться
-    // параллельно — в WebRtcClientImpl.close() это раньше приводило к исключению на
-    // повторном dispose() нативного объекта, которое обрывало close() ДО
-    // peerConnectionFactory?.dispose() (реально останавливающего микрофон). Итог —
-    // мик оставался открытым после завершения звонка. Лок здесь безопасен: внутри
-    // resetLocalState() нет suspend-вызовов, только синхронные close()/release().
+
+
+
+
+
+
+
+
+
+
+
     private val resetLock = Any()
 
     private val _callState = MutableStateFlow(CallState.IDLE)
@@ -112,11 +112,11 @@ class CallManager(
             callFeedbackController.stop()
 
             managerScope.launch {
-                // Аудио уже реально соединено через ICE на этом моменте — ошибка записи
-                // сюда влияет только на текстовый статус/таймер в UI обеих сторон, но не
-                // на сам разговор. Поэтому только логируем и предупреждаем, но НЕ рвём
-                // звонок из-за неё (в отличие от ошибки на этапе CONNECTING ниже, где
-                // без успешной записи соединение вообще не имеет шанса подняться).
+
+
+
+
+
                 callRepository.updateCallState(callId, CallState.CONNECTED).onFailure { error ->
                     Log.e("CallManager", "Не удалось обновить статус звонка на CONNECTED", error)
                     showError("Звонок соединён, но статус не синхронизировался с сервером.")
@@ -210,8 +210,8 @@ class CallManager(
     }
 
     fun acceptCall(callId: String) {
-        // Повторный вызов на тот же callId (второй тап по "Принять" пока UI ещё не
-        // успел обновиться, либо повторный EXTRA_AUTO_ACCEPT) — тихо игнорируем.
+
+
         if (acceptingCallId == callId) {
             Log.d("CallManager", "acceptCall($callId) проигнорирован — уже в процессе/принят")
             return
@@ -233,23 +233,23 @@ class CallManager(
                 }
 
             if (session == null) {
-                // Так и не дождались документа звонка (собеседник отменил его до того,
-                // как мы успели подписаться, либо реальный сетевой сбой) — откатываемся
-                // в чистое состояние, а не оставляем экран висеть.
+
+
+
                 resetLocalState()
                 return@launch
             }
 
             _activeCall.value = session
 
-            // Слушатель на этот callId мог уже быть поднят через
-            // startListeningForIncomingCalls() -> attachToCall() ДО того, как мы сюда
-            // попали — это обычный, не гоночный сценарий (cachedSession != null, мы его
-            // просто переиспользовали). В этом случае НЕ трогаем уже работающий
-            // activeCallJob — иначе каждый accept на ровном месте рвёт и пересоздаёт
-            // рабочую Firestore-подписку. Переподписываемся только когда cachedSession
-            // == null — то есть в самом гоночном сценарии, когда сессию пришлось
-            // добывать напрямую из Firestore, минуя обычный слушатель CallManager.
+
+
+
+
+
+
+
+
             if (cachedSession == null) {
                 attachToCall(callId)
             }
@@ -260,9 +260,9 @@ class CallManager(
             webRtcClient.startLocalAudio()
             observeRemoteCandidates(callId, fromRole = CallParticipantRole.CALLER)
 
-            // withTimeoutOrNull: если звонящая сторона отвалилась ещё до записи offer
-            // в репозиторий (упало приложение, пропала сеть), ждать вечно нельзя —
-            // раньше это подвешивало корутину навсегда и endCall() ниже не вызывался.
+
+
+
             val offer = session.offer
                 ?: withTimeoutOrNull(OFFER_WAIT_TIMEOUT_MS) {
                     callRepository.observeCall(callId).first { it?.offer != null }?.offer
@@ -275,12 +275,12 @@ class CallManager(
 
             webRtcClient.createAnswer(offer)
 
-            // Раньше результат этой записи нигде не проверялся: если она падала
-            // (например, PERMISSION_DENIED от Firestore Security Rules), локальный
-            // _callState никогда не покидал INCOMING — кнопка "Принять" оставалась
-            // на экране, пользователь жал её снова, и весь acceptCall() гонялся по
-            // новой поверх уже идущей попытки. Теперь ошибка явно показывается и
-            // звонок аккуратно откатывается, а не зависает молча.
+
+
+
+
+
+
             callRepository.updateCallState(callId, CallState.CONNECTING).onFailure { error ->
                 Log.e("CallManager", "Не удалось обновить статус звонка на CONNECTING", error)
                 showError("Не удалось подключиться к звонку. Проверьте соединение и попробуйте снова.")
@@ -321,7 +321,7 @@ class CallManager(
         }
     }
 
-    // Изменяем attachToCall, чтобы ловить REJECTED на звонящей стороне
+
     private fun attachToCall(callId: String) {
         activeCallJob?.cancel()
         activeCallJob = managerScope.launch {
@@ -347,11 +347,11 @@ class CallManager(
                     }
                 }
 
-                // ЕСЛИ СОБЕСЕДНИК ОТКЛОНИЛ
+
                 if (session.state == CallState.REJECTED) {
                     _callState.value = CallState.REJECTED
-                    callFeedbackController.stop() // моментально тушим гудки
-                    kotlinx.coroutines.delay(REJECTED_DISPLAY_DELAY_MS) // держим экран с надписью "Отклонено"
+                    callFeedbackController.stop()
+                    kotlinx.coroutines.delay(REJECTED_DISPLAY_DELAY_MS)
                     resetLocalState()
                 }
 
