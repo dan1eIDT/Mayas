@@ -18,6 +18,7 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
 
+
     <application
         android:name=".MayasApplication"
         android:allowBackup="true"
@@ -56,6 +57,23 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="text/plain" />
             </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="dan1eidt.github.io"
+                    android:pathPrefix="/mayas-site/join" />
+            </intent-filter>
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="mayas" android:host="join" />
+            </intent-filter>
         </activity>
 
         <activity
@@ -71,10 +89,10 @@
             android:foregroundServiceType="phoneCall|microphone"
             android:exported="false" />
 
-        <receiver
-            android:name=".CallActionReceiver"
+        <receiver android:name=".CallActionReceiver"
             android:exported="false" />
 
-
+        <receiver android:name=".NotificationReplyReceiver" android:exported="false" />
+        <receiver android:name=".NotificationMarkReadReceiver" android:exported="false" />
     </application>
 </manifest>
