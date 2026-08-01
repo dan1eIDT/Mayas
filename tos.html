@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mayas — Пользовательское соглашение и конфиденциальность</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#050308;
+    --bg-alt:#0C0817;
+    --surface:#130E22;
+    --surface-2:#1D1636;
+    --gold:#8B5CF6;
+    --gold-soft:#C3AEFF;
+    --jade:#4E7DFA;
+    --text:#F1EEF9;
+    --muted:#9A90BC;
+    --line:rgba(241,238,249,0.10);
+    --radius:14px;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html{scroll-behavior:smooth;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Inter', sans-serif;
+    line-height:1.7;
+  }
+  body::before{
+    content:"";
+    position:fixed; inset:-10%;
+    background-image:
+      radial-gradient(circle at 15% 8%, rgba(139,92,246,0.20), transparent 40%),
+      radial-gradient(circle at 85% 78%, rgba(78,125,250,0.16), transparent 45%);
+    pointer-events:none;
+  }
+  h1,h2,h3,.display{ font-family:'Space Grotesk', sans-serif; letter-spacing:-0.01em; }
+  code, .mono{ font-family:'JetBrains Mono', monospace; }
+  a{ color:inherit; text-decoration:none; }
+  .wrap{ max-width:820px; margin:0 auto; padding:0 28px; position:relative; z-index:1; }
+
+  header{
+    position:sticky; top:0; z-index:50;
+    background:rgba(14,26,29,0.82);
+    backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--line);
+  }
+  nav{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 28px; max-width:1120px; margin:0 auto;
+  }
+  .logo{
+    display:flex; align-items:center; gap:10px;
+    font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:19px;
+  }
+  .logo-mark{
+    width:32px; height:32px; border-radius:9px;
+    display:flex; align-items:center; justify-content:center;
+    background:linear-gradient(135deg,var(--gold),var(--jade));
+    color:#1B1404; font-weight:800; font-size:15px;
+  }
+  .btn{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:9px 16px; border-radius:999px;
+    font-size:13.5px; font-weight:500;
+    border:1px solid var(--line);
+    transition:all .3s var(--ease);
+    white-space:nowrap;
+  }
+  .btn-ghost{ color:var(--text); }
+  .btn-ghost:hover{ border-color:var(--jade); color:var(--gold-soft); transform:translateY(-2px); }
+
+  main{ padding:56px 0 90px; }
+
+  .doc-head{ margin-bottom:44px; }
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:8px;
+    font-size:12.5px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em;
+    margin-bottom:14px;
+  }
+  h1.title{ font-size:clamp(28px,4vw,40px); margin-bottom:10px; }
+  .updated{ color:var(--muted); font-size:14px; }
+
+  section.doc-section{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:26px 28px;
+    margin-bottom:18px;
+  }
+  section.doc-section h2{
+    font-size:19px; margin-bottom:12px; color:var(--gold-soft);
+    display:flex; align-items:center; gap:10px;
+  }
+  section.doc-section h2 .num{
+    font-family:'JetBrains Mono', monospace; font-size:13px; color:var(--muted);
+    background:var(--surface-2); border:1px solid var(--line);
+    border-radius:8px; padding:2px 8px;
+  }
+  section.doc-section p{ color:var(--text); margin-bottom:10px; font-size:15px; }
+  section.doc-section p.muted{ color:var(--muted); }
+  section.doc-section ul{ margin:8px 0 8px 20px; color:var(--text); font-size:15px; }
+  section.doc-section ul li{ margin-bottom:6px; }
+  section.doc-section a.mail{ color:var(--jade); }
+  section.doc-section a.mail:hover{ color:var(--gold-soft); }
+
+  .toc{
+    display:flex; flex-wrap:wrap; gap:8px;
+    margin-bottom:36px;
+  }
+  .toc a{
+    font-size:13px; color:var(--muted);
+    border:1px solid var(--line); border-radius:999px;
+    padding:6px 12px;
+    transition: all .25s var(--ease);
+  }
+  .toc a:hover{ color:var(--gold-soft); border-color:var(--jade); }
+
+  footer{
+    border-top:1px solid var(--line);
+    padding:36px 0;
+    text-align:center;
+    color:var(--muted);
+    font-size:13px;
+  }
+  footer a{ color:var(--gold-soft); }
+</style>
+</head>
+<body>
+
+<header>
+  <nav>
+    <a class="logo" href="index.html">
+      <div class="logo-mark">M</div>
+      Mayas
+    </a>
+    <a class="btn btn-ghost" href="index.html">← На главную</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div class="doc-head">
+    <div class="eyebrow"><span class="mono">TSO</span> · Пользовательское соглашение</div>
+    <h1 class="title">Пользовательское соглашение, Политика конфиденциальности и Правила использования</h1>
+    <p class="updated">Последнее обновление: 2 июля 2026 г.</p>
+  </div>
+
+  <nav class="toc">
+    <a href="#s1">1. О сервисе</a>
+    <a href="#s2">2. Возраст</a>
+    <a href="#s3">3. Аккаунт</a>
+    <a href="#s4">4. Данные</a>
+    <a href="#s5">5. Хранение</a>
+    <a href="#s6">6. Реклама</a>
+    <a href="#s7">7. Premium</a>
+    <a href="#s8">8. Валюта</a>
+    <a href="#s9">9. Контент</a>
+    <a href="#s10">10. Запреты</a>
+    <a href="#s11">11. Блокировка</a>
+    <a href="#s12">12. Удаление</a>
+    <a href="#s13">13. Права</a>
+    <a href="#s14">14. Ответственность</a>
+    <a href="#s15">15. Изменения</a>
+    <a href="#s16">16. Контакты</a>
+    <a href="#s17">17. Сторонние сервисы</a>
+    <a href="#s18">18. Заключение</a>
+  </nav>
+
+  <p style="color:var(--muted); font-size:15px; margin-bottom:32px;">
+    Добро пожаловать в Mayas. Используя приложение Mayas, вы соглашаетесь с настоящими условиями использования.
+    Если вы не согласны с любым из положений данного документа, пожалуйста, прекратите использование приложения.
+  </p>
+
+  <section class="doc-section" id="s1">
+    <h2><span class="num">01</span>О сервисе</h2>
+    <p>Mayas — это приложение для обмена сообщениями, создания групп, общения, обмена файлами, персонализации профиля и использования цифровых функций, включая подписку Premium и виртуальную валюту.</p>
+  </section>
+
+  <section class="doc-section" id="s2">
+    <h2><span class="num">02</span>Возрастные ограничения</h2>
+    <p>Используя Mayas, вы подтверждаете, что достигли возраста, разрешенного законодательством вашей страны для использования подобных сервисов.</p>
+    <p>Если вы не достигли необходимого возраста, использование приложения допускается только с согласия законного представителя.</p>
+  </section>
+
+  <section class="doc-section" id="s3">
+    <h2><span class="num">03</span>Создание аккаунта</h2>
+    <p>Для использования большинства функций необходимо создать аккаунт.</p>
+    <p>Пользователь несет ответственность за сохранность своего аккаунта и безопасность устройства.</p>
+  </section>
+
+  <section class="doc-section" id="s4">
+    <h2><span class="num">04</span>Собираемые данные</h2>
+    <p class="muted">Для работы приложения могут собираться:</p>
+    <ul>
+      <li>UID пользователя</li>
+      <li>Имя пользователя</li>
+      <li>Отображаемое имя</li>
+      <li>Фотография профиля</li>
+      <li>Описание профиля</li>
+      <li>Список контактов внутри приложения</li>
+      <li>Сообщения</li>
+      <li>Группы</li>
+      <li>Файлы, отправленные пользователем</li>
+      <li>Изображения</li>
+      <li>Голосовые сообщения</li>
+      <li>Настройки приложения</li>
+      <li>Настройки профиля</li>
+      <li>Информация о подписке</li>
+      <li>Виртуальная валюта</li>
+      <li>Технические журналы ошибок</li>
+      <li>Идентификаторы устройства</li>
+      <li>Рекламный идентификатор (Advertising ID), если используется реклама</li>
+    </ul>
+  </section>
+
+  <section class="doc-section" id="s5">
+    <h2><span class="num">05</span>Хранение данных</h2>
+    <p class="muted">Данные могут храниться с использованием следующих сервисов:</p>
+    <ul>
+      <li>Firebase Authentication</li>
+      <li>Cloud Firestore</li>
+      <li>Firebase Storage</li>
+      <li>Firebase Cloud Messaging</li>
+      <li>Firebase Crashlytics (при использовании)</li>
+      <li>Firebase Analytics (при использовании)</li>
+    </ul>
+    <p>Также могут использоваться сторонние рекламные сервисы.</p>
+  </section>
+
+  <section class="doc-section" id="s6">
+    <h2><span class="num">06</span>Использование рекламы</h2>
+    <p>В приложении может отображаться реклама.</p>
+    <p class="muted">Могут использоваться:</p>
+    <ul>
+      <li>Yandex Mobile Ads</li>
+      <li>Google AdMob</li>
+      <li>Другие рекламные платформы</li>
+    </ul>
+    <p>Некоторые объявления могут быть персонализированы в соответствии с настройками рекламной платформы.</p>
+    <p>Просмотр рекламы с вознаграждением осуществляется исключительно по инициативе пользователя.</p>
+  </section>
+
+  <section class="doc-section" id="s7">
+    <h2><span class="num">07</span>Premium</h2>
+    <p>Mayas Premium предоставляет дополнительные функции.</p>
+    <p class="muted">Подписка может включать:</p>
+    <ul>
+      <li>Отключение части рекламы</li>
+      <li>Эксклюзивные темы</li>
+      <li>Эксклюзивные стили сообщений</li>
+      <li>Дополнительные возможности персонализации</li>
+      <li>Увеличенные лимиты</li>
+      <li>Другие Premium-функции</li>
+    </ul>
+    <p>Подписка автоматически продлевается, если пользователь не отменил ее средствами магазина приложений.</p>
+  </section>
+
+  <section class="doc-section" id="s8">
+    <h2><span class="num">08</span>Виртуальная валюта</h2>
+    <p>В приложении используются виртуальные монеты.</p>
+    <p class="muted">Монеты:</p>
+    <ul>
+      <li>Не являются денежными средствами</li>
+      <li>Не подлежат обмену на реальные деньги</li>
+      <li>Не могут быть выведены</li>
+      <li>Могут использоваться только внутри приложения</li>
+      <li>Могут начисляться за просмотр рекламы, участие в акциях или покупки</li>
+    </ul>
+  </section>
+
+  <section class="doc-section" id="s9">
+    <h2><span class="num">09</span>Пользовательский контент</h2>
+    <p>Пользователь сохраняет права на размещаемый им контент.</p>
+    <p>Размещая материалы в Mayas, пользователь предоставляет приложению право хранить, передавать и отображать данный контент исключительно для обеспечения работы сервиса.</p>
+  </section>
+
+  <section class="doc-section" id="s10">
+    <h2><span class="num">10</span>Запрещается</h2>
+    <ul>
+      <li>Нарушать законодательство</li>
+      <li>Распространять вредоносное ПО</li>
+      <li>Публиковать материалы, нарушающие авторские права</li>
+      <li>Использовать спам</li>
+      <li>Заниматься мошенничеством</li>
+      <li>Выдавать себя за других лиц</li>
+      <li>Использовать автоматизированные средства для накрутки</li>
+      <li>Распространять запрещенные материалы</li>
+      <li>Нарушать работу приложения</li>
+    </ul>
+  </section>
+
+  <section class="doc-section" id="s11">
+    <h2><span class="num">11</span>Блокировка аккаунта</h2>
+    <p>Администрация имеет право ограничить или прекратить доступ к сервису в случае нарушения настоящих условий.</p>
+  </section>
+
+  <section class="doc-section" id="s12">
+    <h2><span class="num">12</span>Удаление аккаунта</h2>
+    <p>Пользователь может удалить аккаунт.</p>
+    <p>После удаления часть информации может быть удалена без возможности восстановления.</p>
+    <p>Некоторые данные могут храниться ограниченное время, если это требуется законодательством или необходимо для обеспечения безопасности сервиса.</p>
+  </section>
+
+  <section class="doc-section" id="s13">
+    <h2><span class="num">13</span>Авторские права</h2>
+    <p>Все права на приложение Mayas, включая дизайн, интерфейс, программный код, логотипы и фирменные элементы, принадлежат разработчику, за исключением пользовательского контента.</p>
+  </section>
+
+  <section class="doc-section" id="s14">
+    <h2><span class="num">14</span>Ограничение ответственности</h2>
+    <p>Приложение предоставляется «как есть».</p>
+    <p>Разработчик не гарантирует отсутствие ошибок, бесперебойную работу сервиса или полную сохранность пользовательских данных.</p>
+    <p>В максимально допустимой законом степени разработчик не несет ответственности за любые косвенные или прямые убытки, связанные с использованием приложения.</p>
+  </section>
+
+  <section class="doc-section" id="s15">
+    <h2><span class="num">15</span>Изменение условий</h2>
+    <p>Настоящие условия могут быть изменены в любое время.</p>
+    <p>Продолжение использования приложения после публикации новой редакции означает согласие пользователя с обновленными условиями.</p>
+  </section>
+
+  <section class="doc-section" id="s16">
+    <h2><span class="num">16</span>Контакты</h2>
+    <p>По вопросам использования приложения, конфиденциальности или нарушений правил можно связаться с разработчиком:</p>
+    <p><a class="mail" href="mailto:mayassupp@gmail.com">mayassupp@gmail.com</a></p>
+  </section>
+
+  <section class="doc-section" id="s17">
+    <h2><span class="num">17</span>Использование сторонних сервисов</h2>
+    <p class="muted">Приложение может использовать сервисы третьих лиц, включая:</p>
+    <ul>
+      <li>Firebase</li>
+      <li>Google Play Services</li>
+      <li>Google Play Billing</li>
+      <li>Google AdMob</li>
+      <li>Yandex Mobile Ads</li>
+      <li>Другие сервисы, необходимые для функционирования приложения</li>
+    </ul>
+    <p>Использование этих сервисов регулируется их собственными условиями использования и политиками конфиденциальности.</p>
+  </section>
+
+  <section class="doc-section" id="s18">
+    <h2><span class="num">18</span>Заключительные положения</h2>
+    <p>Используя приложение Mayas, пользователь подтверждает, что ознакомился с настоящим документом, понял его содержание и принимает все изложенные условия.</p>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    Mayas — независимый open-source проект. <a href="index.html">Вернуться на главную</a>
+  </div>
+</footer>
+
+</body>
+</html>

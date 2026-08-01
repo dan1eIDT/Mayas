@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title> 404 — Mayas</title>
+<style>
+  :root {
+    --bg: #0d0d12;
+    --card: #16161e;
+    --text: #f2f2f5;
+    --muted: #9a9aa6;
+    --accent: #7c5cff;
+    --accent-hover: #6a4ce0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 0%, #1c1c28 0%, var(--bg) 60%);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--text);
+    padding: 24px;
+  }
+  .card {
+    background: var(--card);
+    border-radius: 20px;
+    padding: 40px 28px;
+    max-width: 380px;
+    width: 100%;
+    text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+  .logo {
+    width: 64px;
+    height: 64px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #7c5cff, #4b2fd9);
+    margin: 0 auto 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    font-weight: 700;
+  }
+  .code {
+    font-size: 56px;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, #7c5cff, #b5a4ff);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  p.sub { color: var(--muted); font-size: 14px; margin: 0 0 28px; line-height: 1.5; }
+  .btn-row {
+    display: flex;
+    gap: 10px;
+  }
+  .btn {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    padding: 14px 10px;
+    border-radius: 12px;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: background 0.15s ease;
+    white-space: nowrap;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: white;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid rgba(255,255,255,0.15);
+  }
+  .btn-secondary:hover { background: rgba(255,255,255,0.05); }
+</style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="code">404</div>
+    <h1>Такой страницы нет</h1>
+    <p class="sub">Возможно, ссылка устарела или адрес введён неправильно. Проверьте её ещё раз или вернитесь на главную.</p>
+    <div class="btn-row">
+      <a class="btn btn-primary" href="/mayas-site/">На главную</a>
+      <a class="btn btn-secondary" href="https://github.com/dan1eIDT/Mayas/releases">Скачать Mayas</a>
+    </div>
+  </div>
+
+</body>
+</html>
