@@ -64,6 +64,12 @@
 
 Перейди на [страницу релизов](https://github.com/dan1eIDT/Mayas/releases) и скачай последний `.apk`.
 
+### Или же в..
+
+Google Play - Релиз планируется на 30 июля!
+
+Трешбокс - **https://trashbox.ru/topics/213264/mayas**
+
 Требования: Android 8.0+
 
 ---
