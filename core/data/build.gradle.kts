@@ -32,45 +32,41 @@ android {
 }
 
 dependencies {
+    implementation(project(":core:network"))
+
+    // core
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
-    implementation(platform(libs.androidx.compose.bom))
     implementation(libs.material)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.serialization.json)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.navigation.compose)
+
+    // Compose
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
+
+    // Firebase
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.storage)
+    implementation(libs.firebase.messaging)
+    implementation(libs.firebase.analytics)
+
+    // coil
+    implementation(libs.coil.compose)
+    implementation(libs.kotlinx.coroutines.play.services)
+
+    // тесты
     testImplementation(libs.junit)
-    implementation(project(":core:network"))
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
-    implementation(platform("androidx.compose:compose-bom:2024.04.01"))
-    implementation("com.google.firebase:firebase-messaging-ktx")
-    implementation("com.google.firebase:firebase-analytics")
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-storage-ktx")
-    implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    implementation("androidx.activity:activity-compose:1.8.2")
-    implementation("androidx.compose.material3:material3:1.1.2")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
-    implementation("androidx.compose.material:material-icons-extended:1.6.1")
-    implementation("androidx.multidex:multidex:2.0.1")
-    implementation ("androidx.compose.material3:material3:1.2.0")
-    implementation ("io.coil-kt:coil-compose:2.5.0")
-    implementation ("io.coil-kt:coil:2.6.0")
-    implementation ("com.google.firebase:firebase-bom:32.7.0")
-    implementation ("com.google.firebase:firebase-auth-ktx")
-    implementation ("com.google.firebase:firebase-firestore-ktx")
-    implementation ("com.google.firebase:firebase-storage-ktx")
-    implementation ("androidx.navigation:navigation-compose:2.7.7")
-    implementation("androidx.activity:activity-compose:1.9.0")
-    implementation("io.coil-kt:coil-compose:2.6.0")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    implementation("androidx.compose.ui:ui-tooling-preview")
-    implementation("androidx.compose.ui:ui:1.6.0")
-    implementation("androidx.compose.ui:ui-tooling-preview:1.6.0")
-    implementation("androidx.compose.material3:material3:1.2.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

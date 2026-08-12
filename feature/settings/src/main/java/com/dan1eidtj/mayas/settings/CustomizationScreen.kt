@@ -357,7 +357,7 @@ private fun EffectCategoryContent(
     }
     Spacer(Modifier.height(4.dp))
     Text(
-        "Больше эффектов можно купить в магазине",
+        "Ну ты и так знаешь",
         color = MayasTheme.TextSecondary,
         fontSize = 11.sp,
         modifier = Modifier.fillMaxWidth(),
@@ -480,10 +480,10 @@ fun CustomizationScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     ChatBubble(
-                        text = "Так будут выглядеть твои сообщения ✨",
+                        text = "Простись с прошлым и начни сначала.",
                         isMe = true,
                         isRead = true,
-                        time = "12:00",
+                        time = "0:05",
                         onLongClick = {},
                         messageStyle = if (currentMessageStyle == "default") null else currentMessageStyle
                     )
@@ -500,11 +500,7 @@ fun CustomizationScreen(
     }
 }
 
-/**
- * То же самое, что CustomizationScreen, но в виде bottom sheet — чтобы менять
- * стиль пузырей/эмодзи-статус/шрифт/эффект отправки прямо во время переписки,
- * не выходя в отдельный экран настроек.
- */
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickCustomizeSheet(

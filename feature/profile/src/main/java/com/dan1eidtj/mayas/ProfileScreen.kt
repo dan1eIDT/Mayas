@@ -16,9 +16,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -32,7 +30,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -55,11 +52,8 @@ import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.mayas.core_ui.ui.components.FullScreenImageViewer
 import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
 import com.dan1eidtj.data.ItemType
-import com.dan1eidtj.data.ShopConstants
-import androidx.compose.foundation.Image
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.TextUnit
+import com.dan1eidtj.mayas.core_ui.ui.components.UserAvatarView
+import com.dan1eidtj.mayas.core_ui.ui.components.AllProfileIcons
 import com.dan1eidtj.mayas.feature.GroupMemberUi
 import com.dan1eidtj.mayas.feature.auth.AuthVM
 import com.dan1eidtj.mayas.feature.GroupMembersVM
@@ -72,15 +66,6 @@ import java.util.Date
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-// ---------------------------------------------------------------------------------------------
-// ВАЖНО: раньше ProfileHeader / ProfileInfoSection / GroupMembersScreen / GroupMembersBottomSheet /
-// GroupMemberRow / RoleChip / GroupMemberActionsSheet / AddMembersDialog были объявлены как
-// ЛОКАЛЬНЫЕ функции внутри тела ProfileScreen(), причём ПОСЛЕ места их использования в LazyColumn.
-// В Kotlin локальные функции (в отличие от функций верхнего уровня) видны только начиная с точки
-// объявления — поэтому файл не компилировался ("Unresolved reference: ProfileHeader" и т.д.).
-// Решение: вынести их на уровень файла. Заодно подключены showGroupMembers и fullScreenAvatarUrl,
-// которые раньше выставлялись, но нигде не использовались.
-// ---------------------------------------------------------------------------------------------
 
 @Composable
 fun ProfileScreen(
@@ -260,9 +245,14 @@ fun ProfileScreen(
             coroutineScope.launch {
                 try {
                     val bytes = ImageCompressor.compressAvatar(context, pickedUri)
+
+
+
+
+
                     val key = B2MediaClient().uploadMedia(
                         kind = MediaKind.AVATAR,
-                        uid = finalId,
+                        ownerId = currentMyUid,
                         bytes = bytes,
                         contentType = "image/jpeg",
                         extension = "jpg"
@@ -656,54 +646,40 @@ fun ProfileScreen(
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .horizontalScroll(rememberScrollState())
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MayasTheme.Surface)
+                                    .clickable { showIconPicker = true }
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                listOf(
-                                    "ghost",
-                                    "face",
-                                    "star",
-                                    "heart",
-                                    "bolt",
-                                    "fire",
-                                    "diamond",
-                                    "rocket",
-                                    "crown",
-                                    "medal",
-                                    "gamepad",
-                                    "music",
-                                    "camera",
-                                    "brush"
-                                ).forEach { iconName ->
-                                    val isSelected = !useCustomAvatar && profileIcon == iconName
-                                    Box(
-                                        modifier = Modifier
-                                            .size(56.dp)
-                                            .clip(CircleShape)
-                                            .border(
-                                                2.dp,
-                                                if (isSelected) MayasTheme.Accent else Color.Transparent,
-                                                CircleShape
-                                            )
-                                            .clickable {
-                                                profileIcon = iconName
-                                                useCustomAvatar = false
-                                            }
-                                            .padding(3.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        MayasAvatar(
-                                            url = "",
-                                            icon = iconName,
-                                            glowColor = glowColor,
-                                            isPremium = false,
-                                            useCustomAvatar = false,
-                                            size = 48.dp,
-                                            frameType = "none"
-                                        )
-                                    }
+                                UserAvatarView(
+                                    avatarUrl = null,
+                                    useCustomAvatar = false,
+                                    profileIcon = profileIcon,
+                                    profileGlow = profileGlow,
+                                    isPremium = false,
+                                    frameType = "none",
+                                    size = 48.dp
+                                )
+                                Spacer(Modifier.width(14.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Иконка группы",
+                                        color = MayasTheme.TextPrimary,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        "Нажмите, чтобы выбрать",
+                                        color = MayasTheme.TextSecondary,
+                                        fontSize = 12.sp
+                                    )
                                 }
+                                Icon(
+                                    Icons.Default.ChevronRight,
+                                    contentDescription = null,
+                                    tint = MayasTheme.TextSecondary.copy(alpha = 0.4f)
+                                )
                             }
                         }
                     }
@@ -842,17 +818,33 @@ fun ProfileScreen(
             },
             onSystemIcon = {
                 showImagePicker = false
-
-                useCustomAvatar = false
-
-                vm.db.collection(if (isGroup) "chats" else "users")
-                    .document(finalId)
-                    .update("useCustomAvatar", false)
+                showIconPicker = true
             }
         )
     }
 
-    // Раньше showGroupMembers нигде не читался — участники/подписчики по клику никак не открывались.
+    if (showIconPicker) {
+        IconPickerDialog(
+            icons = AllProfileIcons,
+            onDismiss = { showIconPicker = false },
+            onSelect = { selectedIcon ->
+                showIconPicker = false
+                profileIcon = selectedIcon
+                useCustomAvatar = false
+
+                vm.db.collection(if (isGroup) "chats" else "users")
+                    .document(finalId)
+                    .update(
+                        mapOf(
+                            "profileIcon" to selectedIcon,
+                            "useCustomAvatar" to false
+                        )
+                    )
+            }
+        )
+    }
+
+
     if (showGroupMembers && isGroup) {
         GroupMembersBottomSheet(
             chatId = finalId,
@@ -861,8 +853,8 @@ fun ProfileScreen(
         )
     }
 
-    // Раньше fullScreenAvatarUrl нигде не читался — тап по аватарке ничего не открывал.
-    // Проверь сигнатуру FullScreenImageViewer в core_ui и поправь имена параметров при необходимости.
+
+
     fullScreenAvatarUrl?.let { url ->
         FullScreenImageViewer(
             imageUrl = url,
@@ -886,45 +878,47 @@ private fun ProfileHeader(
 ) {
     val nameBrush = com.dan1eidtj.mayas.core_ui.utils.getNameColorBrush(nameColor)
 
-    val resolvedAvatarUrl by produceState<String?>(
-        initialValue = null,
-        avatar,
-        useCustomAvatar
-    ) {
-        android.util.Log.d(
-            "ProfileAvatarDebug",
-            "produceState вошёл: avatar='$avatar' useCustomAvatar=$useCustomAvatar"
-        )
-        value = when {
-            !useCustomAvatar || avatar.isBlank() -> null
-            avatar.startsWith("http") -> avatar
-            else -> B2MediaClient.resolveDownloadUrl(avatar)
-        }
-        android.util.Log.d("ProfileAvatarDebug", "produceState результат: value=$value")
-    }
 
     Column(
         modifier = Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            modifier = Modifier.size(120.dp).clickable {
-                if (isEditing) {
-                    onAvatarClick()
-                } else if (useCustomAvatar && !resolvedAvatarUrl.isNullOrBlank()) {
-                    onAvatarView()
-                }
-            },
+            modifier = Modifier
+                .size(120.dp)
+                .clickable {
+                    if (isEditing) {
+                        onAvatarClick()
+                    } else if (useCustomAvatar && avatar.isNotBlank()) {
+                        onAvatarView()
+                    }
+                },
             contentAlignment = Alignment.Center
         ) {
-            MayasAvatar(
-                url = resolvedAvatarUrl,
-                icon = profileIcon,
-                glowColor = glowColor,
-                isPremium = isPremium,
-                size = 120.dp,
+            UserAvatarView(
+                avatarUrl = avatar,
                 useCustomAvatar = useCustomAvatar,
-                frameType = avatarFrame
+                profileIcon = profileIcon,
+                profileGlow = when (glowColor) {
+                    MayasTheme.GlowPink -> "pink"
+                    MayasTheme.GlowBlue -> "blue"
+                    MayasTheme.GlowGreen -> "green"
+                    MayasTheme.GlowGold -> "gold"
+                    MayasTheme.GlowRed -> "red"
+                    MayasTheme.GlowOrange -> "orange"
+                    MayasTheme.GlowCyan -> "cyan"
+                    MayasTheme.GlowMint -> "mint"
+                    MayasTheme.GlowIndigo -> "indigo"
+                    MayasTheme.GlowLime -> "lime"
+                    MayasTheme.GlowRose -> "rose"
+                    MayasTheme.GlowAmber -> "amber"
+                    MayasTheme.GlowSky -> "sky"
+                    MayasTheme.GlowWhite -> "white"
+                    else -> "purple"
+                },
+                isPremium = isPremium,
+                frameType = avatarFrame,
+                size = 120.dp
             )
             if (isEditing) {
                 Box(
@@ -1775,33 +1769,19 @@ private fun GroupMemberRow(
     member: GroupMemberUi, isViewerAdmin: Boolean, isSelf: Boolean,
     onClick: () -> Unit, onManageClick: () -> Unit
 ) {
-    val glowColor = getGlowColor(member.profileGlow)
-
-    val resolvedAvatarUrl by produceState<String?>(
-        initialValue = null,
-        member.avatarUrl,
-        member.useCustomAvatar
-    ) {
-        value = when {
-            !member.useCustomAvatar || member.avatarUrl.isNullOrBlank() -> null
-            member.avatarUrl!!.startsWith("http") -> member.avatarUrl
-            else -> B2MediaClient.resolveDownloadUrl(member.avatarUrl!!)
-        }
-    }
-
     Row(
         modifier = Modifier.fillMaxWidth().clickable { onClick() }
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        MayasAvatar(
-            url = resolvedAvatarUrl,
-            icon = member.profileIcon,
-            glowColor = glowColor,
-            isPremium = member.isPremium,
+        UserAvatarView(
+            avatarUrl = member.avatarUrl,
             useCustomAvatar = member.useCustomAvatar,
-            size = 46.dp,
-            frameType = "none"
+            profileIcon = member.profileIcon,
+            profileGlow = member.profileGlow,
+            isPremium = member.isPremium,
+            frameType = "none",
+            size = 46.dp
         )
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {

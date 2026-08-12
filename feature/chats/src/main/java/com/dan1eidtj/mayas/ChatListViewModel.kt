@@ -4,18 +4,20 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.dan1eidtj.data.FirestoreListenerCoordinator
 import com.dan1eidtj.mayas.db.ChatEntity
 import com.dan1eidtj.mayas.db.ChatRepository
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-
 class ChatListViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = ChatRepository(application)
@@ -24,11 +26,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
 
     private val myUid: String? get() = auth.currentUser?.uid
 
-
-
-
     val syncState = MutableStateFlow(SyncState.IDLE)
-
 
     val chats: StateFlow<List<ChatEntity>> = repository
         .getChats()
@@ -39,20 +37,76 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
         )
 
 
+
+    private val _myProfile = MutableStateFlow<Map<String, Any?>>(emptyMap())
+    val myProfile: StateFlow<Map<String, Any?>> = _myProfile.asStateFlow()
+
+
+
+
+
+
+
+    private val _partnerPresence = MutableStateFlow<Map<String, Map<String, Any?>>>(emptyMap())
+    val partnerPresence: StateFlow<Map<String, Map<String, Any?>>> = _partnerPresence.asStateFlow()
+
     private var chatsListener: ListenerRegistration? = null
-
-
+    private var myProfileListener: ListenerRegistration? = null
     private val partnerListeners = mutableMapOf<String, ListenerRegistration>()
 
+    private var listeningUid: String? = null
+
+
+
+
+    private val teardown: () -> Unit = { stopListening() }
+
+
+
+
+    private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+        val uid = firebaseAuth.currentUser?.uid
+        if (uid != listeningUid) {
+            stopListening()
+            if (uid != null) startListening()
+        }
+    }
+
     init {
+        auth.addAuthStateListener(authStateListener)
+        FirestoreListenerCoordinator.register(teardown)
         startListening()
     }
 
     fun startListening() {
         val uid = myUid ?: return
-        chatsListener?.remove()
+        if (uid == listeningUid && chatsListener != null) return
 
+        stopListening()
+        listeningUid = uid
         syncState.value = SyncState.SYNCING
+
+        myProfileListener = db.collection("users").document(uid)
+            .addSnapshotListener { doc, error ->
+                if (error != null) {
+                    Log.e("ChatListVM", "Ошибка снапшота своего профиля", error)
+                    return@addSnapshotListener
+                }
+                if (doc != null && doc.exists()) {
+                    _myProfile.value = mapOf(
+                        "name" to (doc.getString("name") ?: doc.getString("username") ?: "Я"),
+                        "avatarUrl" to (doc.getString("avatarUrl") ?: ""),
+                        "profileIcon" to (doc.getString("profileIcon") ?: "ghost"),
+                        "profileGlow" to (doc.getString("profileGlow") ?: "purple"),
+                        "useCustomAvatar" to (doc.getBoolean("useCustomAvatar") ?: false),
+                        "activity" to (doc.getString("activity") ?: "в сети"),
+                        "isPremium" to (doc.getBoolean("isPremium") ?: false),
+                        "avatarFrame" to (doc.getString("avatarFrame") ?: "none"),
+                        "nameColor" to (doc.getString("nameColor") ?: "gold"),
+                        "isGroup" to false
+                    )
+                }
+            }
 
         chatsListener = db.collection("chats")
             .whereArrayContains("participants", uid)
@@ -60,7 +114,6 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                 if (error != null) {
                     Log.e("ChatListVM", "Ошибка снапшота чатов", error)
                     syncState.value = SyncState.OFFLINE
-
                     return@addSnapshotListener
                 }
 
@@ -68,11 +121,13 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
 
                 syncState.value = SyncState.ONLINE
 
-
                 viewModelScope.launch {
-                    repository.syncChatsFromSnapshot(snapshot, uid)
+                    try {
+                        repository.syncChatsFromSnapshot(snapshot, uid)
+                    } catch (e: Exception) {
+                        Log.e("ChatListVM", "Ошибка синхронизации чатов", e)
+                    }
                 }
-
 
                 val partnerUids = snapshot.documents
                     .filter { doc ->
@@ -88,35 +143,57 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                     }
                     .toSet()
 
-
                 val toRemove = partnerListeners.keys - partnerUids
                 toRemove.forEach { partnerUid ->
                     partnerListeners[partnerUid]?.remove()
                     partnerListeners.remove(partnerUid)
+                    _partnerPresence.value = _partnerPresence.value - partnerUid
                 }
-
 
                 partnerUids.forEach { partnerUid ->
                     if (!partnerListeners.containsKey(partnerUid)) {
                         partnerListeners[partnerUid] = db.collection("users")
                             .document(partnerUid)
-                            .addSnapshotListener { userDoc, _ ->
+                            .addSnapshotListener { userDoc, error ->
+                                if (error != null) {
+                                    Log.e("ChatListVM", "Ошибка снапшота партнёра $partnerUid", error)
+                                    return@addSnapshotListener
+                                }
                                 if (userDoc == null || !userDoc.exists()) return@addSnapshotListener
 
+                                _partnerPresence.value = _partnerPresence.value + (partnerUid to mapOf(
+                                    "lastSeen" to userDoc.getTimestamp("lastSeen"),
+                                    "isInvisible" to (userDoc.getBoolean("isInvisible") ?: false),
+                                    "typing" to userDoc.get("typing"),
+                                    "activity" to (userDoc.getString("activity") ?: ""),
+                                    "name" to (userDoc.getString("name") ?: userDoc.getString("username") ?: "Аноним"),
+                                    "avatarUrl" to (userDoc.getString("avatarUrl") ?: ""),
+                                    "profileIcon" to (userDoc.getString("profileIcon") ?: "ghost"),
+                                    "useCustomAvatar" to (userDoc.getBoolean("useCustomAvatar") ?: false),
+                                    "profileGlow" to (userDoc.getString("profileGlow") ?: "purple"),
+                                    "isPremium" to (userDoc.getBoolean("isPremium") ?: false),
+                                    "avatarFrame" to (userDoc.getString("avatarFrame") ?: "none"),
+                                    "nameColor" to (userDoc.getString("nameColor") ?: "gold"),
+                                    "isGroup" to false,
+                                    "emoji" to (userDoc.getString("emojiStatus") ?: "")
+                                ))
 
                                 val chatId = snapshot.documents
                                     .firstOrNull { doc ->
                                         val participants = doc.get("participants") as? List<*>
                                         participants?.contains(partnerUid) == true &&
-                                                participants.contains(uid)
+                                            participants.contains(uid)
                                     }?.id ?: return@addSnapshotListener
 
-
                                 viewModelScope.launch {
-                                    repository.updatePartnerInfoFromSnapshot(
-                                        chatId = chatId,
-                                        userDoc = userDoc
-                                    )
+                                    try {
+                                        repository.updatePartnerInfoFromSnapshot(
+                                            chatId = chatId,
+                                            userDoc = userDoc
+                                        )
+                                    } catch (e: Exception) {
+                                        Log.e("ChatListVM", "Ошибка обновления партнёра $partnerUid", e)
+                                    }
                                 }
                             }
                     }
@@ -124,11 +201,24 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
             }
     }
 
-    override fun onCleared() {
-        super.onCleared()
+    fun stopListening() {
         chatsListener?.remove()
+        chatsListener = null
+        myProfileListener?.remove()
+        myProfileListener = null
         partnerListeners.values.forEach { it.remove() }
         partnerListeners.clear()
+        listeningUid = null
+        _myProfile.value = emptyMap()
+        _partnerPresence.value = emptyMap()
+        syncState.value = SyncState.IDLE
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        auth.removeAuthStateListener(authStateListener)
+        FirestoreListenerCoordinator.unregister(teardown)
+        stopListening()
     }
 
     fun openOrCreateDirectChat(myUid: String, partnerUid: String, onReady: (String) -> Unit) {
@@ -144,7 +234,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                             "participants" to listOf(myUid, partnerUid),
                             "lastMessage" to "",
                             "lastSenderId" to "",
-                            "updatedAt" to com.google.firebase.firestore.FieldValue.serverTimestamp(),
+                            "updatedAt" to FieldValue.serverTimestamp(),
                             "typing" to mapOf(myUid to false, partnerUid to false),
                             "unreadCount_$myUid" to 0,
                             "unreadCount_$partnerUid" to 0
@@ -157,7 +247,6 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
             }
         }
     }
-
 
     fun findPublicChannelByUsername(username: String, onResult: (Map<String, Any?>?) -> Unit) {
         val query = username.lowercase().trim().removePrefix("@")
@@ -179,14 +268,17 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                     onResult(data)
                 }
             }
-            .addOnFailureListener { onResult(null) }
+            .addOnFailureListener { e ->
+                Log.e("ChatListVM", "Ошибка поиска канала", e)
+                onResult(null)
+            }
     }
 
     fun joinPublicChannel(chatId: String, myUid: String, onSuccess: (String) -> Unit, onError: (String) -> Unit) {
         db.collection("chats").document(chatId)
             .update(
-                "participants", com.google.firebase.firestore.FieldValue.arrayUnion(myUid),
-                "members", com.google.firebase.firestore.FieldValue.arrayUnion(myUid),
+                "participants", FieldValue.arrayUnion(myUid),
+                "members", FieldValue.arrayUnion(myUid),
                 "unreadCount_$myUid", 0
             )
             .addOnSuccessListener { onSuccess(chatId) }
@@ -196,4 +288,5 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
             }
     }
 }
+
 enum class SyncState { IDLE, SYNCING, ONLINE, OFFLINE }

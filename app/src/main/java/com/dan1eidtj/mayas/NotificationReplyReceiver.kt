@@ -1,8 +1,11 @@
 package com.dan1eidtj.mayas
 
+import android.Manifest
+import android.R
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import androidx.annotation.RequiresPermission
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
@@ -56,6 +59,7 @@ class NotificationReplyReceiver : BroadcastReceiver() {
     }
 
 
+    @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     private fun appendReplyToNotification(
         context: Context,
         chatId: String,
@@ -93,7 +97,7 @@ class NotificationReplyReceiver : BroadcastReceiver() {
         }
 
         val updated = NotificationCompat.Builder(context, MayasNotifications.CHANNEL_MESSAGES)
-            .setSmallIcon(android.R.drawable.sym_action_chat)
+            .setSmallIcon(R.drawable.sym_action_chat)
             .setStyle(style)
             .setAutoCancel(true)
             .setGroup(MayasNotifications.GROUP_KEY_MESSAGES)

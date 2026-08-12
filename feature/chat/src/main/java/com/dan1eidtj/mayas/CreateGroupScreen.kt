@@ -1,6 +1,8 @@
 package com.dan1eidtj.mayas.feature.chat
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -41,7 +43,11 @@ import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
 import com.dan1eidtj.mayas.core_ui.utils.getGlowColor
 import com.dan1eidtj.mayas.feature.ChatVM
+import com.dan1eidtj.mayas.storage.B2MediaClient
+import com.dan1eidtj.mayas.storage.ImageCompressor
+import com.dan1eidtj.mayas.storage.MediaKind
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.launch
 
 
 data class SelectableUser(
@@ -65,6 +71,7 @@ fun CreateGroupScreen(
     val chatVM: ChatVM = viewModel()
     val context = LocalContext.current
     val db = FirebaseFirestore.getInstance()
+    val coroutineScope = rememberCoroutineScope()
 
 
     var step by remember { mutableIntStateOf(1) }
@@ -76,6 +83,35 @@ fun CreateGroupScreen(
     var groupTitle by remember { mutableStateOf("") }
     var groupDescription by remember { mutableStateOf("") }
     var isPublic by remember { mutableStateOf(false) }
+    var groupAvatarKey by remember { mutableStateOf<String?>(null) }
+    var isUploadingAvatar by remember { mutableStateOf(false) }
+
+    val avatarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { pickedUri ->
+            coroutineScope.launch {
+                isUploadingAvatar = true
+                try {
+                    val bytes = ImageCompressor.compressAvatar(context, pickedUri)
+                    val myUid = chatVM.myUid ?: ""
+
+
+
+                    val key = B2MediaClient().uploadMedia(
+                        kind = MediaKind.AVATAR,
+                        ownerId = myUid,
+                        bytes = bytes,
+                        contentType = "image/jpeg",
+                        extension = "jpg"
+                    )
+                    groupAvatarKey = key
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Не удалось загрузить фото", Toast.LENGTH_SHORT).show()
+                } finally {
+                    isUploadingAvatar = false
+                }
+            }
+        }
+    }
 
     val selectedUsers = contacts.filter { it.isSelected }
 
@@ -219,10 +255,11 @@ fun CreateGroupScreen(
 
 
                             chatVM.createGroupChat(
-                                groupTitle,
-                                groupDescription,
-                                isPublic,
-                                selectedIds
+                                title = groupTitle,
+                                description = groupDescription,
+                                isPublic = isPublic,
+                                selectedUserIds = selectedIds,
+                                groupAvatar = groupAvatarKey
                             ) { newChatId ->
                                 onGroupCreated(newChatId)
                             }
@@ -414,10 +451,33 @@ fun CreateGroupScreen(
                                         .size(72.dp)
                                         .clip(CircleShape)
                                         .background(MayasTheme.GlowPurple)
-                                        .clickable { Toast.makeText(context, "Загрузка фото скоро!", Toast.LENGTH_SHORT).show() },
+                                        .clickable(enabled = !isUploadingAvatar) { avatarLauncher.launch("image/*") },
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(Icons.Outlined.CameraAlt, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                                    if (groupAvatarKey != null) {
+                                        MayasAvatar(
+                                            url = groupAvatarKey,
+                                            icon = "ghost",
+                                            glowColor = MayasTheme.GlowPurple,
+                                            isPremium = false,
+                                            useCustomAvatar = true,
+                                            size = 72.dp,
+                                            frameType = "none"
+                                        )
+                                    } else {
+                                        Icon(Icons.Outlined.CameraAlt, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                                    }
+                                    if (isUploadingAvatar) {
+                                        Box(
+                                            modifier = Modifier
+                                                .matchParentSize()
+                                                .clip(CircleShape)
+                                                .background(Color.Black.copy(alpha = 0.4f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                                        }
+                                    }
                                     Box(
                                         modifier = Modifier
                                             .size(22.dp)

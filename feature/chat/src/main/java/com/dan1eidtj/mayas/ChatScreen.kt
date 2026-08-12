@@ -49,6 +49,12 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.res.imageResource
+import com.dan1eidtj.mayas.core_ui.ui.components.ninePatchBackground
+import com.dan1eidtj.mayas.core_ui.ui.components.NinePatchInsets
+import com.dan1eidtj.mayas.ui.R
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -65,7 +71,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
 import com.dan1eidtj.data.SharedContentManager
 import com.dan1eidtj.data.ShopConstants
 import androidx.compose.ui.res.painterResource
@@ -76,13 +81,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
-import coil.request.ImageRequest
 import com.dan1eidtj.mayas.CallType
 import com.dan1eidtj.mayas.core_ui.ui.components.BubbleShape
 import com.dan1eidtj.mayas.core_ui.ui.components.BubbleType
+import com.dan1eidtj.mayas.core_ui.ui.components.FrameStyles
 import com.dan1eidtj.mayas.core_ui.ui.components.FullScreenImageViewer
-import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
 import com.dan1eidtj.mayas.core_ui.ui.components.MessageStyle
+import com.dan1eidtj.mayas.core_ui.ui.components.MessageBubbleContainer
+import com.dan1eidtj.mayas.core_ui.ui.components.UserAvatarView
 import com.dan1eidtj.mayas.core_ui.utils.getGlowColor
 import com.dan1eidtj.mayas.core_ui.utils.getNameColorBrush
 import com.dan1eidtj.mayas.feature.auth.AuthVM
@@ -249,6 +255,10 @@ private fun systemMessageIcon(message: Message): ImageVector? = when {
 }
 
 
+
+
+
+
 @Composable
 private fun SystemMessageRow(
     message: Message,
@@ -411,7 +421,6 @@ fun ChatScreen(
     val chatTitle = if (chatVM.partnerName == "Группа") "" else chatVM.partnerName
     val chatAvatarUrl = rememberResolvedAvatarUrl(chatVM.partnerAvatarUrl, chatVM.partnerUseCustomAvatar)
     val chatUseCustomAvatar = chatVM.partnerUseCustomAvatar
-    val chatProfileIcon = chatVM.partnerProfileIcon ?: "default"
     val chatProfileGlow = chatVM.partnerProfileGlow ?: "purple"
     val chatEmoji = chatVM.partnerEmoji
 
@@ -458,6 +467,14 @@ fun ChatScreen(
     var showThemePicker by remember { mutableStateOf(false) }
     var showClearChatConfirm by remember { mutableStateOf(false) }
     var showBlockUserConfirm by remember { mutableStateOf(false) }
+    var showChatTimerPicker by remember { mutableStateOf(false) }
+
+
+    var showSendOptionsMenu by remember { mutableStateOf(false) }
+    var showMessageTimerPicker by remember { mutableStateOf(false) }
+    var showScheduleDialog by remember { mutableStateOf(false) }
+
+    var pendingTimerOverrideSec by remember { mutableStateOf<Long?>(null) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -606,14 +623,18 @@ fun ChatScreen(
                                             }
                                         )
                                     ) {
-                                        MayasAvatar(
-                                            url = chatAvatarUrl,
-                                            icon = chatProfileIcon,
-                                            glowColor = partnerGlowColor,
-                                            isPremium = partnerIsPremium && !chatVM.isGroupChat,
-                                            useCustomAvatar = chatUseCustomAvatar,
-                                            size = 40.dp,
-                                            frameType = if (!chatVM.isGroupChat) chatVM.partnerAvatarFrame else "none"
+                                        UserAvatarView(
+                                            avatarUrl = chatVM.partnerAvatarUrl,
+                                            useCustomAvatar = chatVM.partnerUseCustomAvatar,
+                                            profileIcon = chatVM.partnerProfileIcon,
+                                            profileGlow = chatVM.partnerProfileGlow,
+                                            isPremium = chatVM.partnerIsPremium && !chatVM.isGroupChat,
+                                            frameType = if (!chatVM.isGroupChat) {
+                                                chatVM.partnerAvatarFrame
+                                            } else {
+                                                "none"
+                                            },
+                                            size = 40.dp
                                         )
                                     }
                                     Spacer(Modifier.width(12.dp))
@@ -789,6 +810,24 @@ fun ChatScreen(
                                                 onClick = { expanded = false; showThemePicker = true }
                                             )
                                         }
+                                        DropdownMenuItem(
+                                            text = {
+                                                val current = chatVM.chatDisappearingTimerSec
+                                                Text(
+                                                    if (current > 0) "Таймер: ${formatTimerDuration(current)}"
+                                                    else "Таймер исчезающих сообщений",
+                                                    color = textPrimaryColor
+                                                )
+                                            },
+                                            leadingIcon = {
+                                                Icon(
+                                                    Icons.Outlined.Timer,
+                                                    null,
+                                                    tint = MayasTheme.Accent
+                                                )
+                                            },
+                                            onClick = { expanded = false; showChatTimerPicker = true }
+                                        )
                                     }
                                 }
                             }
@@ -919,6 +958,7 @@ fun ChatScreen(
 
 
                                 val messageStyle = msg.messageStyle
+
                                 val messageModifier = remember(messageStyle, isPremiumMsg, bubbleColor, bubbleShape) {
                                     when (messageStyle) {
                                         MessageStyle.NEON -> {
@@ -1185,278 +1225,313 @@ fun ChatScreen(
                                             }
                                         }
 
-                                        Row(
-                                            modifier = messageModifier
-                                                .clip(bubbleShape)
-                                                .clickable { selectedMessage = msg }
-                                                .padding(
-                                                    start = if (isMe) 14.dp else (if (isLastInChain) 26.dp else 14.dp),
-                                                    end = if (isMe) (if (isLastInChain) 26.dp else 14.dp) else 14.dp,
-                                                    top = 8.dp,
-                                                    bottom = 8.dp
-                                                ),
-                                            verticalAlignment = Alignment.Bottom
+                                        MessageBubbleContainer(
+                                            messageStyle = messageStyle,
+                                            bubbleShape = bubbleShape,
+                                            messageModifier = messageModifier,
+                                            normalPadding = PaddingValues(
+                                                start = if (isMe) 14.dp else (if (isLastInChain) 26.dp else 14.dp),
+                                                end = if (isMe) (if (isLastInChain) 26.dp else 14.dp) else 14.dp,
+                                                top = 8.dp,
+                                                bottom = 8.dp
+                                            ),
+                                            onClick = { selectedMessage = msg }
                                         ) {
-                                            Column(modifier = Modifier.weight(1f, fill = false)) {
+                                            Row(
+                                                modifier = Modifier,
+                                                verticalAlignment = Alignment.Bottom
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f, fill = false)) {
 
-                                                if (!isMe && isGroupChat && isLastInChain) {
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier = Modifier.padding(bottom = 4.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = msg.senderName.orEmpty(),
-                                                            fontSize = 13.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = if (msg.isPremium) MayasTheme.GlowGold else MayasTheme.GlowPurple
-                                                        )
-                                                        if (msg.isPremium) {
-                                                            Spacer(Modifier.width(4.dp))
+                                                    if (!isMe && isGroupChat && isLastInChain) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            modifier = Modifier.padding(bottom = 4.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = msg.senderName.orEmpty(),
+                                                                fontSize = 13.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = if (msg.isPremium) MayasTheme.GlowGold else MayasTheme.GlowPurple
+                                                            )
+                                                            if (msg.isPremium) {
+                                                                Spacer(Modifier.width(4.dp))
+                                                                Icon(
+                                                                    imageVector = Icons.Default.Verified,
+                                                                    contentDescription = null,
+                                                                    tint = MayasTheme.GlowGold,
+                                                                    modifier = Modifier.size(14.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+
+                                                    if (!msg.forwardedFromName.isNullOrBlank()) {
+                                                        Row(
+                                                            modifier = Modifier.padding(bottom = 4.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
                                                             Icon(
-                                                                imageVector = Icons.Default.Verified,
-                                                                contentDescription = null,
-                                                                tint = MayasTheme.GlowGold,
-                                                                modifier = Modifier.size(14.dp)
+                                                                Icons.Outlined.Bookmark,
+                                                                null,
+                                                                tint = (if (isMe) Color.White else MayasTheme.GlowPurple).copy(alpha = 0.7f),
+                                                                modifier = Modifier.size(12.dp)
+                                                            )
+                                                            Spacer(Modifier.width(4.dp))
+                                                            Text(
+                                                                "Переслано от ${msg.forwardedFromName}",
+                                                                fontSize = 11.sp,
+                                                                fontWeight = FontWeight.Medium,
+                                                                color = (if (isMe) Color.White else MayasTheme.GlowPurple).copy(alpha = 0.7f)
                                                             )
                                                         }
                                                     }
+                                                    if (!msg.replyToText.isNullOrBlank()) {
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .padding(bottom = 6.dp)
+                                                                .background(
+                                                                    textPrimaryColor.copy(alpha = 0.05f),
+                                                                    RoundedCornerShape(6.dp)
+                                                                )
+                                                                .padding(
+                                                                    horizontal = 8.dp,
+                                                                    vertical = 4.dp
+                                                                ),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier.width(3.dp)
+                                                                    .height(26.dp)
+                                                                    .background(MayasTheme.GlowPurple)
+                                                            )
+                                                            Spacer(Modifier.width(8.dp))
+                                                            Column {
+                                                                Text(
+                                                                    msg.replyToName.orEmpty(),
+                                                                    fontSize = 11.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = MayasTheme.GlowPurple
+                                                                )
+                                                                Text(
+                                                                    msg.replyToText.orEmpty(),
+                                                                    fontSize = 12.sp,
+                                                                    color = textSecondaryColor,
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                    if (!msg.mediaUrl.isNullOrBlank()) {
+                                                        B2Image(
+                                                            key = msg.mediaUrl,
+                                                            contentDescription = null,
+                                                            modifier = Modifier
+                                                                .padding(bottom = 6.dp)
+                                                                .fillMaxWidth()
+                                                                .heightIn(max = 300.dp)
+                                                                .clip(RoundedCornerShape(8.dp))
+                                                                .clickable {
+                                                                    val mediaKey = msg.mediaUrl!!
+                                                                    if (mediaKey.startsWith("http")) {
+                                                                        fullScreenImageUrl = mediaKey
+                                                                    } else {
+                                                                        coroutineScope.launch {
+                                                                            fullScreenImageUrl = B2MediaClient.resolveDownloadUrl(mediaKey)
+                                                                        }
+                                                                    }
+                                                                },
+                                                            contentScale = ContentScale.Crop
+                                                        )
+                                                    }
+                                                    if (!msg.voiceUrl.isNullOrBlank()) {
+                                                        VoiceMessageItem(
+                                                            url = msg.voiceUrl,
+                                                            duration = msg.voiceDuration,
+                                                            isMe = isMe,
+                                                            accentColor = if (isMe) Color.White else MayasTheme.GlowPurple,
+                                                            isPlaying = chatVM.playingUrl == msg.voiceUrl && chatVM.isVoicePlaying,
+                                                            progress = if (chatVM.playingUrl == msg.voiceUrl) chatVM.voiceProgress else 0f,
+                                                            onPlayPause = { chatVM.playVoice(msg.voiceUrl!!) }
+                                                        )
+                                                    }
+
+                                                    if (!msg.text.isNullOrBlank()) {
+                                                        val customTextColor = FrameStyles.registry[messageStyle]?.textColor ?: when (messageStyle) {
+                                                            MessageStyle.ICE -> Color(0xFF006064)
+                                                            MessageStyle.MATRIX -> MayasTheme.GlowLime
+                                                            MessageStyle.GOLD -> Color(0xFF5D4037)
+                                                            MessageStyle.FOREST, MessageStyle.SUNSET, MessageStyle.MIDNIGHT -> Color.White
+                                                            null -> {
+                                                                if (isMe) Color.White
+                                                                else textPrimaryColor
+                                                            }
+                                                            else -> ShopConstants.getStyleTextColor(messageStyle)
+                                                        }
+
+                                                        val parsedText = rememberParsedMessageText(
+                                                            text = msg.text.orEmpty(),
+                                                            accentColor = if (messageStyle != null) {
+                                                                customTextColor.copy(alpha = 0.8f)
+                                                            } else if (isMe) {
+                                                                Color.White.copy(alpha = 0.9f)
+                                                            } else {
+                                                                MayasTheme.LinkColor
+                                                            }
+                                                        )
+
+                                                        ClickableText(
+                                                            text = parsedText,
+                                                            style = TextStyle(
+                                                                fontSize = fontSize.sp,
+                                                                color = customTextColor
+                                                            ),
+                                                            onClick = { offset ->
+                                                                parsedText.getStringAnnotations(
+                                                                    "URL",
+                                                                    offset,
+                                                                    offset
+                                                                ).firstOrNull()?.let { annotation ->
+                                                                    val intent = Intent(
+                                                                        Intent.ACTION_VIEW,
+                                                                        Uri.parse(annotation.item)
+                                                                    )
+                                                                    context.startActivity(intent)
+                                                                    return@ClickableText
+                                                                }
+                                                                parsedText.getStringAnnotations(
+                                                                    "USERNAME",
+                                                                    offset,
+                                                                    offset
+                                                                ).firstOrNull()?.let { annotation ->
+                                                                    Toast.makeText(
+                                                                        context,
+                                                                        "@${annotation.item} кликнут",
+                                                                        Toast.LENGTH_SHORT
+                                                                    ).show()
+                                                                    return@ClickableText
+                                                                }
+                                                                parsedText.getStringAnnotations(
+                                                                    "HASHTAG",
+                                                                    offset,
+                                                                    offset
+                                                                ).firstOrNull()?.let { annotation ->
+                                                                    Toast.makeText(
+                                                                        context,
+                                                                        "#${annotation.item} кликнут",
+                                                                        Toast.LENGTH_SHORT
+                                                                    ).show()
+                                                                    return@ClickableText
+                                                                }
+                                                                selectedMessage = msg
+                                                            }
+                                                        )
+                                                    }
                                                 }
 
-                                                if (!msg.forwardedFromName.isNullOrBlank()) {
-                                                    Row(
-                                                        modifier = Modifier.padding(bottom = 4.dp),
-                                                        verticalAlignment = Alignment.CenterVertically
-                                                    ) {
+                                                Spacer(modifier = Modifier.width(12.dp))
+
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    modifier = Modifier.padding(top = 4.dp)
+                                                ) {
+                                                    val secondaryTextColor = FrameStyles.registry[messageStyle]?.textColor?.copy(alpha = 0.6f) ?: when (messageStyle) {
+                                                        MessageStyle.ICE -> Color(0xFF006064).copy(alpha = 0.6f)
+                                                        MessageStyle.MATRIX -> MayasTheme.GlowLime.copy(alpha = 0.7f)
+                                                        MessageStyle.GOLD -> Color(0xFF5D4037).copy(alpha = 0.7f)
+                                                        MessageStyle.FOREST, MessageStyle.SUNSET -> Color.White.copy(alpha = 0.7f)
+                                                        MessageStyle.MIDNIGHT -> Color.White.copy(alpha = 0.6f)
+                                                        null -> {
+                                                            if (isMe) Color.White.copy(alpha = 0.7f)
+                                                            else timeColor
+                                                        }
+                                                        else -> ShopConstants.getStyleTextColor(messageStyle).copy(alpha = 0.7f)
+                                                    }
+
+                                                    val timeFormat = msg.timestamp?.let { ts ->
+                                                        SimpleDateFormat(
+                                                            "HH:mm",
+                                                            Locale.getDefault()
+                                                        ).format(ts)
+                                                    } ?: "--:--"
+
+                                                    if (msg.messageState == MessageState.SCHEDULED) {
                                                         Icon(
-                                                            Icons.Outlined.Bookmark,
-                                                            null,
-                                                            tint = (if (isMe) Color.White else MayasTheme.GlowPurple).copy(alpha = 0.7f),
+                                                            imageVector = Icons.Outlined.Schedule,
+                                                            contentDescription = "Запланировано",
+                                                            tint = secondaryTextColor,
                                                             modifier = Modifier.size(12.dp)
                                                         )
-                                                        Spacer(Modifier.width(4.dp))
-                                                        Text(
-                                                            "Переслано от ${msg.forwardedFromName}",
-                                                            fontSize = 11.sp,
-                                                            fontWeight = FontWeight.Medium,
-                                                            color = (if (isMe) Color.White else MayasTheme.GlowPurple).copy(alpha = 0.7f)
+                                                        Spacer(Modifier.width(3.dp))
+                                                    }
+                                                    if (msg.ttlSeconds > 0) {
+                                                        Icon(
+                                                            imageVector = Icons.Outlined.Timer,
+                                                            contentDescription = "Исчезающее сообщение",
+                                                            tint = secondaryTextColor,
+                                                            modifier = Modifier.size(12.dp)
                                                         )
+                                                        Spacer(Modifier.width(3.dp))
                                                     }
-                                                }
-                                                if (!msg.replyToText.isNullOrBlank()) {
-                                                    Row(
-                                                        modifier = Modifier
-                                                            .padding(bottom = 6.dp)
-                                                            .background(
-                                                                textPrimaryColor.copy(alpha = 0.05f),
-                                                                RoundedCornerShape(6.dp)
-                                                            )
-                                                            .padding(
-                                                                horizontal = 8.dp,
-                                                                vertical = 4.dp
-                                                            ),
-                                                        verticalAlignment = Alignment.CenterVertically
-                                                    ) {
-                                                        Box(
-                                                            modifier = Modifier.width(3.dp)
-                                                                .height(26.dp)
-                                                                .background(MayasTheme.GlowPurple)
+                                                    if (msg.isSilent) {
+                                                        Icon(
+                                                            imageVector = Icons.Outlined.NotificationsOff,
+                                                            contentDescription = "Без звука",
+                                                            tint = secondaryTextColor,
+                                                            modifier = Modifier.size(12.dp)
                                                         )
-                                                        Spacer(Modifier.width(8.dp))
-                                                        Column {
-                                                            Text(
-                                                                msg.replyToName.orEmpty(),
-                                                                fontSize = 11.sp,
-                                                                fontWeight = FontWeight.Bold,
-                                                                color = MayasTheme.GlowPurple
-                                                            )
-                                                            Text(
-                                                                msg.replyToText.orEmpty(),
-                                                                fontSize = 12.sp,
-                                                                color = textSecondaryColor,
-                                                                maxLines = 1,
-                                                                overflow = TextOverflow.Ellipsis
-                                                            )
-                                                        }
-                                                    }
-                                                }
-                                                if (!msg.mediaUrl.isNullOrBlank()) {
-                                                    B2Image(
-                                                        key = msg.mediaUrl,
-                                                        contentDescription = null,
-                                                        modifier = Modifier
-                                                            .padding(bottom = 6.dp)
-                                                            .fillMaxWidth()
-                                                            .heightIn(max = 300.dp)
-                                                            .clip(RoundedCornerShape(8.dp))
-                                                            .clickable {
-                                                                val mediaKey = msg.mediaUrl!!
-                                                                if (mediaKey.startsWith("http")) {
-                                                                    fullScreenImageUrl = mediaKey
-                                                                } else {
-                                                                    coroutineScope.launch {
-                                                                        fullScreenImageUrl = B2MediaClient.resolveDownloadUrl(mediaKey)
-                                                                    }
-                                                                }
-                                                            },
-                                                        contentScale = ContentScale.Crop
-                                                    )
-                                                }
-                                                if (!msg.voiceUrl.isNullOrBlank()) {
-                                                    VoiceMessageItem(
-                                                        url = msg.voiceUrl,
-                                                        duration = msg.voiceDuration,
-                                                        isMe = isMe,
-                                                        accentColor = if (isMe) Color.White else MayasTheme.GlowPurple,
-                                                        isPlaying = chatVM.playingUrl == msg.voiceUrl && chatVM.isVoicePlaying,
-                                                        progress = if (chatVM.playingUrl == msg.voiceUrl) chatVM.voiceProgress else 0f,
-                                                        onPlayPause = { chatVM.playVoice(msg.voiceUrl!!) }
-                                                    )
-                                                }
-
-                                                if (!msg.text.isNullOrBlank()) {
-                                                    val customTextColor = when (messageStyle) {
-                                                        MessageStyle.ICE -> Color(0xFF006064)
-                                                        MessageStyle.MATRIX -> MayasTheme.GlowLime
-                                                        MessageStyle.GOLD -> Color(0xFF5D4037)
-                                                        MessageStyle.FOREST, MessageStyle.SUNSET, MessageStyle.MIDNIGHT -> Color.White
-                                                        null -> {
-                                                            if (isMe) Color.White
-                                                            else textPrimaryColor
-                                                        }
-                                                        else -> ShopConstants.getStyleTextColor(messageStyle)
+                                                        Spacer(Modifier.width(3.dp))
                                                     }
 
-                                                    val parsedText = rememberParsedMessageText(
-                                                        text = msg.text.orEmpty(),
-                                                        accentColor = if (messageStyle != null) {
-                                                            customTextColor.copy(alpha = 0.8f)
-                                                        } else if (isMe) {
-                                                            Color.White.copy(alpha = 0.9f)
-                                                        } else {
-                                                            MayasTheme.LinkColor
-                                                        }
-                                                    )
-
-                                                    ClickableText(
-                                                        text = parsedText,
-                                                        style = TextStyle(
-                                                            fontSize = fontSize.sp,
-                                                            color = customTextColor
-                                                        ),
-                                                        onClick = { offset ->
-                                                            parsedText.getStringAnnotations(
-                                                                "URL",
-                                                                offset,
-                                                                offset
-                                                            ).firstOrNull()?.let { annotation ->
-                                                                val intent = Intent(
-                                                                    Intent.ACTION_VIEW,
-                                                                    Uri.parse(annotation.item)
-                                                                )
-                                                                context.startActivity(intent)
-                                                                return@ClickableText
-                                                            }
-                                                            parsedText.getStringAnnotations(
-                                                                "USERNAME",
-                                                                offset,
-                                                                offset
-                                                            ).firstOrNull()?.let { annotation ->
-                                                                Toast.makeText(
-                                                                    context,
-                                                                    "@${annotation.item} кликнут",
-                                                                    Toast.LENGTH_SHORT
-                                                                ).show()
-                                                                return@ClickableText
-                                                            }
-                                                            parsedText.getStringAnnotations(
-                                                                "HASHTAG",
-                                                                offset,
-                                                                offset
-                                                            ).firstOrNull()?.let { annotation ->
-                                                                Toast.makeText(
-                                                                    context,
-                                                                    "#${annotation.item} кликнут",
-                                                                    Toast.LENGTH_SHORT
-                                                                ).show()
-                                                                return@ClickableText
-                                                            }
-                                                            selectedMessage = msg
-                                                        }
-                                                    )
-                                                }
-                                            }
-
-                                            Spacer(modifier = Modifier.width(12.dp))
-
-                                            Row(
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                modifier = Modifier.padding(top = 4.dp)
-                                            ) {
-                                                val secondaryTextColor = when (messageStyle) {
-                                                    MessageStyle.ICE -> Color(0xFF006064).copy(alpha = 0.6f)
-                                                    MessageStyle.MATRIX -> MayasTheme.GlowLime.copy(alpha = 0.7f)
-                                                    MessageStyle.GOLD -> Color(0xFF5D4037).copy(alpha = 0.7f)
-                                                    MessageStyle.FOREST, MessageStyle.SUNSET -> Color.White.copy(alpha = 0.7f)
-                                                    MessageStyle.MIDNIGHT -> Color.White.copy(alpha = 0.6f)
-                                                    null -> {
-                                                        if (isMe) Color.White.copy(alpha = 0.7f)
-                                                        else timeColor
-                                                    }
-                                                    else -> ShopConstants.getStyleTextColor(messageStyle).copy(alpha = 0.7f)
-                                                }
-
-                                                val timeFormat = msg.timestamp?.let { ts ->
-                                                    SimpleDateFormat(
-                                                        "HH:mm",
-                                                        Locale.getDefault()
-                                                    ).format(ts)
-                                                } ?: "--:--"
-
-                                                Text(
-                                                    text = timeFormat,
-                                                    fontSize = 11.sp,
-                                                    color = secondaryTextColor,
-                                                    textAlign = TextAlign.End
-                                                )
-
-                                                if (chatVM.chatType == "CHANNEL") {
-                                                    Spacer(Modifier.width(4.dp))
-                                                    Icon(
-                                                        imageVector = Icons.Default.RemoveRedEye,
-                                                        contentDescription = null,
-                                                        tint = secondaryTextColor,
-                                                        modifier = Modifier.size(12.dp)
-                                                    )
-                                                    Spacer(Modifier.width(2.dp))
                                                     Text(
-                                                        text = formatCompactCount(msg.viewedBy.size),
+                                                        text = if (msg.messageState == MessageState.SCHEDULED) {
+                                                            SimpleDateFormat("dd.MM HH:mm", Locale.getDefault()).format(msg.scheduledFor ?: msg.timestamp ?: java.util.Date())
+                                                        } else timeFormat,
                                                         fontSize = 11.sp,
                                                         color = secondaryTextColor,
                                                         textAlign = TextAlign.End
                                                     )
-                                                }
 
-                                                if (isMe) {
-                                                    if (msg.isPremium) {
+                                                    if (chatVM.chatType == "CHANNEL") {
+                                                        Spacer(Modifier.width(4.dp))
                                                         Icon(
-                                                            imageVector = Icons.Default.Verified,
+                                                            imageVector = Icons.Default.RemoveRedEye,
                                                             contentDescription = null,
-                                                            tint = if (messageStyle == MessageStyle.GOLD) Color(0xFF5D4037) else MayasTheme.GlowGold,
-                                                            modifier = Modifier.size(14.dp)
-                                                                .padding(end = 4.dp)
+                                                            tint = secondaryTextColor,
+                                                            modifier = Modifier.size(12.dp)
+                                                        )
+                                                        Spacer(Modifier.width(2.dp))
+                                                        Text(
+                                                            text = formatCompactCount(msg.viewedBy.size),
+                                                            fontSize = 11.sp,
+                                                            color = secondaryTextColor,
+                                                            textAlign = TextAlign.End
                                                         )
                                                     }
-                                                    val statusIcon = when (msg.status) {
-                                                        0 -> Icons.Default.AccessTime
-                                                        2 -> Icons.Default.DoneAll
-                                                        else -> Icons.Default.Done
+
+                                                    if (isMe) {
+                                                        if (msg.isPremium) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Verified,
+                                                                contentDescription = null,
+                                                                tint = if (messageStyle == MessageStyle.GOLD) Color(0xFF5D4037) else MayasTheme.GlowGold,
+                                                                modifier = Modifier.size(14.dp)
+                                                                    .padding(end = 4.dp)
+                                                            )
+                                                        }
+                                                        val statusIcon = when (msg.status) {
+                                                            0 -> Icons.Default.AccessTime
+                                                            2 -> Icons.Default.DoneAll
+                                                            else -> Icons.Default.Done
+                                                        }
+                                                        Icon(
+                                                            imageVector = statusIcon,
+                                                            contentDescription = null,
+                                                            tint = if (messageStyle != null) secondaryTextColor else (if (msg.status == 2) MayasTheme.GlowSky else textSecondaryColor),
+                                                            modifier = Modifier.size(15.dp)
+                                                        )
                                                     }
-                                                    Icon(
-                                                        imageVector = statusIcon,
-                                                        contentDescription = null,
-                                                        tint = if (messageStyle != null) secondaryTextColor else (if (msg.status == 2) MayasTheme.GlowSky else textSecondaryColor),
-                                                        modifier = Modifier.size(15.dp)
-                                                    )
                                                 }
                                             }
                                         }
@@ -1506,6 +1581,23 @@ fun ChatScreen(
                                         onDismissRequest = { selectedMessage = null },
                                         modifier = Modifier.background(surfaceColor)
                                     ) {
+                                        if (msg.messageState == MessageState.SCHEDULED && msg.senderId == myUid) {
+                                            DropdownMenuItem(
+                                                text = { Text("Отменить отправку", color = MayasTheme.ErrorRed) },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        Icons.Outlined.Schedule,
+                                                        null,
+                                                        tint = MayasTheme.ErrorRed
+                                                    )
+                                                },
+                                                onClick = {
+                                                    chatVM.cancelScheduledMessage(chatId, msg.id)
+                                                    selectedMessage = null
+                                                }
+                                            )
+                                            HorizontalDivider(color = textPrimaryColor.copy(0.1f))
+                                        }
                                         DropdownMenuItem(
                                             text = { Text("Ответить", color = textPrimaryColor) },
                                             leadingIcon = {
@@ -1723,168 +1815,260 @@ fun ChatScreen(
                         }
 
                         if (chatVM.canPostInChat) {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth().imePadding(),
-                            color = surfaceColor,
-                            tonalElevation = 8.dp
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
-                                    .navigationBarsPadding(),
-                                verticalAlignment = Alignment.CenterVertically
+                            Surface(
+                                modifier = Modifier.fillMaxWidth().imePadding(),
+                                color = surfaceColor,
+                                tonalElevation = 8.dp
                             ) {
-                                IconButton(onClick = { showEmojiPicker = !showEmojiPicker }) {
-                                    Icon(
-                                        if (showEmojiPicker) Icons.Default.Keyboard else Icons.Outlined.EmojiEmotions,
-                                        null,
-                                        tint = textSecondaryColor
-                                    )
-                                }
-
-                                OutlinedTextField(
-                                    value = input,
-                                    onValueChange = { input = it },
-                                    modifier = Modifier.weight(1f),
-                                    placeholder = {
-                                        Text(
-                                            "Сообщение..",
-                                            color = textSecondaryColor
-                                        )
-                                    },
-                                    maxLines = 5,
-                                    shape = RoundedCornerShape(24.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedBorderColor = Color.Transparent,
-                                        unfocusedBorderColor = Color.Transparent,
-                                        focusedContainerColor = chatBackground.copy(alpha = 0.5f),
-                                        unfocusedContainerColor = chatBackground.copy(alpha = 0.5f),
-                                        focusedTextColor = textPrimaryColor,
-                                        unfocusedTextColor = textPrimaryColor,
-                                        cursorColor = MayasTheme.GlowPurple
-                                    )
-                                )
-
-                                IconButton(onClick = { galleryLauncher.launch("image/*") }) {
-                                    Icon(Icons.Default.Image, null, tint = textSecondaryColor)
-                                }
-
-                                AnimatedContent<Boolean>(
-                                    targetState = input.isNotBlank(),
-                                    label = "SendButtonAnimation",
-                                    transitionSpec = {
-                                        (scaleIn(animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeIn())
-                                            .togetherWith(scaleOut(animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeOut())
-                                    }
-                                ) { isSending ->
-                                    if (isSending) {
-                                        IconButton(
-                                            onClick = {
-                                                chatVM.sendMessage(
-                                                    chatId = chatId,
-                                                    text = input,
-                                                    replyText = if (!replyMessage?.text.isNullOrBlank()) replyMessage?.text else if (replyMessage?.mediaUrl != null) "📷 Фотография" else if (replyMessage?.voiceUrl != null) "🎤 Голосовое сообщение" else null,
-                                                    replyName = if (replyMessage == null) null
-                                                    else if (replyMessage?.senderId == myUid) "Вы"
-                                                    else if (replyMessage?.senderName == "Система" || replyMessage?.senderName == "Mayas") "Система"
-                                                    else if (chatVM.isGroupChat) replyMessage?.senderName
-                                                    else chatTitle
-                                                )
-                                                input = ""
-                                                replyMessage = null
-                                            },
-                                            modifier = Modifier.clip(CircleShape)
-                                                .background(MayasTheme.GlowBlue)
+                                Column {
+                                    val effectiveTimerSec = pendingTimerOverrideSec ?: chatVM.chatDisappearingTimerSec
+                                    AnimatedVisibility(visible = pendingTimerOverrideSec != null || chatVM.chatDisappearingTimerSec > 0) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                                                .clickable { showMessageTimerPicker = true },
+                                            verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Icon(
-                                                Icons.AutoMirrored.Filled.Send,
+                                                Icons.Outlined.Timer,
                                                 null,
-                                                tint = Color.White
+                                                modifier = Modifier.size(14.dp),
+                                                tint = MayasTheme.Accent
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                if (pendingTimerOverrideSec != null) "Таймер для сообщения: ${formatTimerDuration(effectiveTimerSec)}"
+                                                else "Таймер чата: ${formatTimerDuration(effectiveTimerSec)}",
+                                                fontSize = 12.sp,
+                                                color = MayasTheme.Accent
+                                            )
+                                            if (pendingTimerOverrideSec != null) {
+                                                Spacer(Modifier.width(4.dp))
+                                                IconButton(
+                                                    onClick = { pendingTimerOverrideSec = null },
+                                                    modifier = Modifier.size(18.dp)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Close,
+                                                        null,
+                                                        modifier = Modifier.size(14.dp),
+                                                        tint = MayasTheme.Accent
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                    Row(
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                                            .navigationBarsPadding(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        IconButton(onClick = { showEmojiPicker = !showEmojiPicker }) {
+                                            Icon(
+                                                if (showEmojiPicker) Icons.Default.Keyboard else Icons.Outlined.EmojiEmotions,
+                                                null,
+                                                tint = textSecondaryColor
                                             )
                                         }
-                                    } else {
-                                        val isRecording = chatVM.isRecording
-                                        val recordingScale by animateFloatAsState(
-                                            targetValue = if (isRecording) 1.2f else 1f,
-                                            animationSpec = if (isRecording) {
-                                                infiniteRepeatable(
-                                                    animation = tween(800),
-                                                    repeatMode = RepeatMode.Reverse
+
+                                        OutlinedTextField(
+                                            value = input,
+                                            onValueChange = { input = it },
+                                            modifier = Modifier.weight(1f),
+                                            placeholder = {
+                                                Text(
+                                                    "Сообщение..",
+                                                    color = textSecondaryColor
                                                 )
-                                            } else {
-                                                tween(200)
                                             },
-                                            label = "micPulse"
+                                            maxLines = 5,
+                                            shape = RoundedCornerShape(24.dp),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = Color.Transparent,
+                                                unfocusedBorderColor = Color.Transparent,
+                                                focusedContainerColor = chatBackground.copy(alpha = 0.5f),
+                                                unfocusedContainerColor = chatBackground.copy(alpha = 0.5f),
+                                                focusedTextColor = textPrimaryColor,
+                                                unfocusedTextColor = textPrimaryColor,
+                                                cursorColor = MayasTheme.GlowPurple
+                                            )
                                         )
 
-                                        val recorder = remember { VoiceRecorder(context) }
-                                        DisposableEffect(Unit) {
-                                            onDispose {
-                                                recorder.stop()
-                                            }
-                                        }
-                                        val recordPermissionLauncher = rememberLauncherForActivityResult(
-                                            ActivityResultContracts.RequestPermission()
-                                        ) { isGranted ->
-                                            if (isGranted) {
-
-                                            }
+                                        IconButton(onClick = { galleryLauncher.launch("image/*") }) {
+                                            Icon(Icons.Default.Image, null, tint = textSecondaryColor)
                                         }
 
-                                        IconButton(
-                                            onClick = {
-                                                if (ContextCompat.checkSelfPermission(
-                                                        context,
-                                                        android.Manifest.permission.RECORD_AUDIO
-                                                    ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                                                ) {
-                                                    recordPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                                                    return@IconButton
-                                                }
-
-                                                if (!isRecording) {
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    recorder.start()
-                                                    chatVM.startRecording()
-                                                } else {
-                                                    val audioFile = recorder.stop()
-                                                    val bytes = audioFile?.readBytes()
-                                                    chatVM.stopRecording(
+                                        AnimatedContent<Boolean>(
+                                            targetState = input.isNotBlank(),
+                                            label = "SendButtonAnimation",
+                                            transitionSpec = {
+                                                (scaleIn(animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeIn())
+                                                    .togetherWith(scaleOut(animationSpec = tween(200, easing = FastOutSlowInEasing)) + fadeOut())
+                                            }
+                                        ) { isSending ->
+                                            if (isSending) {
+                                                fun doSend(silent: Boolean) {
+                                                    chatVM.sendMessage(
                                                         chatId = chatId,
-                                                        audioBytes = bytes,
+                                                        text = input,
                                                         replyText = if (!replyMessage?.text.isNullOrBlank()) replyMessage?.text else if (replyMessage?.mediaUrl != null) "📷 Фотография" else if (replyMessage?.voiceUrl != null) "🎤 Голосовое сообщение" else null,
                                                         replyName = if (replyMessage == null) null
                                                         else if (replyMessage?.senderId == myUid) "Вы"
                                                         else if (replyMessage?.senderName == "Система" || replyMessage?.senderName == "Mayas") "Система"
                                                         else if (chatVM.isGroupChat) replyMessage?.senderName
-                                                        else chatTitle
+                                                        else chatTitle,
+                                                        timerOverrideSec = pendingTimerOverrideSec,
+                                                        silent = silent
                                                     )
+                                                    input = ""
                                                     replyMessage = null
+                                                    pendingTimerOverrideSec = null
                                                 }
-                                            },
-                                            modifier = Modifier.graphicsLayer {
-                                                scaleX = recordingScale
-                                                scaleY = recordingScale
-                                            }
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Mic,
-                                                null,
-                                                tint = if (isRecording) MayasTheme.ErrorRed else textSecondaryColor
-                                            )
-                                        }
 
-                                        if (isRecording) {
-                                            Text(
-                                                "${chatVM.recordingDuration}s",
-                                                color = MayasTheme.ErrorRed,
-                                                fontSize = 12.sp,
-                                                modifier = Modifier.padding(start = 4.dp)
-                                            )
+                                                Box {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(CircleShape)
+                                                            .background(MayasTheme.GlowBlue)
+                                                            .combinedClickable(
+                                                                onClick = { doSend(silent = false) },
+                                                                onLongClick = {
+                                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                                    showSendOptionsMenu = true
+                                                                }
+                                                            )
+                                                            .padding(12.dp),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            Icons.AutoMirrored.Filled.Send,
+                                                            null,
+                                                            tint = Color.White
+                                                        )
+                                                    }
+
+                                                    DropdownMenu(
+                                                        expanded = showSendOptionsMenu,
+                                                        onDismissRequest = { showSendOptionsMenu = false },
+                                                        modifier = Modifier.background(surfaceColor)
+                                                    ) {
+                                                        DropdownMenuItem(
+                                                            text = {
+                                                                Text(
+                                                                    if (pendingTimerOverrideSec != null) "Таймер: ${formatTimerDuration(pendingTimerOverrideSec!!)}" else "Таймер сообщения",
+                                                                    color = textPrimaryColor
+                                                                )
+                                                            },
+                                                            leadingIcon = { Icon(Icons.Outlined.Timer, null, tint = MayasTheme.Accent) },
+                                                            onClick = {
+                                                                showSendOptionsMenu = false
+                                                                showMessageTimerPicker = true
+                                                            }
+                                                        )
+                                                        DropdownMenuItem(
+                                                            text = { Text("Отправить без звука", color = textPrimaryColor) },
+                                                            leadingIcon = { Icon(Icons.Outlined.NotificationsOff, null, tint = MayasTheme.Accent) },
+                                                            onClick = {
+                                                                showSendOptionsMenu = false
+                                                                doSend(silent = true)
+                                                            }
+                                                        )
+                                                        DropdownMenuItem(
+                                                            text = { Text("Отправить позже", color = textPrimaryColor) },
+                                                            leadingIcon = { Icon(Icons.Outlined.Schedule, null, tint = MayasTheme.Accent) },
+                                                            onClick = {
+                                                                showSendOptionsMenu = false
+                                                                showScheduleDialog = true
+                                                            }
+                                                        )
+                                                    }
+                                                }
+                                            } else {
+                                                val isRecording = chatVM.isRecording
+                                                val recordingScale by animateFloatAsState(
+                                                    targetValue = if (isRecording) 1.2f else 1f,
+                                                    animationSpec = if (isRecording) {
+                                                        infiniteRepeatable(
+                                                            animation = tween(800),
+                                                            repeatMode = RepeatMode.Reverse
+                                                        )
+                                                    } else {
+                                                        tween(200)
+                                                    },
+                                                    label = "micPulse"
+                                                )
+
+                                                val recorder = remember { VoiceRecorder(context) }
+                                                DisposableEffect(Unit) {
+                                                    onDispose {
+                                                        recorder.stop()
+                                                    }
+                                                }
+                                                val recordPermissionLauncher = rememberLauncherForActivityResult(
+                                                    ActivityResultContracts.RequestPermission()
+                                                ) { isGranted ->
+                                                    if (isGranted) {
+
+                                                    }
+                                                }
+
+                                                IconButton(
+                                                    onClick = {
+                                                        if (ContextCompat.checkSelfPermission(
+                                                                context,
+                                                                android.Manifest.permission.RECORD_AUDIO
+                                                            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                                                        ) {
+                                                            recordPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                                                            return@IconButton
+                                                        }
+
+                                                        if (!isRecording) {
+                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                            recorder.start()
+                                                            chatVM.startRecording()
+                                                        } else {
+                                                            val audioFile = recorder.stop()
+                                                            val bytes = audioFile?.readBytes()
+                                                            chatVM.stopRecording(
+                                                                chatId = chatId,
+                                                                audioBytes = bytes,
+                                                                replyText = if (!replyMessage?.text.isNullOrBlank()) replyMessage?.text else if (replyMessage?.mediaUrl != null) "📷 Фотография" else if (replyMessage?.voiceUrl != null) "🎤 Голосовое сообщение" else null,
+                                                                replyName = if (replyMessage == null) null
+                                                                else if (replyMessage?.senderId == myUid) "Вы"
+                                                                else if (replyMessage?.senderName == "Система" || replyMessage?.senderName == "Mayas") "Система"
+                                                                else if (chatVM.isGroupChat) replyMessage?.senderName
+                                                                else chatTitle
+                                                            )
+                                                            replyMessage = null
+                                                        }
+                                                    },
+                                                    modifier = Modifier.graphicsLayer {
+                                                        scaleX = recordingScale
+                                                        scaleY = recordingScale
+                                                    }
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Mic,
+                                                        null,
+                                                        tint = if (isRecording) MayasTheme.ErrorRed else textSecondaryColor
+                                                    )
+                                                }
+
+                                                if (isRecording) {
+                                                    Text(
+                                                        "${chatVM.recordingDuration}s",
+                                                        color = MayasTheme.ErrorRed,
+                                                        fontSize = 12.sp,
+                                                        modifier = Modifier.padding(start = 4.dp)
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
-                        }
                         } else {
                             ChannelReadOnlyBar(
                                 surfaceColor = surfaceColor,
@@ -2039,6 +2223,67 @@ fun ChatScreen(
             )
         }
 
+        if (showChatTimerPicker) {
+            MessageTimerPickerDialog(
+                title = "Таймер исчезающих сообщений",
+                subtitle = "Новые сообщения в этом чате будут удаляться автоматически",
+                currentSec = chatVM.chatDisappearingTimerSec,
+                surfaceColor = surfaceColor,
+                textPrimaryColor = textPrimaryColor,
+                textSecondaryColor = textSecondaryColor,
+                onDismiss = { showChatTimerPicker = false },
+                onSelect = { seconds ->
+                    chatVM.setDisappearingTimer(chatId, seconds)
+                    showChatTimerPicker = false
+                }
+            )
+        }
+
+        if (showMessageTimerPicker) {
+            MessageTimerPickerDialog(
+                title = "Таймер для этого сообщения",
+                subtitle = "Действует только на следующее отправленное сообщение",
+                currentSec = pendingTimerOverrideSec ?: chatVM.chatDisappearingTimerSec,
+                surfaceColor = surfaceColor,
+                textPrimaryColor = textPrimaryColor,
+                textSecondaryColor = textSecondaryColor,
+                onDismiss = { showMessageTimerPicker = false },
+                onSelect = { seconds ->
+                    pendingTimerOverrideSec = seconds
+                    showMessageTimerPicker = false
+                }
+            )
+        }
+
+        if (showScheduleDialog) {
+            ScheduleSendDialog(
+                surfaceColor = surfaceColor,
+                textPrimaryColor = textPrimaryColor,
+                textSecondaryColor = textSecondaryColor,
+                onDismiss = { showScheduleDialog = false },
+                onConfirm = { scheduledDate ->
+                    if (input.isNotBlank()) {
+                        chatVM.sendMessage(
+                            chatId = chatId,
+                            text = input,
+                            replyText = if (!replyMessage?.text.isNullOrBlank()) replyMessage?.text else if (replyMessage?.mediaUrl != null) "📷 Фотография" else if (replyMessage?.voiceUrl != null) "🎤 Голосовое сообщение" else null,
+                            replyName = if (replyMessage == null) null
+                            else if (replyMessage?.senderId == myUid) "Вы"
+                            else if (replyMessage?.senderName == "Система" || replyMessage?.senderName == "Mayas") "Система"
+                            else if (chatVM.isGroupChat) replyMessage?.senderName
+                            else chatTitle,
+                            timerOverrideSec = pendingTimerOverrideSec,
+                            scheduledFor = scheduledDate
+                        )
+                        input = ""
+                        replyMessage = null
+                        pendingTimerOverrideSec = null
+                    }
+                    showScheduleDialog = false
+                }
+            )
+        }
+
         fullScreenImageUrl?.let { url ->
             FullScreenImageViewer(
                 imageUrl = url,
@@ -2119,28 +2364,199 @@ fun ThemePickerDialog(
 }
 
 @Composable
+fun MessageTimerPickerDialog(
+    title: String,
+    subtitle: String,
+    currentSec: Long,
+    surfaceColor: Color,
+    textPrimaryColor: Color,
+    textSecondaryColor: Color,
+    onDismiss: () -> Unit,
+    onSelect: (Long) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = surfaceColor,
+        title = { Text(title, color = textPrimaryColor) },
+        text = {
+            Column {
+                Text(subtitle, color = textSecondaryColor, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
+                MessageTimerPreset.all.forEach { seconds ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onSelect(seconds) }
+                            .padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            if (seconds == MessageTimerPreset.OFF) "Выключено" else formatTimerDuration(seconds),
+                            color = textPrimaryColor
+                        )
+                        if (currentSec == seconds) {
+                            Icon(Icons.Default.Check, null, tint = MayasTheme.Accent)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        }
+    )
+}
+
+@Composable
+fun ScheduleSendDialog(
+    surfaceColor: Color,
+    textPrimaryColor: Color,
+    textSecondaryColor: Color,
+    onDismiss: () -> Unit,
+    onConfirm: (java.util.Date) -> Unit
+) {
+    val calendar = remember { java.util.Calendar.getInstance().apply { add(java.util.Calendar.MINUTE, 5) } }
+    var hours by remember { mutableStateOf(calendar.get(java.util.Calendar.HOUR_OF_DAY)) }
+    var minutes by remember { mutableStateOf(calendar.get(java.util.Calendar.MINUTE)) }
+    var daysAhead by remember { mutableStateOf(0) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = surfaceColor,
+        title = { Text("Отправить позже", color = textPrimaryColor) },
+        text = {
+            Column {
+                Text(
+                    "Сообщение уйдёт автоматически в выбранное время",
+                    color = textSecondaryColor,
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                Text("Через сколько дней", color = textSecondaryColor, fontSize = 12.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(0, 1, 2, 3, 7).forEach { d ->
+                        FilterChip(
+                            selected = daysAhead == d,
+                            onClick = { daysAhead = d },
+                            label = { Text(if (d == 0) "Сегодня" else "+$d") }
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Text("Время", color = textSecondaryColor, fontSize = 12.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    OutlinedTextField(
+                        value = hours.toString().padStart(2, '0'),
+                        onValueChange = { v -> v.toIntOrNull()?.let { if (it in 0..23) hours = it } },
+                        modifier = Modifier.width(70.dp),
+                        singleLine = true,
+                        label = { Text("Ч") }
+                    )
+                    Text("  :  ", color = textPrimaryColor)
+                    OutlinedTextField(
+                        value = minutes.toString().padStart(2, '0'),
+                        onValueChange = { v -> v.toIntOrNull()?.let { if (it in 0..59) minutes = it } },
+                        modifier = Modifier.width(70.dp),
+                        singleLine = true,
+                        label = { Text("М") }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val target = java.util.Calendar.getInstance().apply {
+                    add(java.util.Calendar.DAY_OF_YEAR, daysAhead)
+                    set(java.util.Calendar.HOUR_OF_DAY, hours)
+                    set(java.util.Calendar.MINUTE, minutes)
+                    set(java.util.Calendar.SECOND, 0)
+                }
+                var date = target.time
+
+
+                if (date.before(java.util.Date())) {
+                    target.add(java.util.Calendar.DAY_OF_YEAR, 1)
+                    date = target.time
+                }
+                onConfirm(date)
+            }) { Text("Запланировать") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Отмена") }
+        }
+    )
+}
+
+@Composable
 fun EmojiPicker(onEmojiSelected: (String) -> Unit) {
     val emojis = listOf(
 
-        "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🥲", "🥹", "😊", "😇", "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚", "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥸", "🤩", "🥳", "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫", "😩", "🥺", "😢", "😭", "😮‍💨", "😤", "😠", "😡", "🤬", "🤯", "😳", "🥵", "🥶", "😱", "😨", "😰", "😥", "😓", "🫣", "🤗", "🫡", "🤔", "🫣", "🤭", "🤫", "🤥", "😶", "😶‍🌫️", "😐", "😑", "😬", "🫨", "🫠", "🙄", "😯", "😦", "😧", "😮", "😲", "🥱", "😴", "🤤", "😪", "😮‍💨", "😵", "😵‍💫", "🫥", "🤐", "🥴", "🤢", "🤮", "🤧", "😷", "🤒", "🤕", "🤑", "🤠", "😈", "👿", "👹", "👺", "🤡", "💩", "👻", "💀", "☠️", "👽", "👾", "🤖", "🎃", "😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾",
+        "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🥲", "🥹", "😊",
+        "😇", "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚",
+        "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥸", "🤩", "🥳",
+        "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫", "😩",
+        "🥺", "😢", "😭", "😮‍💨", "😤", "😠", "😡", "🤬", "🤯", "😳", "🥵", "🥶",
+        "😱", "😨", "😰", "😥", "😓", "🫣", "🤗", "🫡", "🤔", "🫣", "🤭", "🤫", "🤥",
+        "😶", "😶‍🌫️", "😐", "😑", "😬", "🫨", "🫠", "🙄", "😯", "😦", "😧", "😮", "😲",
+        "🥱", "😴", "🤤", "😪", "😮‍💨", "😵", "😵‍💫", "🫥", "🤐", "🥴", "🤢", "🤮", "🤧",
+        "😷", "🤒", "🤕", "🤑", "🤠", "😈", "👿", "👹", "👺", "🤡", "💩", "👻", "💀", "☠️",
+        "👽", "👾", "🤖", "🎃", "😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾",
 
 
-        "👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🫰", "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎", "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "✍️", "💅", "🤳", "💪", "🦾", "🦿", "🦵", "🦶", "👂", "🦻", "👃", "🧠", "🫀", "🫁", "🦷", "🦴", "👀", "👁️", "👅", "👄", "💋", "🩸",
+        "👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🫰",
+        "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎",
+        "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "✍️",
+        "💅", "🤳", "💪", "🦾", "🦿", "🦵", "🦶", "👂", "🦻", "👃", "🧠",
+        "🫀", "🫁", "🦷", "🦴", "👀", "👁️", "👅", "👄", "💋", "🩸",
 
 
-        "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❤️‍🔥", "❤️‍🩹", "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "👑", "👒", "🎩", "🎓", "🧢", "⛑️", "📿", "💄", "💍", "💼", "🎒", "🧳", "👓", "🕶️", "🥽", "🥼", "🦺", "👔", "👕", "👖", "🧣", "🧤", "🧥", "🧦", "👗", "👘", "🥻", "🩱", "🩲", "🩳", "👙",
+        "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❤️‍🔥", "❤️‍🩹",
+        "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "👑", "👒", "🎩", "🎓",
+        "🧢", "⛑️", "📿", "💄", "💍", "💼", "🎒", "🧳", "👓", "🕶️", "🥽", "🥼", "🦺", "👔",
+        "👕", "👖", "🧣", "🧤", "🧥", "🧦", "👗", "👘", "🥻", "🩱", "🩲", "🩳", "👙",
 
 
-        "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐻‍❄️", "🐨", "🐯", "🦁", "🐮", "🐷", "🐽", "🐸", "🐵", "🙈", "🙉", "🙊", "🐒", "🐔", "🐧", "🐦", "🐤", "🐣", "🐥", "🦆", "🦅", "🦉", "🦤", "🪶", "🦩", "🦚", "🦜", "🐊", "🐢", "🦎", "🐍", "🐲", "🐉", "🦕", "🦖", "🐳", "🐋", "🐬", "🦭", "🐟", "🐠", "🐡", "🦈", "🐙", "🐚", "🪸", "🐌", "🦋", "🐛", "🐜", "🐝", "🪲", "🐞", "🦗", "🕷️", "🕸️", "🦂", "🦟", "🪰", "🪱", "🦠", "💐", "🌸", "💮", "🪷", "🌹", "🥀", "🌺", "🌻", "🌼", "🌷", "🌱", "🪴", "🌲", "🌳", "🌴", "🌵", "🌾", "🌿", "☘️", "🍀", "🍁", "🍂", "🍃", "🍄", "🌰", "🦀", "🦞", "🦐", "🦑",
+        "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐻‍❄️", "🐨", "🐯", "🦁", "🐮",
+        "🐷", "🐽", "🐸", "🐵", "🙈", "🙉", "🙊", "🐒", "🐔", "🐧", "🐦", "🐤", "🐣", "🐥",
+        "🦆", "🦅", "🦉", "🦤", "🪶", "🦩", "🦚", "🦜", "🐊", "🐢", "🦎", "🐍", "🐲", "🐉", "🦕",
+        "🦖", "🐳", "🐋", "🐬", "🦭", "🐟", "🐠", "🐡", "🦈", "🐙", "🐚", "🪸", "🐌", "🦋", "🐛",
+        "🐜", "🐝", "🪲", "🐞", "🦗", "🕷️", "🕸️", "🦂", "🦟", "🪰", "🪱", "🦠", "💐", "🌸", "💮",
+        "🪷", "🌹", "🥀", "🌺", "🌻", "🌼", "🌷", "🌱", "🪴", "🌲", "🌳", "🌴", "🌵", "🌾", "🌿",
+        "☘️", "🍀", "🍁", "🍂", "🍃", "🍄", "🌰", "🦀", "🦞", "🦐", "🦑",
 
 
-        "🍏", "🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈", "🍒", "🍑", "🥭", "🍍", "🥥", "🥝", "🍅", "🍆", "🥑", "🥦", "🥬", "🥒", "🌶️", "🫑", "🌽", "🥕", "🫒", "🧄", "🧅", "🥔", "🍠", "🥐", "🥯", "🍞", "🥖", "🥨", "🥞", "🧇", "🧀", "🍖", "🥩", "🍗", "🍔", "🍟", "🍕", "🌭", "🥪", "🌮", "🌯", "🫔", "🥙", "🧆", "🥚", "🍳", "🥘", "🍲", "🫕", "🥣", "🥗", "🍿", "🧈", "🧂", "🥫", "🍱", "🍘", "🍙", "🍚", "🍛", "🍜", "🍝", "🍣", "🍤", "🥮", "🍡", "🥟", "🥠", "🥡", "🍦", "🍧", "🍨", "🍩", "🍪", "🎂", "🍰", "🧁", "🥧", "🍫", "🍬", "🍭", "🍮", "🍯", "🍼", "🥛", "☕", "🫖", "🍵", "🍶", "🍾", "🍷", "🍸", "🍹", "🍺", "🍻", "🥂", "🥃", "🫗", "🥤", "🧋", "🧃", "🧉", "🧊",
+        "🍏", "🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈", "🍒", "🍑", "🥭", "🍍",
+        "🥥", "🥝", "🍅", "🍆", "🥑", "🥦", "🥬", "🥒", "🌶️", "🫑", "🌽", "🥕", "🫒", "🧄", "🧅",
+        "🥔", "🍠", "🥐", "🥯", "🍞", "🥖", "🥨", "🥞", "🧇", "🧀", "🍖", "🥩", "🍗", "🍔", "🍟",
+        "🍕", "🌭", "🥪", "🌮", "🌯", "🫔", "🥙", "🧆", "🥚", "🍳", "🥘", "🍲", "🫕", "🥣", "🥗",
+        "🍿", "🧈", "🧂", "🥫", "🍱", "🍘", "🍙", "🍚", "🍛", "🍜", "🍝", "🍣", "🍤", "🥮", "🍡",
+        "🥟", "🥠", "🥡", "🍦", "🍧", "🍨", "🍩", "🍪", "🎂", "🍰", "🧁", "🥧", "🍫", "🍬", "🍭",
+        "🍮", "🍯", "🍼", "🥛", "☕", "🫖", "🍵", "🍶", "🍾", "🍷", "🍸", "🍹", "🍺", "🍻", "🥂", "🥃",
+        "🫗", "🥤", "🧋", "🧃", "🧉", "🧊",
 
 
-        "🌍", "🌎", "🌏", "🌐", "🗺️", "🗾", "🧭", "🏔️", "⛰️", "🌋", "🗻", "🏕️", "🏖️", "🏜️", "🏝️", "🏞️", "🏟️", "🏛️", "🏗️", "🧱", "🪨", "🪵", "🛖", "🏘️", "🏚️", "🏠", "🏡", "🏢", "🏣", "🏤", "🏥", "🏦", "🏨", "🏩", "🏪", "🏫", "🏬", "🏭", "🏯", "🏰", "💒", "🗼", "🗽", "⛪", "🕌", "🛕", "🕍", "⛩️", "🕋", "⛲", "⛺", "🌁", "🌃", "🏙️", "🌄", "🌅", "🌆", "🌇", "🌉", "🌌", "🎠", "🎡", "🎢", "🚂", "🚃", "🚄", "🚅", "🚆", "🚇", "🚈", "🚉", "🚊", "🦽", "🦼", "🚲", "🛵", "🏍️", "🛺", "🚨", "🚔", "🚍", "🚘", "🚖", "🚡", "🚠", "🚟", "🚃", "🌌", "🎈", "🎉", "🎊", "🎇", "🎆", "🧨", "✨", "🌟", "⭐", "🌙", "🌛", "🌜", "🌚", "🌕", "☀️", "🌤️", "⛅", "🌥️", "☁️", "🌦️", "🌧️", "⛈️", "🌩️", "❄️", "☃️", "⛄", "🌬️", "💨", "🌪️", "🌫️", "🌊", "💧", "💦", "☔", "⚡", "🔥", "💥"
+        "🌍", "🌎", "🌏", "🌐", "🗺️", "🗾", "🧭", "🏔️", "⛰️", "🌋", "🗻", "🏕️", "🏖️", "🏜️",
+        "🏝️", "🏞️", "🏟️", "🏛️", "🏗️", "🧱", "🪨", "🪵", "🛖", "🏘️", "🏚️", "🏠", "🏡", "🏢", "🏣",
+        "🏤", "🏥", "🏦", "🏨", "🏩", "🏪", "🏫", "🏬", "🏭", "🏯", "🏰", "💒", "🗼", "🗽",
+        "⛪", "🕌", "🛕", "🕍", "⛩️", "🕋", "⛲", "⛺", "🌁", "🌃", "🏙️", "🌄", "🌅", "🌆",
+        "🌇", "🌉", "🌌", "🎠", "🎡", "🎢", "🚂", "🚃", "🚄", "🚅", "🚆", "🚇", "🚈", "🚉",
+        "🚊", "🦽", "🦼", "🚲", "🛵", "🏍️", "🛺", "🚨", "🚔", "🚍", "🚘", "🚖", "🚡", "🚠",
+        "🚟", "🚃", "🌌", "🎈", "🎉", "🎊", "🎇", "🎆", "🧨", "✨", "🌟", "⭐", "🌙", "🌛",
+        "🌜", "🌚", "🌕", "☀️", "🌤️", "⛅", "🌥️", "☁️", "🌦️", "🌧️", "⛈️", "🌩️", "❄️", "☃️",
+        "⛄", "🌬️", "💨", "🌪️", "🌫️", "🌊", "💧", "💦", "☔", "⚡", "🔥", "💥"
     )
     Card(
         modifier = Modifier.fillMaxWidth().height(250.dp),
+
         shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
         colors = CardDefaults.cardColors(containerColor = MayasTheme.Surface)
     ) {

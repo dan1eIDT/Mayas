@@ -7,7 +7,7 @@ import androidx.room.RoomDatabase
 
 @Database(
     entities = [ChatEntity::class, MessageEntity::class],
-    version = 7,
+    version = 11,
     exportSchema = false
 )
 @androidx.room.TypeConverters(Converters::class)

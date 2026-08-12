@@ -44,14 +44,21 @@ class ChatRepository(context: Context) {
 
                     val existing = if (!isGroup) chatDao.getChatById(doc.id) else null
 
+                    val resolvedGroupAvatarUrl = doc.getString("groupAvatarUrl") ?: doc.getString("groupAvatar")
+
                     ChatEntity(
                         chatId = doc.id,
                         isGroup = isGroup,
                         chatType = type,
                         groupName = doc.getString("groupName") ?: doc.getString("title"),
-                        groupAvatarUrl = doc.getString("groupAvatarUrl") ?: doc.getString("groupAvatar"),
-                        groupIcon = doc.getString("groupIcon"),
-                        useCustomAvatar = doc.getBoolean("useCustomAvatar") ?: false,
+                        groupAvatarUrl = resolvedGroupAvatarUrl,
+                        groupIcon = doc.getString("profileIcon") ?: doc.getString("groupIcon"),
+                        groupProfileGlow = doc.getString("profileGlow") ?: "purple",
+                        useCustomAvatar = if (isGroup) {
+                            !resolvedGroupAvatarUrl.isNullOrBlank()
+                        } else {
+                            doc.getBoolean("useCustomAvatar") ?: false
+                        },
                         lastMessage = doc.getString("lastMessage"),
                         unreadCount = (doc.getLong("unreadCount_$userId") ?: 0L).toInt(),
                         updatedAt = doc.getTimestamp("updatedAt")?.toDate()?.time ?: 0L,
@@ -64,7 +71,12 @@ class ChatRepository(context: Context) {
 
                         partnerName = existing?.partnerName,
                         partnerAvatarUrl = existing?.partnerAvatarUrl,
-                        partnerProfileGlow = existing?.partnerProfileGlow,
+                        partnerProfileIcon = existing?.partnerProfileIcon ?: "ghost",
+                        partnerProfileGlow = existing?.partnerProfileGlow ?: "purple",
+                        partnerUseCustomAvatar = existing?.partnerUseCustomAvatar ?: false,
+                        partnerIsPremium = existing?.partnerIsPremium ?: false,
+                        partnerAvatarFrame = existing?.partnerAvatarFrame ?: "none",
+                        partnerNameColor = existing?.partnerNameColor ?: "gold",
                         partnerEmoji = existing?.partnerEmoji,
                         typingText = null,
                         isSavedMessages = isSavedMessages
@@ -87,7 +99,12 @@ class ChatRepository(context: Context) {
                 chatId = chatId,
                 name = userDoc.getString("name") ?: userDoc.getString("username"),
                 avatarUrl = userDoc.getString("avatarUrl"),
-                glow = userDoc.getString("profileGlow"),
+                profileIcon = userDoc.getString("profileIcon") ?: "ghost",
+                glow = userDoc.getString("profileGlow") ?: "purple",
+                useCustomAvatar = userDoc.getBoolean("useCustomAvatar") ?: false,
+                isPremium = userDoc.getBoolean("isPremium") ?: false,
+                avatarFrame = userDoc.getString("avatarFrame") ?: "none",
+                nameColor = userDoc.getString("nameColor") ?: "gold",
                 emoji = userDoc.getString("emojiStatus")
             )
         } catch (e: Exception) {
@@ -102,7 +119,12 @@ class ChatRepository(context: Context) {
                 chatId = chatId,
                 name = userDoc.getString("name") ?: userDoc.getString("username"),
                 avatarUrl = userDoc.getString("avatarUrl"),
-                glow = userDoc.getString("profileGlow"),
+                profileIcon = userDoc.getString("profileIcon") ?: "ghost",
+                glow = userDoc.getString("profileGlow") ?: "purple",
+                useCustomAvatar = userDoc.getBoolean("useCustomAvatar") ?: false,
+                isPremium = userDoc.getBoolean("isPremium") ?: false,
+                avatarFrame = userDoc.getString("avatarFrame") ?: "none",
+                nameColor = userDoc.getString("nameColor") ?: "gold",
                 emoji = userDoc.getString("emojiStatus")
             )
         } catch (e: Exception) {

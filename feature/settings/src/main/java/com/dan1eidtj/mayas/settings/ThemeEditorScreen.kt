@@ -172,7 +172,7 @@ private fun ChatPreview(scheme: MayasColorScheme) {
             )
             Spacer(modifier = Modifier.padding(start = 8.dp))
             Text(
-                text = "Mayas Preview",
+                text = "???",
                 color = scheme.textPrimary,
                 fontWeight = FontWeight.SemiBold
             )
@@ -188,7 +188,7 @@ private fun ChatPreview(scheme: MayasColorScheme) {
                     .background(scheme.bubbleOther)
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                Text(text = "Го дизайним тему вместе 🎨", color = scheme.textPrimary)
+                Text(text = "Скажите если не секрет..Кто ваш любимый персонаж?", color = scheme.textPrimary)
             }
         }
 
@@ -202,12 +202,24 @@ private fun ChatPreview(scheme: MayasColorScheme) {
                     .background(scheme.bubbleMine)
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                Text(text = "Го, уже красиво получается", color = Color.White)
+            Text(text = "Ооо.. Вы запишите , конешно это Фолли!", color = Color.White)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Start) {
+            Box(
+                modifier = Modifier
+                    .clip(MayasTheme.BubbleRadius)
+                    .background(scheme.bubbleOther)
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Text(text = "Емать. Справа пожалуйста остановите.", color = scheme.textPrimary)
             }
         }
 
         Spacer(modifier = Modifier.weight(1f))
-
 
         Row(
             modifier = Modifier
@@ -224,7 +236,7 @@ private fun ChatPreview(scheme: MayasColorScheme) {
                 placeholder = { Text("Сообщение", color = scheme.textSecondary) },
                 modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = { /* превью, не отправляет */ }) {
+            IconButton(onClick = {  }) {
                 Icon(
                     imageVector = Icons.Filled.Send,
                     contentDescription = "Отправить",

@@ -1,11 +1,15 @@
 package com.dan1eidtj.mayas
 
+import android.os.Build
+import android.util.Log
 import android.widget.Toast
+import androidx.annotation.RequiresApi
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.multidex.MultiDexApplication
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,13 +41,36 @@ class MayasApplication : MultiDexApplication(), CallManagerProvider {
 
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate() {
+        installFirestorePermissionDeniedSafetyNet()
         super.onCreate()
         observeAppForegroundState()
         observeOutgoingCallsToStartService()
     }
 
 
+    private fun installFirestorePermissionDeniedSafetyNet() {
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            val isStaleFirestorePermissionDenied =
+                throwable is FirebaseFirestoreException &&
+                        throwable.code == FirebaseFirestoreException.Code.PERMISSION_DENIED
+
+            if (isStaleFirestorePermissionDenied) {
+                Log.e(
+                    "MayasApplication",
+                    "Проглочен PERMISSION_DENIED от уже отписанного Firestore-листенера " +
+                            "(гонка со stale ответом сервера) — процесс не убиваем",
+                    throwable
+                )
+            } else {
+                previousHandler?.uncaughtException(thread, throwable)
+            }
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun observeAppForegroundState() {
         ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {

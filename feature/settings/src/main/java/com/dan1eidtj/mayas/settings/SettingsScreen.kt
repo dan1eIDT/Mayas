@@ -25,13 +25,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.dan1eidtj.data.UserSession
+import com.dan1eidtj.data.cache.CacheStats
+import com.dan1eidtj.data.cache.ImageCacheManager
+import com.dan1eidtj.data.cache.formatCacheSize
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.mayas.feature.auth.AuthVM
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.text.ifEmpty
@@ -48,6 +53,7 @@ fun SettingsScreen(
     onNavigateToThemes: () -> Unit
 ) {
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val versionName = remember {
         try {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0.0"
@@ -64,6 +70,7 @@ fun SettingsScreen(
     var showPasswordDialog by remember { mutableStateOf(false) }
     var switchPassword by remember { mutableStateOf("") }
     var switchError by remember { mutableStateOf<String?>(null) }
+    var showStorage by remember { mutableStateOf(false) }
 
     if (showPasswordDialog && accountToSwitch != null) {
         AlertDialog(
@@ -284,7 +291,7 @@ fun SettingsScreen(
                     enter = fadeIn() + expandVertically(),
                     exit = fadeOut() + shrinkVertically()
                 ) {
-                    SecuritySubSection(vm)
+                    SecuritySubSection(vm, onNavigateToAuth)
                 }
             }
 
@@ -293,7 +300,7 @@ fun SettingsScreen(
                     icon = Icons.Default.Notifications,
                     title = "Уведомления и звуки",
                     subtitle = "Настроить пуши",
-                    onClick = { /* ты чо , рано)) */ }
+                    onClick = {  }
                 )
             }
 
@@ -303,10 +310,38 @@ fun SettingsScreen(
 
             item {
                 SettingsItem(
+                    icon = Icons.Default.Storage,
+                    title = "Хранилище данных",
+                    subtitle = "Что и сколько занимает кэш изображений",
+                    onClick = { showStorage = !showStorage }
+                )
+            }
+
+            item {
+                AnimatedVisibility(
+                    visible = showStorage,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    StorageSubSection()
+                }
+            }
+
+            item {
+                SettingsItem(
                     icon = Icons.Default.Info,
                     title = "О приложении",
                     subtitle = "Версия Mayas $versionName",
                     onClick = onNavigateToCredits
+                )
+            }
+
+            item {
+                SettingsItem(
+                    icon = Icons.Default.Gavel,
+                    title = "Пользовательское соглашение Маяс",
+                    subtitle = "Условия использования приложения",
+                    onClick = { uriHandler.openUri(MAYAS_TOS_URL) }
                 )
             }
 
@@ -705,7 +740,7 @@ fun PrivacySelectorDialog(
 }
 
 @Composable
-fun SecuritySubSection(vm: AuthVM) {
+fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
     var showDeleteDialog by remember { mutableStateOf(false) }
     var showEmailDialog by remember { mutableStateOf(false) }
     var showPassDialog by remember { mutableStateOf(false) }
@@ -854,6 +889,36 @@ fun SecuritySubSection(vm: AuthVM) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(
+                    if (vm.isEmailVerified) Modifier
+                    else Modifier.clickable { vm.openEmailVerification(); onNavigateToAuth() }
+                ),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                if (vm.isEmailVerified) Icons.Default.CheckCircle else Icons.Default.Email,
+                null,
+                tint = if (vm.isEmailVerified) MayasTheme.TextSecondary.copy(alpha = 0.5f) else MayasTheme.Accent,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    if (vm.isEmailVerified) "Почта подтверждена!" else "Подтвердить почту",
+                    color = if (vm.isEmailVerified) MayasTheme.TextSecondary.copy(alpha = 0.6f) else MayasTheme.TextPrimary,
+                    fontSize = 14.sp
+                )
+                if (!vm.isEmailVerified) {
+                    Text("Нужно для звонков и переписки", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                }
+            }
+        }
+
+        HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
                 .clickable { showEmailDialog = true },
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -922,6 +987,165 @@ fun SecuritySubSection(vm: AuthVM) {
         }
     }
 }
+
+@Composable
+fun StorageSubSection() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var stats by remember { mutableStateOf<CacheStats?>(null) }
+    var isClearing by remember { mutableStateOf(false) }
+    var showClearDialog by remember { mutableStateOf(false) }
+
+
+    LaunchedEffect(Unit) {
+        stats = ImageCacheManager.getCacheStats(context)
+    }
+
+    if (showClearDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isClearing) showClearDialog = false },
+            title = { Text("Очистить кэш изображений?", color = MayasTheme.TextPrimary) },
+            text = {
+                Text(
+                    "Все закэшированные фото и аватары будут удалены с устройства. " +
+                            "При повторном открытии чатов они скачаются заново.",
+                    color = MayasTheme.TextSecondary
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        isClearing = true
+                        scope.launch {
+                            ImageCacheManager.clearCache(context)
+                            stats = ImageCacheManager.getCacheStats(context)
+                            isClearing = false
+                            showClearDialog = false
+                            Toast.makeText(context, "Кэш очищен", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = !isClearing
+                ) {
+                    if (isClearing) CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                    else Text("Очистить", color = MayasTheme.ErrorRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDialog = false }, enabled = !isClearing) {
+                    Text("Отмена", color = MayasTheme.TextSecondary)
+                }
+            },
+            containerColor = MayasTheme.Surface
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MayasTheme.SurfaceVariant.copy(alpha = 0.3f))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        val current = stats
+
+        if (current == null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.width(10.dp))
+                Text("Считаем кэш…", color = MayasTheme.TextSecondary, fontSize = 13.sp)
+            }
+        } else {
+            val usedFraction = if (current.maxSizeBytes > 0) {
+                (current.sizeBytes.toFloat() / current.maxSizeBytes.toFloat()).coerceIn(0f, 1f)
+            } else 0f
+
+
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Занято кэшем изображений", color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                    Text(
+                        "${formatCacheSize(current.sizeBytes)} / ${formatCacheSize(current.maxSizeBytes)}",
+                        color = MayasTheme.TextSecondary,
+                        fontSize = 13.sp
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = { usedFraction },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = MayasTheme.Accent,
+                    trackColor = MayasTheme.TextSecondary.copy(alpha = 0.15f)
+                )
+            }
+
+            HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
+
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Image, null, tint = MayasTheme.TextPrimary, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text("Фото и аватары", color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                    Text(
+                        "${current.fileCount} файлов, ${formatCacheSize(current.sizeBytes)}",
+                        color = MayasTheme.TextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
+
+
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(Icons.Default.Info, null, tint = MayasTheme.TextSecondary, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    "Картинки сохраняются на устройство при первой загрузке и берутся из кэша " +
+                            "при повторном открытии чата — экономит трафик и грузится мгновенно. " +
+                            "Место хранения ограничено ${formatCacheSize(current.maxSizeBytes)}: " +
+                            "самые старые и редко используемые файлы удаляются автоматически.",
+                    color = MayasTheme.TextSecondary,
+                    fontSize = 12.sp
+                )
+            }
+
+            HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = current.sizeBytes > 0) { showClearDialog = true },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.DeleteSweep,
+                    null,
+                    tint = if (current.sizeBytes > 0) MayasTheme.ErrorRed else MayasTheme.TextSecondary.copy(alpha = 0.4f),
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        "Очистить кэш",
+                        color = if (current.sizeBytes > 0) MayasTheme.ErrorRed else MayasTheme.TextSecondary.copy(alpha = 0.4f),
+                        fontSize = 14.sp
+                    )
+                    Text("Освободить занятое место", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+const val MAYAS_TOS_URL = "https://dan1eidt.github.io/mayas-site/tos.html"
 
 @Composable
 fun SettingsSectionTitle(title: String) {

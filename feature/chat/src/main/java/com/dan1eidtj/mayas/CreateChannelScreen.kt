@@ -27,10 +27,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
+import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
 import com.dan1eidtj.mayas.feature.ChatVM
+import com.dan1eidtj.mayas.storage.B2MediaClient
+import com.dan1eidtj.mayas.storage.ImageCompressor
+import com.dan1eidtj.mayas.storage.MediaKind
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private enum class UsernameStatus { EMPTY, CHECKING, AVAILABLE, TAKEN, INVALID }
 
@@ -42,6 +49,7 @@ fun CreateChannelScreen(
 ) {
     val chatVM: ChatVM = viewModel()
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     var channelTitle by remember { mutableStateOf("") }
     var channelDescription by remember { mutableStateOf("") }
@@ -49,6 +57,34 @@ fun CreateChannelScreen(
     var usernameInput by remember { mutableStateOf("") }
     var usernameStatus by remember { mutableStateOf(UsernameStatus.EMPTY) }
     var isCreating by remember { mutableStateOf(false) }
+    var channelAvatarKey by remember { mutableStateOf<String?>(null) }
+    var isUploadingAvatar by remember { mutableStateOf(false) }
+
+    val avatarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let { pickedUri ->
+            coroutineScope.launch {
+                isUploadingAvatar = true
+                try {
+                    val bytes = ImageCompressor.compressAvatar(context, pickedUri)
+                    val myUid = chatVM.myUid ?: ""
+
+
+                    val key = B2MediaClient().uploadMedia(
+                        kind = MediaKind.AVATAR,
+                        ownerId = myUid,
+                        bytes = bytes,
+                        contentType = "image/jpeg",
+                        extension = "jpg"
+                    )
+                    channelAvatarKey = key
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Не удалось загрузить фото", Toast.LENGTH_SHORT).show()
+                } finally {
+                    isUploadingAvatar = false
+                }
+            }
+        }
+    }
 
 
     LaunchedEffect(usernameInput, isPublic) {
@@ -101,6 +137,7 @@ fun CreateChannelScreen(
                             description = channelDescription,
                             isPublic = isPublic,
                             username = if (isPublic) usernameInput.trim() else null,
+                            channelAvatar = channelAvatarKey,
                             onSuccess = { newChatId ->
                                 isCreating = false
                                 onChannelCreated(newChatId)
@@ -138,10 +175,33 @@ fun CreateChannelScreen(
                         .size(72.dp)
                         .clip(CircleShape)
                         .background(MayasTheme.GlowPurple)
-                        .clickable { Toast.makeText(context, "Загрузка фото скоро!", Toast.LENGTH_SHORT).show() },
+                        .clickable(enabled = !isUploadingAvatar) { avatarLauncher.launch("image/*") },
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(Icons.Outlined.CameraAlt, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                    if (channelAvatarKey != null) {
+                        MayasAvatar(
+                            url = channelAvatarKey,
+                            icon = "ghost",
+                            glowColor = MayasTheme.GlowPurple,
+                            isPremium = false,
+                            useCustomAvatar = true,
+                            size = 72.dp,
+                            frameType = "none"
+                        )
+                    } else {
+                        Icon(Icons.Outlined.CameraAlt, null, tint = Color.White, modifier = Modifier.size(28.dp))
+                    }
+                    if (isUploadingAvatar) {
+                        Box(
+                            modifier = Modifier
+                                .matchParentSize()
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.4f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+                        }
+                    }
                     Box(
                         modifier = Modifier
                             .size(22.dp)

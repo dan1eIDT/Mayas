@@ -28,7 +28,12 @@ interface ChatDao {
         UPDATE chats_table 
         SET partnerName = :name,
             partnerAvatarUrl = :avatarUrl,
+            partnerProfileIcon = :profileIcon,
             partnerProfileGlow = :glow,
+            partnerUseCustomAvatar = :useCustomAvatar,
+            partnerIsPremium = :isPremium,
+            partnerAvatarFrame = :avatarFrame,
+            partnerNameColor = :nameColor,
             partnerEmoji = :emoji
         WHERE chatId = :chatId
     """)
@@ -36,7 +41,12 @@ interface ChatDao {
         chatId: String,
         name: String?,
         avatarUrl: String?,
+        profileIcon: String?,
         glow: String?,
+        useCustomAvatar: Boolean,
+        isPremium: Boolean,
+        avatarFrame: String?,
+        nameColor: String?,
         emoji: String?
     )
 

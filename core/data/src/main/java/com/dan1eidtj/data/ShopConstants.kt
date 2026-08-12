@@ -23,12 +23,20 @@ object ShopConstants {
         ShopItem("lime", "Лайм", ItemType.BUBBLE, 55),
         ShopItem("sky", "Небо", ItemType.BUBBLE, 60),
         ShopItem("plum", "Слива", ItemType.BUBBLE, 65),
-        ShopItem("folly", "Фолли", ItemType.BUBBLE, 280, description = "Красный на белом"),
-        ShopItem("dani", "Дани", ItemType.BUBBLE, 320, description = "Чёрный терминал с зелёным текстом"),
+        ShopItem("folly", "Фолли", ItemType.BUBBLE, 280, description = "Дочя блять!"),
+        ShopItem("dani", "Дани", ItemType.BUBBLE, 320, description = "Что он тут забыл?"),
         ShopItem("sakura", "Сакура", ItemType.BUBBLE, 240, description = "Розовый закат"),
         ShopItem("intel", "Intel", ItemType.BUBBLE, 260, description = "Синий с голубым текстом"),
         ShopItem("aurora", "Аврора", ItemType.BUBBLE, 340, description = "Северное сияние", isNew = true),
-        ShopItem("void", "Пустота", ItemType.BUBBLE, 380, description = "Чёрная дыра с фиолетовым свечением", isNew = true)
+        ShopItem("void", "Пустота", ItemType.BUBBLE, 380, description = "Чёрная дыра с фиолетовым свечением", isNew = true),
+        ShopItem("hanami", "Ханами", ItemType.BUBBLE, 360, description = "Зелёное свечение сквозь розовую дымку", isNew = true),
+        ShopItem("rosevoid", "Розовая бездна", ItemType.BUBBLE, 380, description = "Чёрная дыра с розовым свечением", isNew = true),
+        ShopItem("paper", "Чистый лист", ItemType.BUBBLE, 90, description = "Белый фон, чёрный текст"),
+        ShopItem("bloodmoon", "Кровавая луна", ItemType.BUBBLE, 260, description = "Чёрный фон, кроваво-красный текст"),
+        ShopItem("obsidian", "Обсидиан", ItemType.BUBBLE, 300, description = "Чёрный с золотым текстом"),
+        ShopItem("onyx", "Оникс", ItemType.BUBBLE, 200, description = "Чёрный с белоснежным текстом"),
+        ShopItem("shadow", "Тень", ItemType.BUBBLE, 280, description = "Чёрный с фиолетовым текстом"),
+        ShopItem("abyss", "Пучина", ItemType.BUBBLE, 280, description = "Чёрный с ледяным голубым текстом"),
     )
 
     val EMOJI_STATUSES = listOf(
@@ -112,6 +120,15 @@ object ShopConstants {
         "intel" -> Color(0xFF00AEEF)
         "aurora" -> Color(0xFF35E0C8)
         "void" -> Color(0xFF9B5CFF)
+        "hanami" -> Color(0xFF39FF6A)
+        "rosevoid" -> Color(0xFFFF4D9E)
+        "paper" -> Color(0xFF1C1C1E)
+        "bloodmoon" -> Color(0xFFFF3B30)
+        "obsidian" -> Color(0xFFFFD700)
+        "onyx" -> Color(0xFFE8E8E8)
+        "shadow" -> Color(0xFF9B6DFF)
+        "abyss" -> Color(0xFF5AC8FA)
+        "custom_frame" -> Color(0xFF39FF6A)
         else -> Color.Gray
     }
 
@@ -138,6 +155,15 @@ object ShopConstants {
         "intel" -> listOf(Color(0xFF003D82), Color(0xFF0071C5))
         "aurora" -> listOf(Color(0xFF0F2027), Color(0xFF2C5364), Color(0xFF35E0C8))
         "void" -> listOf(Color(0xFF0A0014), Color(0xFF3D0A5C), Color(0xFF9B5CFF))
+        "hanami" -> listOf(Color(0xFF06140C), Color(0xFF1F8C55), Color(0xFFFFB6D9))
+        "rosevoid" -> listOf(Color(0xFF0A0007), Color(0xFF5C0A3D), Color(0xFFFF4D9E))
+        "paper" -> listOf(Color(0xFFFFFFFF), Color(0xFFF2F2F2))
+        "bloodmoon" -> listOf(Color(0xFF0A0A0A), Color(0xFF1A0505))
+        "obsidian" -> listOf(Color(0xFF0A0A0A), Color(0xFF1A1608))
+        "onyx" -> listOf(Color(0xFF0A0A0A), Color(0xFF161616))
+        "shadow" -> listOf(Color(0xFF0A0A0A), Color(0xFF150A1F))
+        "abyss" -> listOf(Color(0xFF0A0A0A), Color(0xFF081620))
+        "custom_frame" -> listOf(Color(0xFF000000), Color(0xFF39FF6A))
         else -> listOf(getStyleColor(id), getStyleColor(id))
     }
 
@@ -155,6 +181,15 @@ object ShopConstants {
         "lime" -> Color(0xFF4B5314)
         "sky" -> Color(0xFF0D3A66)
         "plum" -> Color(0xFF3D1F5C)
+
+        "hanami" -> Color(0xFFFFFFFF)
+        "rosevoid" -> Color(0xFFFFFFFF)
+        "paper" -> Color(0xFF0A0A0A)
+        "bloodmoon" -> Color(0xFFFF3B30)
+        "obsidian" -> Color(0xFFFFD700)
+        "onyx" -> Color(0xFFFFFFFF)
+        "shadow" -> Color(0xFFB794FF)
+        "abyss" -> Color(0xFF5AC8FA)
         else -> Color.White
     }
 

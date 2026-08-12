@@ -21,9 +21,7 @@ sealed class PushNotifyResult {
     ) : PushNotifyResult()
 }
 
-/**
- * Дёргает
- */
+
 class CallPushNotifier {
 
     companion object {
@@ -82,9 +80,11 @@ class CallPushNotifier {
         idToken: String
     ): PushNotifyResult {
         return try {
-            val url = URL(Configtebeblat.functionUrl)
-            val connection = url.openConnection() as HttpsURLConnection
 
+            val url = URL("${Configtebeblat.functionUrl}call")
+            Log.d("CallPushNotifier", "Connecting to $url")
+
+            val connection = url.openConnection() as HttpsURLConnection
             connection.apply {
                 requestMethod = "POST"
                 doOutput = true

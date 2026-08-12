@@ -7,6 +7,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -22,9 +23,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.imageResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -36,20 +45,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.unit.Density
-import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.RoundRect
-import androidx.compose.ui.geometry.Size
 import androidx.compose.foundation.border
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.data.ShopConstants
+
+
+import com.dan1eidtj.mayas.ui.R
 
 private val MARKDOWN_REGEX = Regex("\\[([^\\]]+)\\]\\(([^)]+)\\)")
 private val URL_REGEX = Regex("(?<!@)\\b(?:https?://|www\\.)?[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)*\\.[a-zA-Z]{2,}(?:/[a-zA-Z0-9-+&@#/%?=~_|!:,.;]*[a-zA-Z0-9-+&@#/%=~_|])?\\b")
@@ -167,6 +170,8 @@ object MessageStyle {
     const val SUNSET = "sunset"
     const val FOREST = "forest"
     const val MIDNIGHT = "midnight"
+    const val CUSTOM_FRAME = "custom_frame"
+    const val dan1 = "dan1"
 }
 
 @Composable
@@ -265,6 +270,97 @@ fun RichText(
     )
 }
 
+
+
+@Composable
+fun MessageBubbleContainer(
+    messageStyle: String?,
+    bubbleShape: Shape,
+    messageModifier: Modifier,
+    normalPadding: PaddingValues,
+    onClick: () -> Unit = {},
+    onLongClick: () -> Unit = {},
+    content: @Composable () -> Unit
+) {
+    val density = LocalDensity.current
+    val frameSpec = FrameStyles.registry[messageStyle]
+
+    if (frameSpec != null) {
+        val frameBitmap = ImageBitmap.imageResource(id = frameSpec.drawableRes)
+
+
+
+        Box {
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 280.dp)
+                    .defaultMinSize(
+                        minWidth = with(density) { (frameSpec.insets.left + frameSpec.insets.right).toDp() },
+                        minHeight = with(density) { (frameSpec.insets.top + frameSpec.insets.bottom).toDp() }
+                    )
+                    .ninePatchBackground(frameBitmap, frameSpec.insets)
+                    .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                    .padding(with(density) { frameSpec.contentPaddingPx.toDp() })
+            ) {
+                content()
+            }
+
+
+
+            frameSpec.cornerDecor?.let { decor ->
+                val decorSize = decor.sizeDp.dp
+                decor.topStart?.let {
+                    Image(
+                        painter = painterResource(id = it),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(decorSize)
+                            .align(Alignment.TopStart)
+                    )
+                }
+                decor.topEnd?.let {
+                    Image(
+                        painter = painterResource(id = it),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(decorSize)
+                            .align(Alignment.TopEnd)
+                    )
+                }
+                decor.bottomStart?.let {
+                    Image(
+                        painter = painterResource(id = it),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(decorSize)
+                            .align(Alignment.BottomStart)
+                    )
+                }
+                decor.bottomEnd?.let {
+                    Image(
+                        painter = painterResource(id = it),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .size(decorSize)
+                            .align(Alignment.BottomEnd)
+                    )
+                }
+            }
+        }
+    } else {
+        Box(
+            modifier = Modifier
+                .widthIn(max = 280.dp)
+                .clip(bubbleShape)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                .then(messageModifier)
+                .padding(normalPadding)
+        ) {
+            content()
+        }
+    }
+}
+
 @Composable
 fun ChatBubble(
     text: String?,
@@ -299,7 +395,6 @@ fun ChatBubble(
             drawTail = isLastInChain
         )
     }
-
 
     val messageModifier = when (messageStyle) {
         MessageStyle.NEON -> {
@@ -465,21 +560,17 @@ fun ChatBubble(
             modifier = Modifier.padding(vertical = 1.dp, horizontal = 8.dp),
             horizontalArrangement = if (isMe) Arrangement.End else Arrangement.Start
         ) {
-            Box(
-                modifier = Modifier
-                    .widthIn(max = 280.dp)
-                    .clip(bubbleShape)
-                    .combinedClickable(
-                        onClick = { },
-                        onLongClick = onLongClick
-                    )
-                    .then(messageModifier)
-                    .padding(
-                        start = if (isMe) 12.dp else (if (isLastInChain) 24.dp else 12.dp),
-                        end = if (isMe) (if (isLastInChain) 24.dp else 12.dp) else 12.dp,
-                        top = 8.dp,
-                        bottom = 8.dp
-                    )
+            MessageBubbleContainer(
+                messageStyle = messageStyle,
+                bubbleShape = bubbleShape,
+                messageModifier = messageModifier,
+                normalPadding = PaddingValues(
+                    start = if (isMe) 12.dp else (if (isLastInChain) 24.dp else 12.dp),
+                    end = if (isMe) (if (isLastInChain) 24.dp else 12.dp) else 12.dp,
+                    top = 8.dp,
+                    bottom = 8.dp
+                ),
+                onLongClick = onLongClick
             ) {
                 Column {
 
@@ -541,7 +632,7 @@ fun ChatBubble(
 
 
                     if (!text.isNullOrBlank()) {
-                        val customTextColor = when (messageStyle) {
+                        val customTextColor = FrameStyles.registry[messageStyle]?.textColor ?: when (messageStyle) {
                             MessageStyle.ICE -> Color(0xFF006064)
                             MessageStyle.MATRIX -> MayasTheme.GlowLime
                             MessageStyle.GOLD -> Color(0xFF5D4037)
@@ -573,7 +664,7 @@ fun ChatBubble(
                         modifier = Modifier.align(Alignment.End),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        val secondaryTextColor = when (messageStyle) {
+                        val secondaryTextColor = FrameStyles.registry[messageStyle]?.textColor?.copy(alpha = 0.6f) ?: when (messageStyle) {
                             MessageStyle.ICE -> Color(0xFF006064).copy(alpha = 0.6f)
                             MessageStyle.MATRIX -> MayasTheme.GlowLime.copy(alpha = 0.7f)
                             MessageStyle.GOLD -> Color(0xFF5D4037).copy(alpha = 0.7f)
@@ -619,5 +710,31 @@ fun ChatBubble(
                 }
             }
         }
+    }
+}
+
+@androidx.compose.ui.tooling.preview.Preview(showBackground = true, backgroundColor = 0xFFEFEFEF)
+@Composable
+private fun ChatBubbleCustomFramePreview() {
+    Column(modifier = Modifier.padding(8.dp)) {
+        ChatBubble(
+            text = "коротко",
+            time = "12:34",
+            isMe = true,
+            isRead = true,
+            onLongClick = {},
+            messageStyle = MessageStyle.dan1,
+            isLastInChain = true
+        )
+        Spacer(Modifier.height(8.dp))
+        ChatBubble(
+            text = "а тут текст подлиннее, чтобы проверить как ведёт себя рамка когда пузырь растягивается на несколько строк подряд",
+            time = "12:35",
+            isMe = false,
+            isRead = false,
+            onLongClick = {},
+            messageStyle = MessageStyle.CUSTOM_FRAME,
+            isLastInChain = true
+        )
     }
 }

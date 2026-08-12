@@ -38,9 +38,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
-import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.runtime.remember
+import com.dan1eidtj.mayas.core_ui.ui.components.UserAvatarView
 
 
 @Composable
@@ -130,14 +130,14 @@ private fun CallHeader(
             )
 
 
-            MayasAvatar(
-                url = state.avatarUrl,
-                icon = state.profileIcon,
-                glowColor = glowColor,
-                isPremium = state.isPremium,
+            UserAvatarView(
+                avatarUrl = state.avatarUrl,
                 useCustomAvatar = state.useCustomAvatar,
-                size = 120.dp,
-                frameType = state.avatarFrame
+                profileIcon = state.profileIcon,
+                profileGlow = state.profileGlow,
+                isPremium = state.isPremium,
+                frameType = state.avatarFrame ?: "none",
+                size = 120.dp
             )
         }
 

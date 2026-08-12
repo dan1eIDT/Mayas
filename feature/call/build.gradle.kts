@@ -17,15 +17,22 @@ android {
     buildFeatures {
         compose = true
     }
+    compileOptions {
+        isCoreLibraryDesugaringEnabled = true
+    }
 }
 
 dependencies {
 
     implementation(project(":core:ui"))
 
-    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-auth-ktx")
+
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.analytics)
+    implementation(libs.firebase.storage)
+    implementation(libs.firebase.auth)
 
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)
@@ -33,7 +40,7 @@ dependencies {
 
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-    
+
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
@@ -42,7 +49,6 @@ dependencies {
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.animation.core)
     implementation(libs.androidx.foundation)
-    implementation(libs.firebase.auth)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
     implementation(libs.webrtc.android)
@@ -50,7 +56,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
 
     implementation(platform(libs.supabase.bom))
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(libs.supabase.postgrest.kt)
     implementation(libs.ktor.client.android)
     implementation(libs.ktor.client.okhttp)

@@ -1,5 +1,7 @@
 package com.dan1eidtj.mayas.core.ui.theme
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +34,7 @@ import com.dan1eidtj.mayas.core.ui.theme.ThemeConverter.toHexArgb
 import kotlin.math.roundToInt
 
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun ColorPickerDialog(
     title: String,

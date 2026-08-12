@@ -1,5 +1,6 @@
 package com.dan1eidtj.mayas
 
+import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import com.google.firebase.auth.FirebaseAuth
@@ -112,5 +113,9 @@ class MonetizationVM : ViewModel() {
         }.addOnFailureListener {
             onResult("Ошибка сети")
         }
+    }
+
+    fun getApplication(): Context {
+        return TODO("Provide the return value")
     }
 }

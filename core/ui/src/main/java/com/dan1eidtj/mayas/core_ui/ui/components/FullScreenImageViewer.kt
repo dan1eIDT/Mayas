@@ -1,5 +1,6 @@
 package com.dan1eidtj.mayas.core_ui.ui.components
 
+import android.annotation.SuppressLint
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -23,6 +25,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -33,7 +36,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -41,7 +47,7 @@ import coil.compose.AsyncImagePainter
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 
-
+@SuppressLint("UnusedBoxWithConstraintsScope")
 @Composable
 fun FullScreenImageViewer(
     imageUrl: String,
@@ -50,17 +56,21 @@ fun FullScreenImageViewer(
     onShare: ((String) -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
 
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        var scale by remember { mutableFloatStateOf(1f) }
-        var panOffset by remember { mutableStateOf(Offset.Zero) }
-        var dragY by remember { mutableFloatStateOf(0f) }
-        var isDragging by remember { mutableStateOf(false) }
 
-        val dismissThresholdPx = 250f
+        var scale by remember(imageUrl) { mutableFloatStateOf(1f) }
+        var panOffset by remember(imageUrl) { mutableStateOf(Offset.Zero) }
+        var dragY by remember(imageUrl) { mutableFloatStateOf(0f) }
+        var isDragging by remember(imageUrl) { mutableStateOf(false) }
+        var reloadKey by remember(imageUrl) { mutableIntStateOf(0) }
+        var containerSize by remember { mutableStateOf(IntSize.Zero) }
+
+        val dismissThresholdPx = with(density) { 100.dp.toPx() }
         val dragProgress = (kotlin.math.abs(dragY) / dismissThresholdPx).coerceIn(0f, 1f)
 
         val animatedDragY by animateFloatAsState(targetValue = dragY, label = "dragY")
@@ -77,6 +87,7 @@ fun FullScreenImageViewer(
             BoxWithConstraints(
                 modifier = Modifier
                     .fillMaxSize()
+                    .onSizeChanged { containerSize = it }
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onDoubleTap = { tapPos ->
@@ -84,17 +95,41 @@ fun FullScreenImageViewer(
                                     scale = 1f
                                     panOffset = Offset.Zero
                                 } else {
-                                    scale = 2.5f
+                                    val newScale = 2.5f
+                                    scale = newScale
+
+                                    val centerX = containerSize.width / 2f
+                                    val centerY = containerSize.height / 2f
+                                    val rawOffset = Offset(
+                                        (centerX - tapPos.x) * (newScale - 1f),
+                                        (centerY - tapPos.y) * (newScale - 1f)
+                                    )
+                                    val maxX = containerSize.width * (newScale - 1f) / 2f
+                                    val maxY = containerSize.height * (newScale - 1f) / 2f
+                                    panOffset = Offset(
+                                        rawOffset.x.coerceIn(-maxX, maxX),
+                                        rawOffset.y.coerceIn(-maxY, maxY)
+                                    )
                                 }
                             },
-                            onTap = { onDismiss() }
+                            onTap = { if (scale <= 1f) onDismiss() }
                         )
                     }
                     .pointerInput(Unit) {
                         detectTransformGestures { _, pan, zoom, _ ->
                             val newScale = (scale * zoom).coerceIn(1f, 5f)
                             scale = newScale
-                            panOffset = if (newScale <= 1f) Offset.Zero else panOffset + pan
+                            panOffset = if (newScale <= 1f) {
+                                Offset.Zero
+                            } else {
+                                val maxX = containerSize.width * (newScale - 1f) / 2f
+                                val maxY = containerSize.height * (newScale - 1f) / 2f
+                                val candidate = panOffset + pan
+                                Offset(
+                                    candidate.x.coerceIn(-maxX, maxX),
+                                    candidate.y.coerceIn(-maxY, maxY)
+                                )
+                            }
                         }
                     }
                     .pointerInput(scale) {
@@ -122,13 +157,14 @@ fun FullScreenImageViewer(
                     },
                 contentAlignment = Alignment.Center
             ) {
-                var isLoading by remember { mutableStateOf(true) }
-                var isError by remember { mutableStateOf(false) }
+                var isLoading by remember(imageUrl, reloadKey) { mutableStateOf(true) }
+                var isError by remember(imageUrl, reloadKey) { mutableStateOf(false) }
 
                 val painter = rememberAsyncImagePainter(
                     model = ImageRequest.Builder(context)
                         .data(imageUrl)
                         .crossfade(true)
+                        .setParameter("reload", reloadKey)
                         .build(),
                     onState = { state ->
                         isLoading = state is AsyncImagePainter.State.Loading
@@ -155,10 +191,23 @@ fun FullScreenImageViewer(
                     CircularProgressIndicator(color = Color.White.copy(alpha = 0.8f))
                 }
                 if (isError) {
-                    Text("Не удалось загрузить изображение", color = Color.White.copy(alpha = 0.8f))
+                    Box(contentAlignment = Alignment.Center) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "Не удалось загрузить изображение",
+                                color = Color.White.copy(alpha = 0.8f)
+                            )
+                            IconButton(onClick = { reloadKey++ }) {
+                                Icon(
+                                    Icons.Default.Refresh,
+                                    contentDescription = "Повторить",
+                                    tint = Color.White
+                                )
+                            }
+                        }
+                    }
                 }
             }
-
 
             IconButton(
                 onClick = onDismiss,

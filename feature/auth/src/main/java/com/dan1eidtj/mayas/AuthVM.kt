@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.dan1eidtj.data.FirestoreListenerCoordinator
 import com.dan1eidtj.data.SessionManager
 import com.dan1eidtj.data.UserSession
 import com.google.firebase.FirebaseNetworkException
@@ -61,8 +62,32 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
 
     var authError by mutableStateOf<String?>(null)
 
+    var resetMessage by mutableStateOf<String?>(null)
+        private set
+
+    var isResetLoading by mutableStateOf(false)
+        private set
+
     var user: FirebaseUser? by mutableStateOf(auth.currentUser)
         private set
+
+
+    var showVerifyScreen by mutableStateOf(false)
+        private set
+
+    var isVerifyLoading by mutableStateOf(false)
+        private set
+
+    var verifyMessage by mutableStateOf<String?>(null)
+        private set
+
+    val isEmailVerified: Boolean
+        get() = user?.isEmailVerified == true
+
+    fun openEmailVerification() {
+        showVerifyScreen = true
+        verifyMessage = null
+    }
 
     var isLoading by mutableStateOf(false)
         private set
@@ -98,6 +123,19 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             }
         }
         user?.uid?.let { loadUserData(it) }
+
+        user?.let { u ->
+            showVerifyScreen = !u.isEmailVerified
+            u.reload().addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    val verified = u.isEmailVerified
+                    showVerifyScreen = !verified
+                    db.collection("users").document(u.uid).update("emailVerified", verified)
+                        .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось обновить emailVerified", e) }
+                }
+
+            }
+        }
     }
 
     private fun loadUserData(uid: String) {
@@ -179,25 +217,115 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         }
     }
 
+
+    fun sendForgotPasswordEmail(email: String) {
+        authError = null
+        resetMessage = null
+
+        if (email.isEmpty()) { authError = "Введите Email!"; return }
+        if (!email.contains("@")) { authError = "Некорректный Email"; return }
+
+        isResetLoading = true
+        auth.sendPasswordResetEmail(email)
+            .addOnSuccessListener {
+                isResetLoading = false
+                resetMessage = "Письмо для сброса пароля отправлено на $email"
+            }
+            .addOnFailureListener { e ->
+                isResetLoading = false
+                authError = mapAuthError(e)
+            }
+    }
+
+    fun clearResetMessage() { resetMessage = null }
+
+
+    fun resendVerificationEmail() {
+        val u = auth.currentUser ?: return
+        isVerifyLoading = true
+        verifyMessage = null
+        u.sendEmailVerification()
+            .addOnSuccessListener {
+                isVerifyLoading = false
+                verifyMessage = "Письмо отправлено на ${u.email}"
+            }
+            .addOnFailureListener { e ->
+                isVerifyLoading = false
+                verifyMessage = mapAuthError(e)
+            }
+    }
+
+
+    fun refreshVerificationStatus(onSuccess: () -> Unit) {
+        val u = auth.currentUser ?: return
+        isVerifyLoading = true
+        verifyMessage = null
+        u.reload().addOnCompleteListener {
+            isVerifyLoading = false
+            if (u.isEmailVerified) {
+                db.collection("users").document(u.uid).update("emailVerified", true)
+                    .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось обновить emailVerified", e) }
+
+
+
+
+
+                u.getIdToken(true).addOnCompleteListener {
+                    showVerifyScreen = false
+                    user = u
+                    onSuccess()
+                }
+            } else {
+                verifyMessage = "Почта ещё не подтверждена. Проверь письмо (и папку Спам)"
+            }
+        }
+    }
+
+
+    fun cancelVerification() {
+        showVerifyScreen = false
+        verifyMessage = null
+        logout()
+    }
+
     fun login(email: String, pass: String, onSuccess: () -> Unit = {}, onError: (String) -> Unit) {
         isLoading = true
         auth.signInWithEmailAndPassword(email, pass)
             .addOnSuccessListener { result ->
-                user = result.user
-                val uid = user?.uid
+                val loggedUser = result.user
+                user = loggedUser
+                val uid = loggedUser?.uid
                 if (uid != null) {
                     loadUserData(uid)
                     viewModelScope.launch {
                         sessionManager.saveSession(UserSession(
                             uid = uid,
                             email = email,
-                            name = userData["name"] ?: user?.displayName ?: "User",
+                            name = userData["name"] ?: loggedUser.displayName ?: "User",
                             avatarUrl = userData["avatarUrl"] ?: ""
                         ))
                     }
                 }
-                isLoading = false
-                onSuccess()
+
+
+                loggedUser?.reload()?.addOnCompleteListener {
+                    isLoading = false
+                    val verified = loggedUser.isEmailVerified
+                    if (uid != null) {
+                        db.collection("users").document(uid).update("emailVerified", verified)
+                            .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось обновить emailVerified", e) }
+                    }
+                    if (verified) {
+
+
+                        loggedUser.getIdToken(true).addOnCompleteListener {
+                            showVerifyScreen = false
+                            onSuccess()
+                        }
+                    } else {
+                        showVerifyScreen = true
+                    }
+                }
             }
             .addOnFailureListener { e ->
                 isLoading = false
@@ -237,7 +365,8 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                             "theme" to "dark",
                             "description" to "",
                             "avatarUrl" to "",
-                            "emojiStatus" to " "
+                            "emojiStatus" to " ",
+                            "emailVerified" to false
                         )
 
                         db.collection("users").document(u.uid).set(userMap)
@@ -252,8 +381,15 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                                         avatarUrl = ""
                                     ))
                                 }
+
+
+                                u.sendEmailVerification()
+                                    .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось отправить письмо верификации", e) }
+
                                 isLoading = false
-                                onSuccess()
+                                showVerifyScreen = true
+
+
                             }
                             .addOnFailureListener { e ->
                                 isLoading = false
@@ -284,6 +420,13 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
     }
 
     fun logoutSilently(onComplete: () -> Unit = {}) {
+
+
+
+
+
+        FirestoreListenerCoordinator.tearDownAll()
+
         val uid = auth.currentUser?.uid
 
         userDataListener?.remove()

@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -22,6 +24,14 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
+
+
+sealed class UserAvatar {
+    data class Custom(val url: String) : UserAvatar()
+    data class Preset(val icon: String, val glowColor: String) : UserAvatar()
+    object Default : UserAvatar()
+}
+
 
 @Composable
 fun MayasAvatar(
@@ -128,4 +138,82 @@ fun MayasAvatar(
             }
         }
     }
+}
+fun getGlowColorByName(name: String?): Color {
+    if (name == null) return MayasTheme.GlowPurple
+    if (name.startsWith("#") || name.length == 6 || name.length == 8) {
+        return runCatching {
+            val hex = name.removePrefix("#")
+            val colorInt = if (hex.length == 6) {
+                (0xFF000000 or hex.toLong(16)).toInt()
+            } else {
+                hex.toLong(16).toInt()
+            }
+            Color(colorInt)
+        }.getOrDefault(MayasTheme.GlowPurple)
+    }
+    return when (name.lowercase()) {
+        "black" -> MayasTheme.GlowBlack
+        "purple" -> MayasTheme.GlowPurple
+        "pink" -> MayasTheme.GlowPink
+        "blue" -> MayasTheme.GlowBlue
+        "green" -> MayasTheme.GlowGreen
+        "gold" -> MayasTheme.GlowGold
+        "red" -> MayasTheme.GlowRed
+        "orange" -> MayasTheme.GlowOrange
+        "cyan" -> MayasTheme.GlowCyan
+        "mint" -> MayasTheme.GlowMint
+        "indigo" -> MayasTheme.GlowIndigo
+        "lime" -> MayasTheme.GlowLime
+        "rose" -> MayasTheme.GlowRose
+        "amber" -> MayasTheme.GlowAmber
+        "sky" -> MayasTheme.GlowSky
+        "white" -> MayasTheme.GlowWhite
+        else -> MayasTheme.GlowPurple
+    }
+}
+@Composable
+fun UserAvatarView(
+    avatarUrl: String?,
+    useCustomAvatar: Boolean = true,
+    profileIcon: String? = "face",
+    profileGlow: String? = "purple",
+    isPremium: Boolean = false,
+    frameType: String = "none",
+    size: Dp = 48.dp,
+    modifier: Modifier = Modifier
+) {
+    val glowColor = remember(profileGlow) {
+        getGlowColorByName(profileGlow)
+    }
+
+    val resolvedAvatarUrl by produceState<String?>(
+        initialValue = null,
+        key1 = avatarUrl,
+        key2 = useCustomAvatar
+    ) {
+        value = when {
+            !useCustomAvatar -> null
+            avatarUrl.isNullOrBlank() -> null
+            avatarUrl.startsWith("http://") ||
+                    avatarUrl.startsWith("https://") -> avatarUrl
+            else -> {
+                runCatching {
+                    com.dan1eidtj.mayas.storage.B2MediaClient
+                        .resolveDownloadUrl(avatarUrl)
+                }.getOrNull()
+            }
+        }
+    }
+
+    MayasAvatar(
+        url = resolvedAvatarUrl,
+        icon = profileIcon ?: "face",
+        glowColor = glowColor,
+        isPremium = isPremium,
+        useCustomAvatar = useCustomAvatar && !resolvedAvatarUrl.isNullOrBlank(),
+        frameType = frameType,
+        size = size,
+        modifier = modifier
+    )
 }

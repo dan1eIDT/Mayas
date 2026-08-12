@@ -1,6 +1,7 @@
 package com.dan1eidtj.mayas.feature
 
 import android.content.Context
+import com.dan1eidtj.data.FirestoreListenerCoordinator
 import android.media.AudioAttributes
 import android.media.SoundPool
 import android.util.Log
@@ -74,12 +75,52 @@ data class Message(
     val forwardedFromName: String? = null,
 
     val viewedBy: List<String> = emptyList(),
+
+
+
+
+    val ttlSeconds: Long = 0,
+    val expireAt: Date? = null,
+
+
+    val isSilent: Boolean = false,
+
+
+    val scheduledFor: Date? = null,
+    val messageState: String = MessageState.SENT,
 )
 
 object MessageType {
     const val TEXT = "TEXT"
     const val SYSTEM = "SYSTEM"
     const val CALL = "CALL"
+}
+
+object MessageState {
+    const val SENT = "SENT"
+    const val SCHEDULED = "SCHEDULED"
+}
+
+
+object MessageTimerPreset {
+    const val OFF = 0L
+    const val MIN_1 = 60L
+    const val HOUR_1 = 3600L
+    const val HOUR_6 = 6 * 3600L
+    const val DAY_1 = 24 * 3600L
+    const val WEEK_1 = 7 * 24 * 3600L
+
+    val all = listOf(OFF, MIN_1, HOUR_1, HOUR_6, DAY_1, WEEK_1)
+}
+
+fun formatTimerDuration(seconds: Long): String {
+    return when {
+        seconds <= 0 -> "Выкл"
+        seconds < 3600 -> "${seconds / 60} мин"
+        seconds < 86400 -> "${seconds / 3600} ч"
+        seconds < 604800 -> "${seconds / 86400} дн"
+        else -> "${seconds / 604800} нед"
+    }
 }
 
 
@@ -108,6 +149,7 @@ object SystemAction {
     const val DEMOTED_ADMIN = "DEMOTED_ADMIN"
     const val PROMOTED_MODERATOR = "PROMOTED_MODERATOR"
     const val DEMOTED_MODERATOR = "DEMOTED_MODERATOR"
+    const val DISAPPEARING_TIMER_CHANGED = "DISAPPEARING_TIMER_CHANGED"
 }
 
 object CallStatus {
@@ -231,12 +273,13 @@ private object BackendApi {
         }
 
 
-    suspend fun notify(token: String, senderName: String, text: String) =
+    suspend fun notify(token: String, senderName: String, text: String, silent: Boolean = false) =
         withContext(Dispatchers.IO) {
             val requestJson = buildJsonObject {
                 put("token", token)
                 put("senderName", senderName)
                 put("text", text)
+                put("silent", silent)
             }.toString()
 
             val request = Request.Builder()
@@ -303,6 +346,12 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     var chatTheme by mutableStateOf<String?>(null)
         private set
 
+
+
+
+    var chatDisappearingTimerSec by mutableStateOf(0L)
+        private set
+
     private var soundPool: SoundPool? = null
     private var messageSentSoundId: Int = 0
     private var messageReceivedSoundId: Int = 0
@@ -310,6 +359,18 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     private var messagesListener: ListenerRegistration? = null
     private var userListener: ListenerRegistration? = null
     private var chatDocListener: ListenerRegistration? = null
+
+
+
+
+    private var currentChatId: String? = null
+    private var listeningUid: String? = null
+
+
+
+
+
+    private val teardown: () -> Unit = { stopAllListeners() }
 
 
 
@@ -502,19 +563,56 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    init {
-        myUid?.let { uid ->
 
-            myProfileListener = db.collection("users").document(uid)
-                .addSnapshotListener { doc, _ ->
-                    if (doc != null && doc.exists()) {
-                        myName = doc.getString("name") ?: doc.getString("username") ?: "Вы"
-                        myIsPremium = doc.getBoolean("isPremium") ?: false
-                        myVerifiedIcon = doc.getString("verifiedIcon") ?: "verified"
-                        myMessageStyle = doc.getString("messageStyle")
-                    }
-                }
+
+
+
+
+    private val authStateListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+        val uid = firebaseAuth.currentUser?.uid
+        if (uid != listeningUid) {
+            stopAllListeners()
+            if (uid != null) {
+                listeningUid = uid
+                attachMyProfileListener(uid)
+                currentChatId?.let { observeChat(it) }
+            }
         }
+    }
+
+    init {
+        auth.addAuthStateListener(authStateListener)
+        FirestoreListenerCoordinator.register(teardown)
+        myUid?.let { uid ->
+            listeningUid = uid
+            attachMyProfileListener(uid)
+        }
+    }
+
+    private fun attachMyProfileListener(uid: String) {
+        myProfileListener?.remove()
+        myProfileListener = db.collection("users").document(uid)
+            .addSnapshotListener { doc, error ->
+                if (error != null) {
+                    Log.e("ChatVM", "Ошибка снапшота своего профиля", error)
+                    return@addSnapshotListener
+                }
+                if (doc != null && doc.exists()) {
+                    myName = doc.getString("name") ?: doc.getString("username") ?: "Вы"
+                    myIsPremium = doc.getBoolean("isPremium") ?: false
+                    myVerifiedIcon = doc.getString("verifiedIcon") ?: "verified"
+                    myMessageStyle = doc.getString("messageStyle")
+                }
+            }
+    }
+
+    private fun stopAllListeners() {
+        messagesListener?.remove(); messagesListener = null
+        chatDocListener?.remove(); chatDocListener = null
+        userListener?.remove(); userListener = null
+        userListenerChatId = null
+        myProfileListener?.remove(); myProfileListener = null
+        listeningUid = null
     }
 
     fun initSoundPool(context: Context) {
@@ -536,11 +634,16 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
     fun observeChat(chatId: String) {
         val uid = myUid ?: return
+        currentChatId = chatId
 
         messagesListener?.remove()
         messagesListener = db.collection("chats/$chatId/messages")
             .orderBy("timestamp", Query.Direction.ASCENDING)
-            .addSnapshotListener { snap, _ ->
+            .addSnapshotListener { snap, error ->
+                if (error != null) {
+                    Log.e("ChatVM", "Ошибка снапшота сообщений", error)
+                    return@addSnapshotListener
+                }
                 if (snap != null) {
                     val list = snap.documents.mapNotNull { doc ->
                         val m = doc.toObject(Message::class.java)?.copy(id = doc.id)
@@ -568,11 +671,16 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
         chatDocListener?.remove()
         chatDocListener = db.collection("chats").document(chatId)
-            .addSnapshotListener { doc, _ ->
+            .addSnapshotListener { doc, error ->
+                if (error != null) {
+                    Log.e("ChatVM", "Ошибка снапшота чата", error)
+                    return@addSnapshotListener
+                }
                 if (doc != null && doc.exists()) {
                     pinnedMessageId = doc.getString("pinnedMessageId")
                     pinnedMessageText = doc.getString("pinnedMessage")
                     chatTheme = doc.getString("theme")
+                    chatDisappearingTimerSec = doc.getLong("disappearingTimerSec") ?: 0L
 
                     val type = doc.getString("type") ?: "DIRECT"
                     val isGroupField = doc.getBoolean("isGroup") ?: false
@@ -620,7 +728,11 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             userListenerChatId = chatId
 
             userListener = db.collection("users").document(targetUid)
-                .addSnapshotListener { doc, _ ->
+                .addSnapshotListener { doc, error ->
+                    if (error != null) {
+                        Log.e("ChatVM", "Ошибка снапшота партнёра", error)
+                        return@addSnapshotListener
+                    }
                     if (doc != null && doc.exists() && !isGroupChat) {
                         val lastSeen = doc.getTimestamp("lastSeen")
                         lastSeenText = formatLastSeen(lastSeen)
@@ -663,22 +775,49 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         chatId: String,
         text: String,
         replyText: String?,
-        replyName: String?
+        replyName: String?,
+
+
+        timerOverrideSec: Long? = null,
+
+        silent: Boolean = false,
+
+
+        scheduledFor: Date? = null
     ) {
         if (text.isBlank()) return
         if (!canPostInChat) return
 
         val uid = myUid ?: return
+        val isScheduled = scheduledFor != null && scheduledFor.after(Date())
+        val effectiveTimerSec = timerOverrideSec ?: chatDisappearingTimerSec
 
         val messageData = mutableMapOf<String, Any?>(
             "text" to text,
             "senderId" to uid,
             "senderName" to myName,
-            "timestamp" to FieldValue.serverTimestamp(),
             "readBy" to listOf(uid),
             "isPremium" to myIsPremium,
-            "messageStyle" to myMessageStyle
+            "messageStyle" to myMessageStyle,
+            "isSilent" to silent
         )
+
+        if (isScheduled) {
+
+
+
+            messageData["timestamp"] = scheduledFor
+            messageData["scheduledFor"] = scheduledFor
+            messageData["messageState"] = MessageState.SCHEDULED
+        } else {
+            messageData["timestamp"] = FieldValue.serverTimestamp()
+            messageData["messageState"] = MessageState.SENT
+
+            if (effectiveTimerSec > 0) {
+                messageData["ttlSeconds"] = effectiveTimerSec
+                messageData["expireAt"] = Date(System.currentTimeMillis() + effectiveTimerSec * 1000)
+            }
+        }
 
         if (replyText != null && replyName != null) {
             messageData["replyToText"] = replyText
@@ -693,41 +832,74 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
         batch.set(msgRef, messageData)
 
-        batch.update(
-            chatRef,
-            mapOf(
-                "lastMessage" to text,
-                "lastSenderId" to uid,
-                "updatedAt" to FieldValue.serverTimestamp()
-            )
-        )
 
-        batch.update(
-            userRef,
-            "messagesSent",
-            FieldValue.increment(1)
-        )
 
-        if (!isGroupChat && partnerUid.isNotBlank()) {
+
+        if (!isScheduled) {
             batch.update(
                 chatRef,
-                "unreadCount_$partnerUid",
+                mapOf(
+                    "lastMessage" to text,
+                    "lastSenderId" to uid,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+
+            batch.update(
+                userRef,
+                "messagesSent",
                 FieldValue.increment(1)
             )
+
+            if (!isGroupChat && partnerUid.isNotBlank()) {
+                batch.update(
+                    chatRef,
+                    "unreadCount_$partnerUid",
+                    FieldValue.increment(1)
+                )
+            }
         }
 
         batch.commit()
             .addOnSuccessListener {
-                playSound(messageSentSoundId)
+                if (!isScheduled) {
+                    playSound(messageSentSoundId)
 
-
-                if (!isGroupChat && partnerUid.isNotBlank()) {
-                    sendPushNotification(partnerUid, text)
+                    if (!isGroupChat && partnerUid.isNotBlank()) {
+                        sendPushNotification(partnerUid, text, silent)
+                    }
                 }
             }
             .addOnFailureListener {
                 Log.e("ChatVM", "Ошибка отправки", it)
             }
+    }
+
+
+    fun cancelScheduledMessage(chatId: String, messageId: String) {
+        db.collection("chats/$chatId/messages").document(messageId).delete()
+            .addOnFailureListener { e -> Log.e("ChatVM", "Не удалось отменить отложенное сообщение", e) }
+    }
+
+
+
+
+
+
+
+
+
+
+    fun setDisappearingTimer(chatId: String, seconds: Long) {
+        db.collection("chats").document(chatId)
+            .update("disappearingTimerSec", seconds)
+            .addOnSuccessListener {
+                chatDisappearingTimerSec = seconds
+                val text = if (seconds <= 0) "Таймер исчезающих сообщений отключён"
+                else "Таймер исчезающих сообщений: ${formatTimerDuration(seconds)}"
+                postSystemMessage(db, chatId, text, SystemAction.DISAPPEARING_TIMER_CHANGED)
+            }
+            .addOnFailureListener { e -> Log.e("ChatVM", "Не удалось установить таймер чата", e) }
     }
 
     fun sendMediaMessage(
@@ -914,6 +1086,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         description: String,
         isPublic: Boolean,
         selectedUserIds: List<String>,
+        groupAvatar: String? = null,
         onSuccess: (String) -> Unit
     ) {
         val uid = myUid ?: return
@@ -924,7 +1097,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             if (!contains(uid)) add(uid)
         }
 
-        val groupData = mapOf(
+        val groupData = mutableMapOf<String, Any?>(
             "chatId" to newChatId,
             "type" to "GROUP",
             "isGroup" to true,
@@ -940,6 +1113,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             "lastSenderId" to "system",
             "updatedAt" to FieldValue.serverTimestamp()
         )
+        if (!groupAvatar.isNullOrBlank()) groupData["groupAvatar"] = groupAvatar
 
         db.collection("chats").document(newChatId)
             .set(groupData)
@@ -963,6 +1137,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         description: String,
         isPublic: Boolean,
         username: String?,
+        channelAvatar: String? = null,
         onSuccess: (String) -> Unit,
         onError: (String) -> Unit = {}
     ) {
@@ -995,6 +1170,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 "updatedAt" to FieldValue.serverTimestamp()
             )
             if (cleanUsername != null) channelData["username"] = cleanUsername
+            if (!channelAvatar.isNullOrBlank()) channelData["groupAvatar"] = channelAvatar
 
             db.collection("chats").document(newChatId)
                 .set(channelData)
@@ -1274,7 +1450,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             .addOnFailureListener { e -> onError(e.localizedMessage ?: "Ошибка проверки ссылки") }
     }
 
-    private fun sendPushNotification(receiverUid: String, messageText: String) {
+    private fun sendPushNotification(receiverUid: String, messageText: String, silent: Boolean = false) {
         if (receiverUid.isBlank()) return
 
         db.collection("users").document(receiverUid).get().addOnSuccessListener { doc ->
@@ -1282,7 +1458,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    BackendApi.notify(token = token, senderName = myName, text = messageText)
+                    BackendApi.notify(token = token, senderName = myName, text = messageText, silent = silent)
                 } catch (e: Exception) {
                     Log.e("ChatVM", "Push notification failed", e)
                 }
@@ -1320,6 +1496,26 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         } else {
             db.collection("chats/$chatId/messages").document(messageId)
                 .update("reactions.$uid", emoji)
+                .addOnSuccessListener {
+                    // Пишем событие в отдельную коллекцию — Cloud Function
+                    // на onDocumentCreated отправит письмо на mayassupp@gmail.com.
+                    // Слать почту прямо с клиента нельзя (пришлось бы хранить
+                    // SMTP-креды в апк), поэтому триггерим через Firestore.
+                    db.collection("reactionEvents").add(
+                        mapOf(
+                            "chatId" to chatId,
+                            "messageId" to messageId,
+                            "messageText" to (msg.text?.take(200) ?: ""),
+                            "emoji" to emoji,
+                            "reactorUid" to uid,
+                            "reactorName" to myName,
+                            "messageSenderId" to msg.senderId,
+                            "timestamp" to FieldValue.serverTimestamp()
+                        )
+                    ).addOnFailureListener { e ->
+                        Log.e("ChatVM", "Не удалось залогировать реакцию", e)
+                    }
+                }
         }
     }
 
@@ -1464,6 +1660,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             batch.update(ref, "readBy", FieldValue.arrayUnion(uid))
         }
         batch.commit()
+            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка отметки прочтения", e) }
     }
 
 
@@ -1477,6 +1674,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             batch.update(ref, "viewedBy", FieldValue.arrayUnion(uid))
         }
         batch.commit()
+            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка отметки просмотра", e) }
     }
 
     fun setTyping(chatId: String, isTyping: Boolean) {
@@ -1605,10 +1803,9 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
-        messagesListener?.remove()
-        userListener?.remove()
-        chatDocListener?.remove()
-        myProfileListener?.remove()
+        auth.removeAuthStateListener(authStateListener)
+        FirestoreListenerCoordinator.unregister(teardown)
+        stopAllListeners()
         soundPool?.release()
         soundPool = null
         stopVoice()

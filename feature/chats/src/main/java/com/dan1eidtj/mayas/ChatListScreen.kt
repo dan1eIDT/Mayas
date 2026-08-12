@@ -9,25 +9,100 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
-import androidx.compose.animation.*
-import androidx.compose.animation.core.*
+import android.util.Log
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateValue
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.ChatBubble
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Diamond
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Update
+import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.outlined.Notifications
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,49 +111,39 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.TextStyle
-import coil.compose.AsyncImage
-import com.dan1eidtj.mayas.core_ui.Screen
-import com.dan1eidtj.mayas.core.ui.theme.MayasAppTheme
-import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
-import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
-import com.dan1eidtj.mayas.storage.rememberResolvedAvatarUrl
-import com.dan1eidtj.mayas.core_ui.ui.components.ProfileIcon
-import com.dan1eidtj.mayas.core_ui.utils.isUserOnline
-import com.dan1eidtj.mayas.core_ui.utils.getNameColorBrush
-import com.dan1eidtj.data.ShopConstants
-import androidx.compose.foundation.Image
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.dan1eidtj.data.ShopConstants
+import com.dan1eidtj.mayas.core_ui.ui.components.UserAvatarView
+import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
+import com.dan1eidtj.mayas.core_ui.utils.getNameColorBrush
+import com.dan1eidtj.mayas.core_ui.utils.isUserOnline
 import com.dan1eidtj.mayas.feature.TypingIndicator
-import com.dan1eidtj.mayas.feature.formatCompactCount
 import com.dan1eidtj.mayas.feature.auth.AuthVM
-import com.dan1eidtj.mayas.feature.chat.CreateGroupScreen
 import com.dan1eidtj.mayas.feature.chat.CreateChannelScreen
+import com.dan1eidtj.mayas.feature.chat.CreateGroupScreen
+import com.dan1eidtj.mayas.feature.formatCompactCount
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.ListenerRegistration
-import io.ktor.client.*
-import io.ktor.client.call.*
-import io.ktor.client.plugins.contentnegotiation.*
-import io.ktor.client.request.*
-import io.ktor.serialization.kotlinx.json.*
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.get
+import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.runtime.collectAsState
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -92,6 +157,38 @@ data class AppVersion(
     val changelog: String? = null
 )
 
+
+@Composable
+fun DrawerActionRow(
+    icon: ImageVector,
+    iconTint: Color,
+    label: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .combinedClickable { onClick() }
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconTint,
+            modifier = Modifier.size(20.dp)
+        )
+        Text(
+            text = label,
+            color = MayasTheme.TextPrimary,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
 
 enum class ConnectionState { ONLINE, OFFLINE }
 
@@ -204,26 +301,25 @@ fun ChatListScreen(
                 put("groupName", entity.groupName ?: "")
                 put("groupAvatarUrl", entity.groupAvatarUrl ?: "")
                 put("groupIcon", entity.groupIcon ?: "groups")
+                put("groupProfileGlow", entity.groupProfileGlow ?: "purple")
                 put("useCustomAvatar", entity.useCustomAvatar)
                 put("lastMessage", entity.lastMessage ?: "")
-
                 put("unreadCount", entity.unreadCount)
-
                 put("updatedAt", entity.updatedAt)
                 put("description", entity.description ?: "")
                 put("ownerId", entity.ownerId ?: "")
                 put("isPublic", entity.isPublic)
-
                 put("isPinned", entity.isPinned)
-
                 put("partnerUid", entity.partnerUid ?: "")
-
                 put("partnerName", entity.partnerName ?: "")
                 put("partnerAvatarUrl", entity.partnerAvatarUrl ?: "")
+                put("partnerProfileIcon", entity.partnerProfileIcon ?: "ghost")
                 put("partnerProfileGlow", entity.partnerProfileGlow ?: "purple")
+                put("partnerUseCustomAvatar", entity.partnerUseCustomAvatar)
+                put("partnerIsPremium", entity.partnerIsPremium)
+                put("partnerAvatarFrame", entity.partnerAvatarFrame ?: "none")
+                put("partnerNameColor", entity.partnerNameColor ?: "gold")
                 put("partnerEmoji", entity.partnerEmoji ?: "")
-
-
                 put("isSavedMessages", entity.isSavedMessages)
             }
         }
@@ -238,15 +334,19 @@ fun ChatListScreen(
     }
     var searchQuery by remember { mutableStateOf("") }
     LaunchedEffect(myUid) {
-        vm.ensureSavedMessagesChat(myUid)
+        try {
+            vm.ensureSavedMessagesChat(myUid)
+        } catch (e: Exception) {
+            Log.e("SavedChat", "Не удалось создать/проверить Избранное", e)
+        }
     }
     var showUserSearchDialog by remember { mutableStateOf(false) }
     var searchInput by remember { mutableStateOf("") }
     var searchError by remember { mutableStateOf<String?>(null) }
     var selectedFolder by remember { mutableStateOf(ChatFolder.ALL) }
 
-    val userCache = remember { mutableStateMapOf<String, Map<String, Any?>>() }
-    var myProfileData by remember { mutableStateOf<Map<String, Any?>>(emptyMap()) }
+    val userCache by chatListVm.partnerPresence.collectAsState()
+    val myProfileData by chatListVm.myProfile.collectAsState()
 
 
     if (showCreateGroupScreen) {
@@ -342,93 +442,19 @@ fun ChatListScreen(
         )
 
 
-        LaunchedEffect(myUid) {
-            vm.db.collection("users").document(myUid).addSnapshotListener { doc, _ ->
-                if (doc != null && doc.exists()) {
-                    myProfileData = mapOf(
-                        "name" to (doc.getString("name") ?: doc.getString("username") ?: "Я"),
-                        "avatarUrl" to (doc.getString("avatarUrl") ?: ""),
-                        "profileIcon" to (doc.getString("profileIcon") ?: "ghost"),
-                        "useCustomAvatar" to (doc.getBoolean("useCustomAvatar") ?: false),
-                        "activity" to (doc.getString("activity") ?: "в сети"),
-                        "isPremium" to (doc.getBoolean("isPremium") ?: false),
-                        "nameColor" to (doc.getString("nameColor") ?: "gold"),
-                        "isGroup" to false
-                    )
-                }
-            }
-        }
 
 
 
 
 
 
-        DisposableEffect(myUid) {
-            val partnerListeners = mutableMapOf<String, ListenerRegistration>()
-
-
-            val chatsListener = vm.db.collection("chats")
-                .whereArrayContains("participants", myUid)
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null || snapshot == null) return@addSnapshotListener
-
-                    val currentPartnerUids = snapshot.documents
-                        .filter { doc ->
-                            val type = doc.getString("type") ?: "DIRECT"
-                            val isGroup = type == "GROUP" || (doc.getBoolean("isGroup") ?: false)
-                            !isGroup
-                        }
-                        .flatMap { doc ->
-                            (doc.get("participants") as? List<*>)
-                                ?.filterIsInstance<String>()
-                                ?.filter { it != myUid }
-                                ?: emptyList()
-                        }.toSet()
-
-                    val toRemove = partnerListeners.keys - currentPartnerUids
-                    toRemove.forEach { uid ->
-                        partnerListeners[uid]?.remove()
-                        partnerListeners.remove(uid)
-                    }
-
-                    currentPartnerUids.forEach { partnerUid ->
-                        if (!partnerListeners.containsKey(partnerUid)) {
-                            partnerListeners[partnerUid] = vm.db.collection("users")
-                                .document(partnerUid)
-                                .addSnapshotListener { doc, _ ->
-                                    if (doc != null && doc.exists()) {
-
-                                        userCache[partnerUid] = mapOf(
-                                            "lastSeen" to doc.getTimestamp("lastSeen"),
-                                            "isInvisible" to (doc.getBoolean("isInvisible") ?: false),
-                                            "typing" to doc.get("typing"),
-                                            "activity" to (doc.getString("activity") ?: ""),
-
-                                            "name" to (doc.getString("name") ?: doc.getString("username") ?: "Аноним"),
-                                            "avatarUrl" to (doc.getString("avatarUrl") ?: ""),
-                                            "profileIcon" to (doc.getString("profileIcon") ?: "ghost"),
-                                            "useCustomAvatar" to (doc.getBoolean("useCustomAvatar") ?: false),
-                                            "profileGlow" to (doc.getString("profileGlow") ?: "purple"),
-                                            "isPremium" to (doc.getBoolean("isPremium") ?: false),
 
 
 
-                                            "nameColor" to (doc.getString("nameColor") ?: "gold"),
-                                            "isGroup" to false,
-                                            "emoji" to (doc.getString("emojiStatus") ?: "")
-                                        )
-                                    }
-                                }
-                        }
-                    }
-                }
 
-            onDispose {
-                chatsListener.remove()
-                partnerListeners.values.forEach { it.remove() }
-            }
-        }
+
+
+
 
 
         val filteredChats = remember(chats, searchQuery, userCache, selectedFolder) {
@@ -490,172 +516,257 @@ fun ChatListScreen(
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(24.dp)
+                            .verticalScroll(rememberScrollState())
+                            .padding(vertical = 24.dp)
                     ) {
-                        Text(
-                            text = "Навигация",
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MayasTheme.TextPrimary,
-                            letterSpacing = (-0.5).sp
-                        )
-
-                        Spacer(modifier = Modifier.height(24.dp))
-
-
-                        if (isUpdateAvailable) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MayasTheme.GlowGreen.copy(alpha = 0.15f))
-                                    .combinedClickable {
-                                        if (updateUrl.isNotEmpty()) {
-                                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl)))
-                                        }
-                                    }
-                                    .padding(horizontal = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Update,
-                                    contentDescription = null,
-                                    tint = MayasTheme.GlowGreen,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Text(
-                                    text = "Обновить Mayas",
-                                    color = MayasTheme.TextPrimary,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Spacer(modifier = Modifier.height(12.dp))
-                        }
 
 
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(48.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(MayasTheme.GlowPurple.copy(alpha = 0.08f))
+                                .padding(horizontal = 24.dp)
+                                .clip(RoundedCornerShape(16.dp))
                                 .combinedClickable {
                                     coroutineScope.launch { drawerState.close() }
-                                    showCreateGroupScreen = true
+                                    onOpenProfile(myUid)
                                 }
-                                .padding(horizontal = 14.dp),
+                                .padding(vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.GroupAdd,
-                                contentDescription = null,
-                                tint = MayasTheme.GlowPurple,
-                                modifier = Modifier.size(20.dp)
+                            UserAvatarView(
+                                avatarUrl = myProfileData["avatarUrl"] as? String,
+                                useCustomAvatar = myProfileData["useCustomAvatar"] as? Boolean ?: false,
+                                profileIcon = myProfileData["profileIcon"] as? String ?: "ghost",
+                                profileGlow = myProfileData["profileGlow"] as? String ?: "purple",
+                                isPremium = myProfileData["isPremium"] as? Boolean ?: false,
+                                frameType = myProfileData["avatarFrame"] as? String ?: "none",
+                                size = 52.dp
                             )
-                            Text(
-                                text = "Создать группу",
-                                color = MayasTheme.TextPrimary,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = myProfileData["name"] as? String ?: "Я",
+                                    color = MayasTheme.TextPrimary,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Открыть профиль",
+                                    color = MayasTheme.TextSecondary,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = null,
+                                tint = MayasTheme.TextSecondary.copy(alpha = 0.6f),
+                                modifier = Modifier.size(20.dp)
                             )
                         }
 
+                        Spacer(modifier = Modifier.height(20.dp))
+                        HorizontalDivider(color = MayasTheme.Outline.copy(alpha = 0.5f))
                         Spacer(modifier = Modifier.height(16.dp))
 
-                        Text(
-                            text = "ПАПКИ",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
-                            letterSpacing = 1.sp
-                        )
+                        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
 
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        ChatFolder.values().forEach { folder ->
-                            val isSelected = selectedFolder == folder
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(
-                                        if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.12f)
-                                        else Color.Transparent
+                            if (isUpdateAvailable) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(MayasTheme.GlowGreen.copy(alpha = 0.15f))
+                                        .combinedClickable {
+                                            if (updateUrl.isNotEmpty()) {
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl)))
+                                            }
+                                        }
+                                        .padding(horizontal = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Update,
+                                        contentDescription = null,
+                                        tint = MayasTheme.GlowGreen,
+                                        modifier = Modifier.size(20.dp)
                                     )
-                                    .combinedClickable {
-                                        selectedFolder = folder
-                                        coroutineScope.launch { drawerState.close() }
-                                    }
-                                    .padding(horizontal = 14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                Icon(
-                                    imageVector = folder.icon,
-                                    contentDescription = null,
-                                    tint = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Text(
-                                    text = folder.displayName,
-                                    color = if (isSelected) MayasTheme.TextPrimary else MayasTheme.TextSecondary,
-                                    fontSize = 14.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    modifier = Modifier.weight(1f)
-                                )
-
-                                val count = when (folder) {
-                                    ChatFolder.ALL -> chats.size
-                                    ChatFolder.PINNED -> chats.count {
-                                        it["isPinned"] as? Boolean ?: false
-                                    }
-
-                                    ChatFolder.GROUPS -> chats.count {
-                                        (it["isGroup"] as? Boolean ?: false) &&
-                                            it["chatType"] != "CHANNEL" &&
-                                            !(it["isSavedMessages"] as? Boolean ?: false)
-                                    }
-
-                                    ChatFolder.CHANNELS -> chats.count {
-                                        it["chatType"] == "CHANNEL"
-                                    }
-
-                                    ChatFolder.CONTACTS -> chats.count {
-                                        !(it["isGroup"] as? Boolean ?: false)
-                                    }
+                                    Text(
+                                        text = "Обновить Mayas",
+                                        color = MayasTheme.TextPrimary,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
-                                if (count > 0) {
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(CircleShape)
-                                            .background(
-                                                if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.2f)
-                                                else MayasTheme.Surface.copy(alpha = 0.05f)
-                                            )
-                                            .padding(horizontal = 7.dp, vertical = 2.dp)
-                                    ) {
-                                        Text(
-                                            text = "$count",
-                                            color = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
+                                Spacer(modifier = Modifier.height(12.dp))
                             }
-                            Spacer(modifier = Modifier.height(4.dp))
+
+
+                            DrawerActionRow(
+                                icon = Icons.Default.GroupAdd,
+                                iconTint = MayasTheme.GlowPurple,
+                                label = "Создать группу",
+                                onClick = {
+                                    coroutineScope.launch { drawerState.close() }
+                                    showCreateGroupScreen = true
+                                }
+                            )
+                            DrawerActionRow(
+                                icon = Icons.Default.Campaign,
+                                iconTint = MayasTheme.GlowPurple,
+                                label = "Создать канал",
+                                onClick = {
+                                    coroutineScope.launch { drawerState.close() }
+                                    showCreateChannelScreen = true
+                                }
+                            )
+                            DrawerActionRow(
+                                icon = Icons.Default.PersonAdd,
+                                iconTint = MayasTheme.GlowPurple,
+                                label = "Пригласить друга",
+                                onClick = {
+                                    coroutineScope.launch { drawerState.close() }
+                                    try {
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_TEXT, "Заходи в Маяс , не похалеешь) - https://dan1eidt.github.io/mayas-site/")
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "Пригласить друга"))
+                                    } catch (e: Exception) {}
+                                }
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Text(
+                                text = "ПАПКИ",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
+                                letterSpacing = 1.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            ChatFolder.values().forEach { folder ->
+                                val isSelected = selectedFolder == folder
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(
+                                            if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.12f)
+                                            else Color.Transparent
+                                        )
+                                        .combinedClickable {
+                                            selectedFolder = folder
+                                            coroutineScope.launch { drawerState.close() }
+                                        }
+                                        .padding(horizontal = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = folder.icon,
+                                        contentDescription = null,
+                                        tint = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Text(
+                                        text = folder.displayName,
+                                        color = if (isSelected) MayasTheme.TextPrimary else MayasTheme.TextSecondary,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+
+                                    val count = when (folder) {
+                                        ChatFolder.ALL -> chats.size
+                                        ChatFolder.PINNED -> chats.count {
+                                            it["isPinned"] as? Boolean ?: false
+                                        }
+
+                                        ChatFolder.GROUPS -> chats.count {
+                                            (it["isGroup"] as? Boolean ?: false) &&
+                                                    it["chatType"] != "CHANNEL" &&
+                                                    !(it["isSavedMessages"] as? Boolean ?: false)
+                                        }
+
+                                        ChatFolder.CHANNELS -> chats.count {
+                                            it["chatType"] == "CHANNEL"
+                                        }
+
+                                        ChatFolder.CONTACTS -> chats.count {
+                                            !(it["isGroup"] as? Boolean ?: false)
+                                        }
+                                    }
+                                    if (count > 0) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(CircleShape)
+                                                .background(
+                                                    if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.2f)
+                                                    else MayasTheme.Surface.copy(alpha = 0.05f)
+                                                )
+                                                .padding(horizontal = 7.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "$count",
+                                                color = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Text(
+                                text = "ПРИЛОЖЕНИЕ",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
+                                letterSpacing = 1.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            DrawerActionRow(
+                                icon = Icons.Default.Settings,
+                                iconTint = MayasTheme.TextSecondary,
+                                label = "Настройки",
+                                onClick = {
+                                    coroutineScope.launch { drawerState.close() }
+                                    onOpenSettings()
+                                }
+                            )
+                            DrawerActionRow(
+                                icon = Icons.Default.Info,
+                                iconTint = MayasTheme.TextSecondary,
+                                label = "О приложении",
+                                onClick = {
+                                    coroutineScope.launch { drawerState.close() }
+                                    onOpenCredits()
+                                }
+                            )
                         }
 
                         Spacer(modifier = Modifier.weight(1f))
+                        Spacer(modifier = Modifier.height(16.dp))
+                        HorizontalDivider(color = MayasTheme.Outline.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .padding(horizontal = 24.dp)
                                 .height(48.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .combinedClickable { onLogout() }
@@ -845,15 +956,24 @@ fun ChatListScreen(
                                         val isSavedMessages = chat["isSavedMessages"] as? Boolean ?: false
                                         val isChannel = chat["chatType"] == "CHANNEL"
                                         val groupData = mapOf(
-                                            "name" to (chat["groupName"] as? String
-                                                ?: "Группа без названия"),
-                                            "avatarUrl" to (chat["groupAvatarUrl"] as? String
-                                                ?: ""),
-                                            "profileIcon" to (chat["groupIcon"] as? String
-                                                ?: if (isChannel) "campaign" else "groups"),
-                                            "useCustomAvatar" to (chat["useCustomAvatar"] as? Boolean
-                                                ?: false),
-                                            "profileGlow" to "purple",
+                                            "name" to (
+                                                    chat["groupName"] as? String ?: "Группа без названия"
+                                                    ),
+                                            "avatarUrl" to (
+                                                    chat["groupAvatarUrl"] as? String ?: ""
+                                                    ),
+                                            "profileIcon" to (
+                                                    chat["groupIcon"] as? String
+                                                        ?: if (isChannel) "campaign" else "groups"
+                                                    ),
+                                            "useCustomAvatar" to (
+                                                    chat["useCustomAvatar"] as? Boolean ?: false
+                                                    ),
+                                            "profileGlow" to (
+                                                    chat["groupProfileGlow"] as? String ?: "purple"
+                                                    ),
+                                            "isPremium" to false,
+                                            "avatarFrame" to "none",
                                             "isGroup" to true
                                         )
 
@@ -892,11 +1012,18 @@ fun ChatListScreen(
                                             ?: mapOf(
                                                 "name" to chat["partnerName"],
                                                 "avatarUrl" to chat["partnerAvatarUrl"],
+                                                "profileIcon" to chat["partnerProfileIcon"],
                                                 "profileGlow" to chat["partnerProfileGlow"],
+                                                "useCustomAvatar" to (
+                                                        chat["partnerUseCustomAvatar"] as? Boolean ?: false
+                                                        ),
+                                                "isPremium" to (
+                                                        chat["partnerIsPremium"] as? Boolean ?: false
+                                                        ),
+                                                "avatarFrame" to (
+                                                        chat["partnerAvatarFrame"] as? String ?: "none"
+                                                        ),
                                                 "emoji" to chat["partnerEmoji"],
-                                                "profileIcon" to "ghost",
-                                                "useCustomAvatar" to false,
-                                                "isPremium" to false,
                                                 "nameColor" to (chat["partnerNameColor"] ?: "gold"),
                                                 "isGroup" to false
                                             )
@@ -1201,17 +1328,16 @@ fun ChatItemNew(
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Box(contentAlignment = Alignment.Center) {
-            MayasAvatar(
-                url = rememberResolvedAvatarUrl(
-                    userData?.get("avatarUrl") as? String,
-                    userData?.get("useCustomAvatar") as? Boolean ?: false
-                ),
-                icon = userData?.get("profileIcon") as? String ?: "ghost",
-                glowColor = avatarGlow,
-                isPremium = userData?.get("premium") as? Boolean ?: false,
-                size = 54.dp,
+            UserAvatarView(
+                avatarUrl = userData?.get("avatarUrl") as? String,
                 useCustomAvatar = userData?.get("useCustomAvatar") as? Boolean ?: false,
-                frameType = userData?.get("avatarFrame") as? String ?: "none"
+                profileIcon = userData?.get("profileIcon") as? String ?: "ghost",
+                profileGlow = userData?.get("profileGlow") as? String ?: "purple",
+                isPremium = userData?.get("isPremium") as? Boolean
+                    ?: userData?.get("premium") as? Boolean
+                    ?: false,
+                frameType = userData?.get("avatarFrame") as? String ?: "none",
+                size = 54.dp
             )
 
 
@@ -1390,31 +1516,15 @@ fun BottomProfileBar(
                     .size(50.dp)
                     .combinedClickable { onOpenProfile(myUid) }
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .clip(CircleShape)
-                        .background(MayasTheme.SurfaceVariant.copy(alpha = 0.3f))
-                        .border(1.dp, MayasTheme.Outline, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    val useAvatar = myProfileData["useCustomAvatar"] as? Boolean ?: false
-                    val rawUrl = myProfileData["avatarUrl"] as? String ?: ""
-                    val resolvedUrl = rememberResolvedAvatarUrl(rawUrl, useAvatar)
-                    if (useAvatar && resolvedUrl != null) {
-                        AsyncImage(
-                            model = resolvedUrl,
-                            contentDescription = null,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(CircleShape)
-                        )
-                    } else {
-                        ProfileIcon(myProfileData["profileIcon"] as? String ?: "ghost")
-                    }
-                }
-
+                UserAvatarView(
+                    avatarUrl = myProfileData["avatarUrl"] as? String,
+                    useCustomAvatar = myProfileData["useCustomAvatar"] as? Boolean ?: false,
+                    profileIcon = myProfileData["profileIcon"] as? String ?: "ghost",
+                    profileGlow = myProfileData["profileGlow"] as? String ?: "purple",
+                    isPremium = myProfileData["isPremium"] as? Boolean ?: false,
+                    frameType = myProfileData["avatarFrame"] as? String ?: "none",
+                    size = 50.dp
+                )
 
                 Box(
                     modifier = Modifier
@@ -1714,17 +1824,14 @@ fun UserSearchDialog(
                                 .padding(12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            MayasAvatar(
-                                url = rememberResolvedAvatarUrl(
-                                    user["avatarUrl"] as? String,
-                                    user["useCustomAvatar"] as? Boolean ?: false
-                                ),
-                                icon = user["profileIcon"] as? String ?: "ghost",
-                                glowColor = MayasTheme.GlowPurple,
-                                isPremium = user["isPremium"] as? Boolean ?: false,
-                                size = 64.dp,
+                            UserAvatarView(
+                                avatarUrl = user["avatarUrl"] as? String,
                                 useCustomAvatar = user["useCustomAvatar"] as? Boolean ?: false,
-                                frameType = user["frameType"] as? String ?: "rainbow"
+                                profileIcon = user["profileIcon"] as? String ?: "ghost",
+                                profileGlow = user["profileGlow"] as? String ?: "purple",
+                                isPremium = user["isPremium"] as? Boolean ?: false,
+                                frameType = user["frameType"] as? String ?: "rainbow",
+                                size = 64.dp
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(user["name"] as? String ?: "", color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold)
@@ -1735,7 +1842,7 @@ fun UserSearchDialog(
                             Button(
                                 onClick = {
                                     if (userUid == myUid) {
-                                        // ничего
+
                                     } else {
                                         chatListVM.openOrCreateDirectChat(myUid, userUid) { chatId ->
                                             onStartChat(chatId)
@@ -1770,17 +1877,14 @@ fun UserSearchDialog(
                                 .padding(12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            MayasAvatar(
-                                url = rememberResolvedAvatarUrl(
-                                    channel["groupAvatar"] as? String,
-                                    (channel["useCustomAvatar"] as? Boolean) ?: false
-                                ),
-                                icon = channel["groupIcon"] as? String ?: "campaign",
-                                glowColor = MayasTheme.GlowPurple,
-                                isPremium = false,
-                                size = 64.dp,
+                            UserAvatarView(
+                                avatarUrl = channel["groupAvatar"] as? String,
                                 useCustomAvatar = (channel["useCustomAvatar"] as? Boolean) ?: false,
-                                frameType = "rainbow"
+                                profileIcon = channel["groupIcon"] as? String ?: "campaign",
+                                profileGlow = channel["profileGlow"] as? String ?: "purple",
+                                isPremium = false,
+                                frameType = "rainbow",
+                                size = 64.dp
                             )
                             Spacer(Modifier.height(8.dp))
                             Text(channel["groupName"] as? String ?: "", color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold)

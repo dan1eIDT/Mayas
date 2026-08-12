@@ -1,10 +1,13 @@
 package com.dan1eidtj.mayas
 
+import android.Manifest
+import android.R
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
+import androidx.annotation.RequiresPermission
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
@@ -35,6 +38,7 @@ class MayasMessagingService : FirebaseMessagingService() {
         CallConnectionService.startIncoming(applicationContext, callId, callerId)
     }
 
+    @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     private fun handleChatMessagePush(message: RemoteMessage) {
         val data = message.data
 
@@ -57,6 +61,7 @@ class MayasMessagingService : FirebaseMessagingService() {
     }
 
 
+    @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     private fun postChatNotification(
         chatId: String,
         senderId: String,
@@ -107,7 +112,7 @@ class MayasMessagingService : FirebaseMessagingService() {
         )
 
         val notification = NotificationCompat.Builder(this, MayasNotifications.CHANNEL_MESSAGES)
-            .setSmallIcon(android.R.drawable.sym_action_chat)
+            .setSmallIcon(R.drawable.sym_action_chat)
             .setStyle(messagingStyle)
             .setAutoCancel(true)
             .setContentIntent(contentPendingIntent)
@@ -174,11 +179,12 @@ class MayasMessagingService : FirebaseMessagingService() {
     }
 
 
+    @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     private fun postSummaryNotification(notificationManager: NotificationManagerCompat) {
         if (!MayasNotifications.canPostNotifications(this)) return
 
         val summary = NotificationCompat.Builder(this, MayasNotifications.CHANNEL_MESSAGES)
-            .setSmallIcon(android.R.drawable.sym_action_chat)
+            .setSmallIcon(R.drawable.sym_action_chat)
             .setStyle(
                 NotificationCompat.InboxStyle()
                     .setSummaryText("Новые сообщения")

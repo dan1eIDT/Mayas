@@ -1,10 +1,9 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.serialization)
-    id("org.jetbrains.kotlin.plugin.compose") version "2.2.10"
+    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
-
 
 android {
     namespace = "com.dan1eidtj.network"
@@ -39,75 +38,54 @@ android {
 }
 
 dependencies {
-
-     
-
+    // core
     implementation(libs.androidx.core.ktx)
-    implementation(platform(libs.androidx.compose.bom))
-    implementation("androidx.core:core-ktx:1.12.0")
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.core.animation)
-    implementation("androidx.multidex:multidex:2.0.1")
+    implementation(libs.androidx.multidex)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
 
-     
+    // Compose — один BOM
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.navigation.compose)
 
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.2")
+    // Firebase — один BOM, версии модулей не указываем нигде
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.storage)
+    implementation(libs.firebase.messaging)
+    implementation(libs.firebase.analytics)
 
-     
+    // coil
+    implementation(libs.coil)
+    implementation(libs.coil.compose)
 
-    implementation("androidx.activity:activity-compose:1.9.0")
+    // room
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
 
-     
+    implementation(libs.kotlinx.serialization.json)
 
-    implementation(platform("androidx.compose:compose-bom:2024.04.01"))
-    implementation("androidx.compose.ui:ui:1.6.0")
-    implementation("androidx.compose.ui:ui-tooling-preview:1.6.0")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    implementation("androidx.compose.material3:material3:1.2.0")
-    implementation("androidx.compose.material:material-icons-extended:1.6.1")
+    // реклама
+    implementation(libs.yandex.mobileads)
+    implementation(libs.play.services.ads)
 
-     
+    // сеть / файлы
+    implementation(libs.okhttp)
+    implementation(libs.androidx.exifinterface)
 
-    implementation("androidx.navigation:navigation-compose:2.7.7")
-
-     
-
-    implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
-    implementation("com.google.firebase:firebase-auth-ktx")
-    implementation("com.google.firebase:firebase-firestore-ktx")
-    implementation("com.google.firebase:firebase-storage-ktx")
-    implementation("com.google.firebase:firebase-messaging-ktx")
-    implementation("com.google.firebase:firebase-analytics")
-
-     
-
-    implementation("io.coil-kt:coil:2.6.0")
-    implementation("io.coil-kt:coil-compose:2.6.0")
-
-
-    val room_version = "2.7.0-alpha11"
-    implementation("androidx.room:room-runtime:$room_version")
-    implementation("androidx.room:room-ktx:$room_version")
-    ksp("androidx.room:room-compiler:$room_version")
-
-     
-
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.1")
-
-     
-
+    // тесты
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
-
-
-    implementation("com.yandex.android:mobileads:7.16.1")
-    implementation("com.google.android.gms:play-services-ads:24.7.0")
-
-    // storage ой блять как бдуто это кто то читать будет ало
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("io.coil-kt:coil-compose:2.6.0")
-    implementation("androidx.exifinterface:exifinterface:1.3.7")
 }

@@ -14,6 +14,7 @@ import com.dan1eidtj.mayas.core.ui.theme.ThemeEditorScreen
 import androidx.compose.foundation.isSystemInDarkTheme
 import android.os.Build
 import android.os.Bundle
+import android.view.Gravity
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -54,33 +55,16 @@ import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
-    private val callManager by lazy {
-        CallManager(
-            callRepository = FirestoreCallRepository(),
-            webRtcClient = WebRtcClientImpl(applicationContext),
-            audioController = SystemAudioController(applicationContext),
-            currentUserIdProvider = { FirebaseAuth.getInstance().currentUser?.uid.orEmpty() },
-            callFeedbackController = CallFeedbackController(applicationContext),
-            showError = { message ->
-                runOnUiThread {
-                    Toast.makeText(
-                        applicationContext,
-                        message,
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
-            },
-            callPushNotifier = CallPushNotifier(),
-        )
-    }
+    private val callManager: CallManager
+        get() = (application as CallManagerProvider).callManager
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            Toast.makeText(this, "Уведомления включены! Ровного общения!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Уведомления включены!", Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "Без уведомлений можно пропустить важный движ", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Уведомления можно включить позже.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -95,10 +79,6 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             var isSplash by remember { mutableStateOf(true) }
-
-
-
-
 
 
             val themePrefsContext = LocalContext.current
@@ -199,27 +179,33 @@ class MainActivity : ComponentActivity() {
 
     private fun checkAndRequestNotifications() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.POST_NOTIFICATIONS
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
                 showCustomExplanationDialog()
             }
         }
     }
 
     private fun showCustomExplanationDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("Важное уведомление 📢")
-            .setMessage("Включи уведомления, чтобы моментально узнавать, кто тебе чирканул в Маяс!")
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("!!!")
+            .setMessage(getString(R.string.notif_text))
             .setCancelable(false)
             .setPositiveButton("Включить") { _, _ ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
             }
-            .setNegativeButton("Не сейчас") { dialog, _ -> dialog.dismiss() }
-            .show()
+            .setNegativeButton("Не сейчас") { d, _ -> d.dismiss() }
+            .create()
+
+        dialog.window?.setGravity(Gravity.BOTTOM)
+        dialog.show()
     }
 }
-
 @Composable
 fun MayasApp(
     vm: AuthVM = viewModel(),
@@ -290,7 +276,7 @@ fun MayasApp(
                         vm = vm,
                         onStartChat = { chatId -> navController.navigate(Screen.Chat.create(chatId)) },
                         onOpenProfile = { uid -> navController.navigate(Screen.Profile.create(uid, isGroup = false)) },
-                        onOpenSettings = { navController.navigate(Screen.Profile.create(vm.user?.uid ?: "")) },
+                        onOpenSettings = { navController.navigate(Screen.Settings.route) },
                         onOpenCredits = { navController.navigate(Screen.Credits.route) },
                         onLogout = {
                             vm.logout()

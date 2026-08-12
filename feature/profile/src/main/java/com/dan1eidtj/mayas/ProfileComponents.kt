@@ -3,6 +3,10 @@ package com.dan1eidtj.mayas
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -28,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -36,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -879,13 +885,13 @@ private fun ShopItemBadgeRow(item: ShopItem, modifier: Modifier = Modifier) {
 }
 
 
-private enum class ShopCategory(val label: String, val itemType: ItemType?) {
-    DAILY("🔥 Акция", null),
-    ALL("Всё", null),
-    BUBBLE("Стили", ItemType.BUBBLE),
-    EMOJI("Эмодзи", ItemType.EMOJI_STATUS),
-    FONT("Шрифты", ItemType.FONT),
-    EFFECT("Эффекты", ItemType.EFFECT)
+private enum class ShopCategory(val label: String, val itemType: ItemType?, val icon: ImageVector?) {
+    DAILY("Акция", null, Icons.Default.LocalFireDepartment),
+    ALL("Всё", null, Icons.Default.Apps),
+    BUBBLE("Стили", ItemType.BUBBLE, Icons.AutoMirrored.Filled.Chat),
+    EMOJI("Статусы", ItemType.EMOJI_STATUS, Icons.Default.EmojiEmotions),
+    FONT("Шрифты", ItemType.FONT, Icons.Default.TextFields),
+    EFFECT("Эффекты", ItemType.EFFECT, Icons.Default.AutoAwesome)
 }
 
 @Composable
@@ -902,23 +908,90 @@ private fun ShopCategoryTabs(
     ) {
         ShopCategory.values().forEach { category ->
             val isSelected = category == selected
+            val isFire = category == ShopCategory.DAILY
+            val activeColor = if (isFire) MayasTheme.GlowGold else MayasTheme.Accent
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = if (isSelected) MayasTheme.Accent else MayasTheme.Surface,
-                border = BorderStroke(0.5.dp, if (isSelected) MayasTheme.Accent else MayasTheme.Outline),
+                color = if (isSelected) activeColor else MayasTheme.Surface,
+                border = BorderStroke(0.5.dp, if (isSelected) activeColor else MayasTheme.Outline),
                 modifier = Modifier.clickable { onSelect(category) }
             ) {
-                Text(
-                    category.label,
-                    color = if (isSelected) Color.White else MayasTheme.TextSecondary,
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    category.icon?.let {
+                        Icon(
+                            it,
+                            null,
+                            tint = if (isSelected) Color.White else MayasTheme.TextSecondary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                    Text(
+                        category.label,
+                        color = if (isSelected) Color.White else MayasTheme.TextSecondary,
+                        fontSize = 12.5.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
             }
         }
     }
 }
+
+
+@Composable
+private fun ShopPreviewActions(
+    isEquipped: Boolean,
+    isOwned: Boolean,
+    price: Int,
+    onApply: () -> Unit,
+    onBuy: () -> Unit
+) {
+    when {
+        isEquipped -> Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MayasTheme.Accent.copy(alpha = 0.12f)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(Icons.Default.Check, null, tint = MayasTheme.Accent, modifier = Modifier.size(14.dp))
+                Text("Используется", color = MayasTheme.Accent, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+
+        isOwned -> Button(
+            onClick = onApply,
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.Accent),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        ) {
+            Text("Применить", fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold)
+        }
+
+        else -> Button(
+            onClick = onBuy,
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.GlowGold),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("🪙", fontSize = 12.sp)
+                Text("$price", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+            }
+        }
+    }
+}
+
+
+private fun bubbleTailShape(): RoundedCornerShape = RoundedCornerShape(
+    topStart = 9.dp, topEnd = 9.dp, bottomStart = 9.dp, bottomEnd = 3.dp
+)
 
 @Composable
 private fun DailyDealsSection(
@@ -949,6 +1022,8 @@ private fun DailyDealsSection(
     val totalMinutes = (msUntilReset / 60_000L).toInt().coerceAtLeast(0)
     val hLeft = totalMinutes / 60
     val mLeft = totalMinutes % 60
+    val dayMs = 24 * 60 * 60 * 1000L
+    val resetProgress = (1f - (msUntilReset.coerceIn(0, dayMs).toFloat() / dayMs))
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -968,6 +1043,16 @@ private fun DailyDealsSection(
             fontSize = 10.sp
         )
     }
+    Spacer(Modifier.height(8.dp))
+    LinearProgressIndicator(
+        progress = { resetProgress },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(3.dp)
+            .clip(RoundedCornerShape(2.dp)),
+        color = MayasTheme.GlowGold,
+        trackColor = MayasTheme.GlowGold.copy(alpha = 0.15f),
+    )
     Spacer(Modifier.height(14.dp))
 
 
@@ -1006,7 +1091,28 @@ private fun DailyDealsSection(
                         .padding(10.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier.size(30.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when (item.type) {
+                            ItemType.BUBBLE -> Box(
+                                modifier = Modifier
+                                    .size(26.dp)
+                                    .clip(bubbleTailShape())
+                                    .background(Brush.linearGradient(previewGradient))
+                            )
+                            ItemType.EMOJI_STATUS -> EmojiStatusView(item.id, size = 22.sp)
+                            ItemType.FONT -> Text(
+                                "Аа", color = MayasTheme.TextPrimary, fontSize = 18.sp,
+                                fontFamily = ShopConstants.getFontFamily(item.id)
+                            )
+                            ItemType.EFFECT -> Text(item.icon ?: "✨", fontSize = 20.sp)
+                            else -> Icon(Icons.Default.Star, null, tint = MayasTheme.GlowGold, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    Spacer(Modifier.height(2.dp))
                     Text(
                         item.name, color = MayasTheme.TextPrimary, fontSize = 11.sp,
                         maxLines = 1, textAlign = TextAlign.Center
@@ -1041,8 +1147,70 @@ private fun EmojiSection(
     onBuyItem: (String, Int, String) -> Unit,
     onSelectItem: (String, ItemType) -> Unit
 ) {
+    var previewId by remember(currentEmoji) { mutableStateOf(currentEmoji) }
+    val previewItem = emojis.find { it.id == previewId }
+    val previewRarity = previewItem?.let { ShopConstants.rarityOf(it) } ?: ItemRarity.COMMON
+
     Text(
-        "ЭМОДЗИ-СТАТУСЫ",
+        "ПРЕВЬЮ СТАТУСА",
+        color = MayasTheme.TextSecondary,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.08.em
+    )
+    Spacer(Modifier.height(10.dp))
+
+
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MayasTheme.Surface,
+        border = BorderStroke(
+            0.5.dp,
+            if (previewRarity != ItemRarity.COMMON) rarityColor(previewRarity).copy(alpha = 0.5f) else MayasTheme.Outline
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(CircleShape)
+                    .background(MayasTheme.Accent.copy(alpha = 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Person, null, tint = MayasTheme.Accent, modifier = Modifier.size(20.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text("Твой профиль", color = MayasTheme.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                if (previewId.isNotEmpty()) EmojiStatusView(previewId, size = 17.sp)
+            }
+            if (previewItem != null) {
+                ShopPreviewActions(
+                    isEquipped = currentEmoji == previewId,
+                    isOwned = ownedItems.contains(previewId),
+                    price = previewItem.price,
+                    onApply = { onSelectItem(previewId, ItemType.EMOJI_STATUS) },
+                    onBuy = { onBuyItem(previewId, previewItem.price, previewItem.name) }
+                )
+            } else if (previewId.isEmpty()) {
+                Text("Без статуса", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+            }
+        }
+    }
+
+    Spacer(Modifier.height(18.dp))
+    Text(
+        "ВСЕ СТАТУСЫ",
         color = MayasTheme.TextSecondary,
         fontSize = 11.sp,
         fontWeight = FontWeight.SemiBold,
@@ -1061,37 +1229,43 @@ private fun EmojiSection(
     ) {
         items(emojis, key = { it.id }) { item ->
             val emoji = item.id
-            val price = item.price
-            val displayName = item.name
             val isOwned = ownedItems.contains(emoji)
-            val isSelected = currentEmoji == emoji
+            val isEquipped = currentEmoji == emoji
+            val isPreviewing = previewId == emoji
+            val rarity = ShopConstants.rarityOf(item)
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = if (isSelected) MayasTheme.Accent.copy(alpha = 0.08f) else MayasTheme.Surface,
+                color = if (isPreviewing) MayasTheme.Accent.copy(alpha = 0.08f) else MayasTheme.Surface,
                 border = BorderStroke(
-                    if (isSelected) 1.5.dp else 0.5.dp,
-                    if (isSelected) MayasTheme.Accent else MayasTheme.Outline
+                    if (isPreviewing) 1.5.dp else 0.5.dp,
+                    when {
+                        isPreviewing -> MayasTheme.Accent
+                        rarity != ItemRarity.COMMON -> rarityColor(rarity).copy(alpha = 0.35f)
+                        else -> MayasTheme.Outline
+                    }
                 ),
                 modifier = Modifier
                     .aspectRatio(1f)
-                    .clickable {
-                        if (isOwned) onSelectItem(emoji, ItemType.EMOJI_STATUS)
-                        else onBuyItem(emoji, price, displayName)
-                    }
+                    .clickable { previewId = emoji }
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    EmojiStatusView(emoji, size = 24.sp)
-                    Spacer(Modifier.height(3.dp))
-                    if (isOwned) {
-                        Icon(Icons.Default.Check, null, tint = MayasTheme.Accent, modifier = Modifier.size(12.dp))
-                    } else {
-                        Text("$price 🪙", fontSize = 10.sp, color = MayasTheme.TextSecondary)
+                Box {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        EmojiStatusView(emoji, size = 24.sp)
+                        Spacer(Modifier.height(3.dp))
+                        when {
+                            isEquipped -> Icon(Icons.Default.Check, null, tint = MayasTheme.Accent, modifier = Modifier.size(12.dp))
+                            isOwned -> Text("Есть", fontSize = 9.5.sp, color = MayasTheme.TextSecondary)
+                            else -> Text("${item.price} 🪙", fontSize = 9.5.sp, color = MayasTheme.TextSecondary)
+                        }
+                    }
+                    if (item.isNew) {
+                        NewBadge(modifier = Modifier.align(Alignment.TopEnd).padding(3.dp))
                     }
                 }
             }
@@ -1107,6 +1281,9 @@ private fun BubbleStylesSection(
     onBuyItem: (String, Int, String) -> Unit,
     onSelectItem: (String, ItemType) -> Unit
 ) {
+    var previewId by remember(messageStyle) { mutableStateOf(messageStyle) }
+    val previewItem = styles.find { it.id == previewId }
+
     Text(
         "ПРЕВЬЮ СТИЛЯ",
         color = MayasTheme.TextSecondary,
@@ -1116,55 +1293,69 @@ private fun BubbleStylesSection(
     )
     Spacer(Modifier.height(10.dp))
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(MayasTheme.Surface)
-            .padding(12.dp),
-        contentAlignment = Alignment.Center
+            .padding(12.dp)
     ) {
-        ChatBubble(
-            text = "Так будут выглядеть твои сообщения ✨",
-            isMe = true,
-            isRead = true,
-            time = "12:00",
-            onLongClick = {},
-            messageStyle = messageStyle.ifEmpty { null }
-        )
+        Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+            ChatBubble(
+                text = "Так будут выглядеть твои сообщения ✨",
+                isMe = true,
+                isRead = true,
+                time = "12:00",
+                onLongClick = {},
+                messageStyle = previewId.ifEmpty { null }
+            )
+        }
+        if (previewItem != null) {
+            Spacer(Modifier.height(10.dp))
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                ShopPreviewActions(
+                    isEquipped = messageStyle == previewId,
+                    isOwned = ownedItems.contains(previewId),
+                    price = previewItem.price,
+                    onApply = { onSelectItem(previewId, ItemType.BUBBLE) },
+                    onBuy = { onBuyItem(previewId, previewItem.price, previewItem.name) }
+                )
+            }
+        }
     }
 
     Spacer(Modifier.height(20.dp))
 
     Text(
-        "СТИЛИ СООБЩЕНИЙ",
+        "ВСЕ СТИЛИ · нажми, чтобы посмотреть",
         color = MayasTheme.TextSecondary,
         fontSize = 11.sp,
         fontWeight = FontWeight.SemiBold,
-        letterSpacing = 0.08.em
+        letterSpacing = 0.04.em
     )
     Spacer(Modifier.height(10.dp))
 
     styles.forEach { item ->
         val id = item.id
-        val name = item.name
-        val price = item.price
         val isOwned = ownedItems.contains(id)
-        val isUsing = messageStyle == id
+        val isEquipped = messageStyle == id
+        val isPreviewing = previewId == id
+        val rarity = ShopConstants.rarityOf(item)
         Surface(
             shape = RoundedCornerShape(12.dp),
-            color = if (isUsing) MayasTheme.Accent.copy(alpha = 0.08f) else MayasTheme.Surface,
+            color = if (isPreviewing) MayasTheme.Accent.copy(alpha = 0.08f) else MayasTheme.Surface,
             border = BorderStroke(
-                if (isUsing) 1.5.dp else 0.5.dp,
-                if (isUsing) MayasTheme.Accent else MayasTheme.Outline
+                if (isPreviewing) 1.5.dp else 0.5.dp,
+                when {
+                    isPreviewing -> MayasTheme.Accent
+                    rarity != ItemRarity.COMMON -> rarityColor(rarity).copy(alpha = 0.35f)
+                    else -> MayasTheme.Outline
+                }
             ),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 6.dp)
-                .clickable {
-                    if (isOwned) onSelectItem(id, ItemType.BUBBLE)
-                    else onBuyItem(id, price, name)
-                }
+                .clickable { previewId = id }
         ) {
             Row(
                 modifier = Modifier
@@ -1172,27 +1363,29 @@ private fun BubbleStylesSection(
                     .padding(horizontal = 14.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+
                 Box(
                     modifier = Modifier
-                        .size(16.dp)
-                        .clip(CircleShape)
-                        .background(Brush.linearGradient(ShopConstants.getStyleGradient(id)))
-                )
+                        .size(width = 34.dp, height = 22.dp)
+                        .clip(bubbleTailShape())
+                        .background(Brush.linearGradient(ShopConstants.getStyleGradient(id))),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isEquipped) {
+                        Icon(Icons.Default.Check, null, tint = Color.White, modifier = Modifier.size(12.dp))
+                    }
+                }
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(name, color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                    Text(item.name, color = MayasTheme.TextPrimary, fontSize = 14.sp)
                     ShopItemBadgeRow(item, modifier = Modifier.padding(top = 3.dp))
                 }
-                if (isOwned) {
-                    Text(
-                        if (isUsing) "Используется" else "Куплено",
-                        color = if (isUsing) MayasTheme.Accent else MayasTheme.TextSecondary,
-                        fontSize = 12.sp
-                    )
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                when {
+                    isEquipped -> Text("Используется", color = MayasTheme.Accent, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    isOwned -> Text("Куплено", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                    else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text("🪙", fontSize = 12.sp)
-                        Text("$price", color = MayasTheme.GlowGold, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text("${item.price}", color = MayasTheme.GlowGold, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -1208,8 +1401,49 @@ private fun FontSection(
     onBuyItem: (String, Int, String) -> Unit,
     onSelectItem: (String, ItemType) -> Unit
 ) {
+    var previewId by remember(currentFont) { mutableStateOf(currentFont.ifEmpty { "default" }) }
+    val previewItem = fonts.find { it.id == previewId }
+
     Text(
-        "ШРИФТЫ",
+        "ПРЕВЬЮ ШРИФТА",
+        color = MayasTheme.TextSecondary,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.08.em
+    )
+    Spacer(Modifier.height(10.dp))
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MayasTheme.Surface)
+            .padding(14.dp)
+    ) {
+        Text(
+            "Так будет выглядеть твой текст в сообщениях",
+            color = MayasTheme.TextPrimary,
+            fontSize = 16.sp,
+            fontFamily = ShopConstants.getFontFamily(previewId),
+            lineHeight = 20.sp
+        )
+        if (previewItem != null && previewId != "default") {
+            Spacer(Modifier.height(12.dp))
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+                ShopPreviewActions(
+                    isEquipped = currentFont.ifEmpty { "default" } == previewId,
+                    isOwned = ownedItems.contains(previewId),
+                    price = previewItem.price,
+                    onApply = { onSelectItem(previewId, ItemType.FONT) },
+                    onBuy = { onBuyItem(previewId, previewItem.price, previewItem.name) }
+                )
+            }
+        }
+    }
+
+    Spacer(Modifier.height(18.dp))
+    Text(
+        "ВСЕ ШРИФТЫ",
         color = MayasTheme.TextSecondary,
         fontSize = 11.sp,
         fontWeight = FontWeight.SemiBold,
@@ -1218,21 +1452,24 @@ private fun FontSection(
     Spacer(Modifier.height(10.dp))
     fonts.forEach { item ->
         val isOwned = item.id == "default" || ownedItems.contains(item.id)
-        val isUsing = currentFont.ifEmpty { "default" } == item.id
+        val isEquipped = currentFont.ifEmpty { "default" } == item.id
+        val isPreviewing = previewId == item.id
+        val rarity = ShopConstants.rarityOf(item)
         Surface(
             shape = RoundedCornerShape(12.dp),
-            color = if (isUsing) MayasTheme.Accent.copy(alpha = 0.08f) else MayasTheme.Surface,
+            color = if (isPreviewing) MayasTheme.Accent.copy(alpha = 0.08f) else MayasTheme.Surface,
             border = BorderStroke(
-                if (isUsing) 1.5.dp else 0.5.dp,
-                if (isUsing) MayasTheme.Accent else MayasTheme.Outline
+                if (isPreviewing) 1.5.dp else 0.5.dp,
+                when {
+                    isPreviewing -> MayasTheme.Accent
+                    rarity != ItemRarity.COMMON -> rarityColor(rarity).copy(alpha = 0.35f)
+                    else -> MayasTheme.Outline
+                }
             ),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 6.dp)
-                .clickable {
-                    if (isOwned) onSelectItem(item.id, ItemType.FONT)
-                    else onBuyItem(item.id, item.price, item.name)
-                }
+                .clickable { previewId = item.id }
         ) {
             Row(
                 modifier = Modifier
@@ -1251,14 +1488,10 @@ private fun FontSection(
                     Text(item.name, color = MayasTheme.TextPrimary, fontSize = 14.sp)
                     ShopItemBadgeRow(item, modifier = Modifier.padding(top = 3.dp))
                 }
-                if (isOwned) {
-                    Text(
-                        if (isUsing) "Используется" else "Куплено",
-                        color = if (isUsing) MayasTheme.Accent else MayasTheme.TextSecondary,
-                        fontSize = 12.sp
-                    )
-                } else {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                when {
+                    isEquipped -> Text("Используется", color = MayasTheme.Accent, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    isOwned -> Text("Куплено", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                    else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text("🪙", fontSize = 12.sp)
                         Text("${item.price}", color = MayasTheme.GlowGold, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                     }
@@ -1276,8 +1509,76 @@ private fun EffectSection(
     onBuyItem: (String, Int, String) -> Unit,
     onSelectItem: (String, ItemType) -> Unit
 ) {
+    var previewId by remember(currentEffect) { mutableStateOf(currentEffect.ifEmpty { "none" }) }
+    val previewItem = effects.find { it.id == previewId }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "effect_pulse")
+    val pulse by infiniteTransition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(tween(700), repeatMode = RepeatMode.Reverse),
+        label = "effect_pulse_scale"
+    )
+
     Text(
-        "ЭФФЕКТЫ ОТПРАВКИ",
+        "ПРЕВЬЮ ЭФФЕКТА",
+        color = MayasTheme.TextSecondary,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 0.08.em
+    )
+    Spacer(Modifier.height(10.dp))
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MayasTheme.Surface)
+            .padding(14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(38.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    previewItem?.icon ?: "✨",
+                    fontSize = 26.sp,
+                    modifier = Modifier.graphicsLayer(
+                        scaleX = if (previewId != "none") pulse else 1f,
+                        scaleY = if (previewId != "none") pulse else 1f
+                    )
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    previewItem?.name ?: "Без эффекта",
+                    color = MayasTheme.TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    "Так отправится сообщение",
+                    color = MayasTheme.TextSecondary,
+                    fontSize = 11.5.sp
+                )
+            }
+            if (previewItem != null && previewId != "none") {
+                ShopPreviewActions(
+                    isEquipped = currentEffect.ifEmpty { "none" } == previewId,
+                    isOwned = ownedItems.contains(previewId),
+                    price = previewItem.price,
+                    onApply = { onSelectItem(previewId, ItemType.EFFECT) },
+                    onBuy = { onBuyItem(previewId, previewItem.price, previewItem.name) }
+                )
+            }
+        }
+    }
+
+    Spacer(Modifier.height(18.dp))
+    Text(
+        "ВСЕ ЭФФЕКТЫ",
         color = MayasTheme.TextSecondary,
         fontSize = 11.sp,
         fontWeight = FontWeight.SemiBold,
@@ -1296,20 +1597,23 @@ private fun EffectSection(
     ) {
         items(effects, key = { it.id }) { item ->
             val isOwned = item.id == "none" || ownedItems.contains(item.id)
-            val isUsing = currentEffect.ifEmpty { "none" } == item.id
+            val isEquipped = currentEffect.ifEmpty { "none" } == item.id
+            val isPreviewing = previewId == item.id
+            val rarity = ShopConstants.rarityOf(item)
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = if (isUsing) MayasTheme.Accent.copy(alpha = 0.08f) else MayasTheme.Surface,
+                color = if (isPreviewing) MayasTheme.Accent.copy(alpha = 0.08f) else MayasTheme.Surface,
                 border = BorderStroke(
-                    if (isUsing) 1.5.dp else 0.5.dp,
-                    if (isUsing) MayasTheme.Accent else MayasTheme.Outline
+                    if (isPreviewing) 1.5.dp else 0.5.dp,
+                    when {
+                        isPreviewing -> MayasTheme.Accent
+                        rarity != ItemRarity.COMMON -> rarityColor(rarity).copy(alpha = 0.35f)
+                        else -> MayasTheme.Outline
+                    }
                 ),
                 modifier = Modifier
                     .aspectRatio(1f)
-                    .clickable {
-                        if (isOwned) onSelectItem(item.id, ItemType.EFFECT)
-                        else onBuyItem(item.id, item.price, item.name)
-                    }
+                    .clickable { previewId = item.id }
             ) {
                 Column(
                     modifier = Modifier
@@ -1322,10 +1626,10 @@ private fun EffectSection(
                     Spacer(Modifier.height(3.dp))
                     Text(item.name, fontSize = 9.5.sp, color = MayasTheme.TextSecondary, maxLines = 1, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(2.dp))
-                    if (isOwned) {
-                        Icon(Icons.Default.Check, null, tint = MayasTheme.Accent, modifier = Modifier.size(12.dp))
-                    } else {
-                        Text("${item.price} 🪙", fontSize = 9.5.sp, color = MayasTheme.TextSecondary)
+                    when {
+                        isEquipped -> Icon(Icons.Default.Check, null, tint = MayasTheme.Accent, modifier = Modifier.size(12.dp))
+                        isOwned -> Text("Есть", fontSize = 9.5.sp, color = MayasTheme.TextSecondary)
+                        else -> Text("${item.price} 🪙", fontSize = 9.5.sp, color = MayasTheme.TextSecondary)
                     }
                 }
             }
@@ -1374,7 +1678,7 @@ fun ShopDialog(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column {
-                // Header
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1423,7 +1727,7 @@ fun ShopDialog(
 
                 AnimatedContent(
                     targetState = selectedCategory,
-                    modifier = Modifier.heightIn(max = 520.dp),
+                    modifier = Modifier.heightIn(max = 600.dp),
                     transitionSpec = {
                         (fadeIn(tween(150)) togetherWith fadeOut(tween(150)))
                     },
@@ -1660,8 +1964,7 @@ fun ProfileTopBar(
     )
 }
 
-// StatusBadge переиспользует уже существующий EmojiStatusView (поддерживает и обычные эмодзи,
-// и кастомные "icon:"-иконки), чтобы не дублировать логику отображения статуса.
+
 @Composable
 fun StatusBadge(value: String, fontSize: androidx.compose.ui.unit.TextUnit = 20.sp) {
     EmojiStatusView(status = value, size = fontSize)
