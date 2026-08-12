@@ -50,7 +50,7 @@ object ShopConstants {
         "🎯" to 45, "🎧" to 45, "🛹" to 45,
         "🌈" to 50, "🦋" to 50,
         "🎮" to 55, "🧠" to 60,
-        "🧿" to 65, "🛡️" to 75,
+        "🧿" to 65, "🛡️" to 75,  "🥥" to 50, "🤍" to 50,
 
 
         "🛸" to 100, "🚀" to 120,
