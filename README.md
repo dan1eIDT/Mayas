@@ -69,6 +69,8 @@
 
 Google Play - Релиз планируется! (да хоть когда то)
 
+AppGallery - **https://appgallery.huawei.com/app/C118665147 ** (там пока что самая новая версия)
+
 Трешбокс - **https://trashbox.ru/topics/213264/mayas**
 
 Требования: Android 8.0+
