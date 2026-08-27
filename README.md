@@ -87,6 +87,7 @@ AppGallery - **https://appgallery.huawei.com/app/C118665147** (там пока �
 
 
 Наш тгк - https://t.me/mayasIDT
+
 Канал - https://dan1eidt.github.io/mayas-site/join/?code=0L8LA0my89
 
 ## Статус проекта
