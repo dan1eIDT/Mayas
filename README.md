@@ -1,3 +1,4 @@
+
 # Mayas (Маяс)
 
 <img width="122" height="122" alt="mayas" src="https://github.com/user-attachments/assets/36c28379-6f32-434b-a8e3-81217a981eb9" />
@@ -66,7 +67,9 @@
 
 ### Или же в..
 
-Google Play - Релиз планируется на 30 июля!
+Google Play - Релиз планируется! (да хоть когда то)
+
+AppGallery - **https://appgallery.huawei.com/app/C118665147** (там пока что самая новая версия)
 
 Трешбокс - **https://trashbox.ru/topics/213264/mayas**
 
@@ -100,9 +103,8 @@ Google Play - Релиз планируется на 30 июля!
 
 ## Лицензия
 
-Лицензия не указана. Все права на проект принадлежат авторам.
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details
 
-Mayas не аффилирован с какими-либо сторонними мессенджерами или сервисами.
 
 ---
 
