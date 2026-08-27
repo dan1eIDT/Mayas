@@ -12,9 +12,13 @@ sealed class Screen(val route: String) {
     }
     object Premium : Screen("premium")
     object Shop : Screen("shop")
+    object AdminShop : Screen("admin_shop")
     object Settings : Screen("settings")
+    object Notifications : Screen("notifications")
     object Customization : Screen("customization")
     object Themes : Screen("themes")
+    object HomeScreenLayout : Screen("home_screen_layout")
+    object SidebarLayout : Screen("sidebar_layout")
     object ThemeEditor : Screen("theme_editor?themeName={themeName}") {
         fun create(themeName: String? = null) =
             if (themeName != null) "theme_editor?themeName=$themeName" else "theme_editor"

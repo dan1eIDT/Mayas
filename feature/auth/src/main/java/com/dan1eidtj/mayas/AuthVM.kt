@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.dan1eidtj.data.FirestoreListenerCoordinator
+import com.dan1eidtj.data.PhoneUtils
 import com.dan1eidtj.data.SessionManager
 import com.dan1eidtj.data.UserSession
 import com.google.firebase.FirebaseNetworkException
@@ -30,6 +31,8 @@ import com.dan1eidtj.mayas.core_ui.Screen
 import kotlinx.coroutines.launch
 import com.dan1eidtj.mayas.db.ChatRepository
 import kotlinx.coroutines.tasks.await
+import com.dan1eidtj.data.buyShopItemViaBackend
+import com.dan1eidtj.data.BuyItemResult
 
 class AuthVM(application: Application) : AndroidViewModel(application) {
 
@@ -681,6 +684,107 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             .addOnFailureListener { onResult(null) }
     }
 
+    /**
+     * Ищет пользователя по номеру телефона через phoneIndex/{номер} — это точечный
+     * get() по известному ID документа, а не listing/query по полю. Firestore-правила
+     * различают get и list: get на phoneIndex разрешён, а list по этой коллекции
+     * запрещён навсегда (см. firestore.rules) — так что массово слить все номера
+     * через клиент физически нельзя, а точечный поиск "у кого такой-то номер" работает.
+     */
+    fun resolveUserByPhone(phone: String, onResult: (Map<String, Any?>?) -> Unit) {
+        val normalized = PhoneUtils.normalize(phone)
+        if (normalized == null) { onResult(null); return }
+
+        db.collection("phoneIndex").document(normalized).get()
+            .addOnSuccessListener { indexDoc ->
+                val uid = indexDoc.getString("uid")
+                if (uid == null) { onResult(null); return@addOnSuccessListener }
+
+                db.collection("users").document(uid).get()
+                    .addOnSuccessListener { userDoc ->
+                        if (!userDoc.exists()) { onResult(null); return@addOnSuccessListener }
+                        val data = userDoc.data?.toMutableMap() ?: mutableMapOf()
+                        data["uid"] = userDoc.id
+                        onResult(data)
+                    }
+                    .addOnFailureListener { onResult(null) }
+            }
+            .addOnFailureListener { onResult(null) }
+    }
+
+    /**
+     * Читает СВОЙ собственный номер из приватной подколлекции users/{uid}/private/contact.
+     * Эта подколлекция читается только владельцем (см. firestore.rules) — даже другой
+     * авторизованный юзер получит permission-denied, если попробует её запросить напрямую.
+     * Используется, например, чтобы подставить текущий номер в поле редактирования профиля.
+     */
+    fun getMyPhone(onResult: (String) -> Unit) {
+        val uid = auth.currentUser?.uid ?: run { onResult(""); return }
+        db.collection("users").document(uid).collection("private").document("contact").get()
+            .addOnSuccessListener { doc -> onResult(doc.getString("phone") ?: "") }
+            .addOnFailureListener { onResult("") }
+    }
+
+    /**
+     * Сохраняет номер телефона текущего юзера.
+     * Номер НЕ пишется в users/{uid} (этот документ читают все signed-in юзеры) —
+     * вместо этого:
+     *  1) кладётся в приватную users/{uid}/private/contact, которую видит только сам юзер;
+     *  2) кладётся в phoneIndex/{номер} = {uid} — это единственный способ найти юзера
+     *     по номеру, и он доступен только через точечный get(), не через list().
+     * Пустая строка отвязывает номер: удаляются оба документа.
+     * Если юзер меняет номер на другой — старая запись в phoneIndex подчищается,
+     * чтобы по старому номеру его больше нельзя было найти.
+     */
+    fun updatePhoneNumber(rawPhone: String, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
+        val uid = auth.currentUser?.uid ?: return
+        val trimmed = rawPhone.trim()
+        val privateContactRef = db.collection("users").document(uid).collection("private").document("contact")
+
+        privateContactRef.get().addOnSuccessListener { existingDoc ->
+            val oldPhone = existingDoc.getString("phone")
+
+            if (trimmed.isEmpty()) {
+                val batch = db.batch()
+                batch.delete(privateContactRef)
+                if (oldPhone != null) batch.delete(db.collection("phoneIndex").document(oldPhone))
+                batch.commit()
+                    .addOnSuccessListener { onSuccess() }
+                    .addOnFailureListener { e -> onError(e.localizedMessage ?: "Ошибка сохранения номера") }
+                return@addOnSuccessListener
+            }
+
+            val normalized = PhoneUtils.normalize(trimmed)
+            if (normalized == null) {
+                onError("Похоже, номер введён некорректно")
+                return@addOnSuccessListener
+            }
+
+            if (normalized == oldPhone) {
+                // Номер не поменялся, писать нечего
+                onSuccess()
+                return@addOnSuccessListener
+            }
+
+            val newIndexRef = db.collection("phoneIndex").document(normalized)
+            newIndexRef.get().addOnSuccessListener { newIndexDoc ->
+                val claimedByUid = newIndexDoc.getString("uid")
+                if (claimedByUid != null && claimedByUid != uid) {
+                    onError("Этот номер уже привязан к другому аккаунту")
+                    return@addOnSuccessListener
+                }
+
+                val batch = db.batch()
+                if (oldPhone != null) batch.delete(db.collection("phoneIndex").document(oldPhone))
+                batch.set(newIndexRef, mapOf("uid" to uid))
+                batch.set(privateContactRef, mapOf("phone" to normalized))
+                batch.commit()
+                    .addOnSuccessListener { onSuccess() }
+                    .addOnFailureListener { e -> onError(e.localizedMessage ?: "Ошибка сохранения номера") }
+            }.addOnFailureListener { e -> onError(e.localizedMessage ?: "Ошибка проверки номера") }
+        }.addOnFailureListener { e -> onError(e.localizedMessage ?: "Ошибка чтения текущего номера") }
+    }
+
     fun setTyping(chatId: String, isTyping: Boolean) {
         val uid = auth.currentUser?.uid ?: return
         db.collection("chats").document(chatId)
@@ -712,19 +816,18 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
     }
 
     fun buyItem(id: String, price: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
-        val uid = auth.currentUser?.uid ?: return
+        if (auth.currentUser?.uid == null) return
 
-        db.runTransaction { transaction ->
-            val userRef = db.collection("users").document(uid)
-            val snapshot = transaction.get(userRef)
-            val balance = snapshot.getLong("balance") ?: 0L
-
-            if (balance < price) throw Exception("Недостаточно монет!")
-
-            transaction.update(userRef, "balance", balance - price)
-            transaction.update(userRef, "ownedItems", FieldValue.arrayUnion(id))
-        }.addOnSuccessListener { onSuccess() }
-            .addOnFailureListener { onError(it.localizedMessage ?: "Ошибка транзакции") }
+        viewModelScope.launch {
+            when (val result = buyShopItemViaBackend(id)) {
+                is BuyItemResult.Success -> onSuccess()
+                BuyItemResult.LowBalance -> onError("Недостаточно монет!")
+                BuyItemResult.AlreadyOwned -> onError("Уже куплено")
+                BuyItemResult.ItemNotFound -> onError("Товар не найден")
+                BuyItemResult.OutOfSeason -> onError("Товар сейчас недоступен")
+                is BuyItemResult.Error -> onError(result.message)
+            }
+        }
     }
 
     fun useItem(id: String, type: com.dan1eidtj.data.ItemType) {

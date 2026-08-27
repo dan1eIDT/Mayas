@@ -108,6 +108,7 @@ fun ProfileScreen(
     var adsResetAt by remember { mutableStateOf(0L) }
     var isInvisible by remember { mutableStateOf(false) }
     var nameColor by remember { mutableStateOf("gold") }
+    var phone by remember { mutableStateOf("") }
 
     var isEditing by remember { mutableStateOf(false) }
     var isUsernameAvailable by remember { mutableStateOf(true) }
@@ -215,6 +216,14 @@ fun ProfileScreen(
                 }
             }
         onDispose { reg.remove() }
+    }
+
+    // Номер телефона больше не приходит в общем снапшоте users/{uid} (его там больше нет —
+    // вынесен в приватную подколлекцию, чтобы никто, кроме владельца, не мог его прочитать).
+    // Подгружаем отдельно, только для своего профиля.
+    LaunchedEffect(finalId, isGroup, isMyProfile) {
+        if (isGroup || !isMyProfile || finalId.isBlank()) return@LaunchedEffect
+        vm.getMyPhone { phone = it }
     }
 
     LaunchedEffect(finalId, isGroup, isMyProfile, adsResetAt, adsWatchedToday) {
@@ -353,6 +362,17 @@ fun ProfileScreen(
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
+
+                        // Номер телефона сохраняем отдельным вызовом: там своя нормализация
+                        // (E.164) и валидация, поэтому его не пихаем в общий updates-мап.
+                        if (isMyProfile) {
+                            vm.updatePhoneNumber(
+                                rawPhone = phone,
+                                onError = { msg ->
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
                     }
                     isEditing = !isEditing
                 }
@@ -402,7 +422,10 @@ fun ProfileScreen(
                     onUsernameChange = { username = it },
                     onDescChange = { desc = it },
                     desc = desc,
-                    onMembersClick = { showGroupMembers = true }
+                    onMembersClick = { showGroupMembers = true },
+                    isMyProfile = isMyProfile,
+                    phone = phone,
+                    onPhoneChange = { phone = it }
                 )
             }
 
@@ -874,7 +897,10 @@ private fun ProfileHeader(
     onAvatarClick: () -> Unit, onAvatarView: () -> Unit = {}, onNameChange: (String) -> Unit,
     onUsernameChange: (String) -> Unit = {},
     onDescChange: (String) -> Unit, desc: String,
-    onMembersClick: () -> Unit = {}
+    onMembersClick: () -> Unit = {},
+    isMyProfile: Boolean = false,
+    phone: String = "",
+    onPhoneChange: (String) -> Unit = {}
 ) {
     val nameBrush = com.dan1eidtj.mayas.core_ui.utils.getNameColorBrush(nameColor)
 
@@ -1002,6 +1028,35 @@ private fun ProfileHeader(
                                 alpha = 0.25f
                             ) else MayasTheme.ErrorRed,
                             focusedLabelColor = if (isUsernameAvailable) MayasTheme.Accent else MayasTheme.ErrorRed,
+                            unfocusedLabelColor = MayasTheme.TextSecondary,
+                            focusedTextColor = MayasTheme.TextPrimary,
+                            unfocusedTextColor = MayasTheme.TextPrimary,
+                            cursorColor = MayasTheme.Accent
+                        )
+                    )
+                }
+
+                if (isMyProfile && !isGroup) {
+                    OutlinedTextField(
+                        value = phone, onValueChange = onPhoneChange,
+                        label = { Text("Номер телефона", fontSize = 12.sp) },
+                        placeholder = { Text("+7 999 123-45-67") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone
+                        ),
+                        supportingText = {
+                            Text(
+                                "По номеру тебя смогут найти другие пользователи. Оставь пустым, чтобы не показывать номер",
+                                color = MayasTheme.TextSecondary,
+                                fontSize = 11.sp
+                            )
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MayasTheme.Accent,
+                            unfocusedBorderColor = MayasTheme.TextSecondary.copy(alpha = 0.25f),
+                            focusedLabelColor = MayasTheme.Accent,
                             unfocusedLabelColor = MayasTheme.TextSecondary,
                             focusedTextColor = MayasTheme.TextPrimary,
                             unfocusedTextColor = MayasTheme.TextPrimary,

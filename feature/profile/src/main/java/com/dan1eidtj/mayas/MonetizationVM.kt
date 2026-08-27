@@ -3,9 +3,13 @@ package com.dan1eidtj.mayas
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.launch
+import com.dan1eidtj.data.buyShopItemViaBackend
+import com.dan1eidtj.data.BuyItemResult
 import java.util.concurrent.TimeUnit
 
 class MonetizationVM : ViewModel() {
@@ -47,31 +51,25 @@ class MonetizationVM : ViewModel() {
 
     fun buyItem(
         itemId: String,
-        price: Int,
         onLowBalance: () -> Unit,
-        onSuccess: () -> Unit,
+        onSuccess: (newBalance: Int) -> Unit,
+        onAlreadyOwned: () -> Unit = {},
+        onOutOfSeason: () -> Unit = {},
         onError: (String) -> Unit = {}
     ) {
         if (uid.isEmpty()) return
 
-        val userRef = db.collection("users").document(uid)
-
-        db.runTransaction { transaction ->
-            val snapshot = transaction.get(userRef)
-            val balance = snapshot.getLong("balance") ?: 0L
-
-            if (balance < price) throw Exception("LOW_BALANCE")
-
-            transaction.update(userRef, "balance", FieldValue.increment(-price.toLong()))
-            transaction.update(userRef, "ownedItems", FieldValue.arrayUnion(itemId))
-        }.addOnSuccessListener {
-            onSuccess()
-        }.addOnFailureListener { e ->
-            if (e.message == "LOW_BALANCE") {
-                onLowBalance()
-            } else {
-                Log.e("MonetizationVM", "Ошибка покупки", e)
-                onError(e.localizedMessage ?: "Ошибка транзакции")
+        viewModelScope.launch {
+            when (val result = buyShopItemViaBackend(itemId)) {
+                is BuyItemResult.Success -> onSuccess(result.newBalance)
+                BuyItemResult.LowBalance -> onLowBalance()
+                BuyItemResult.AlreadyOwned -> onAlreadyOwned()
+                BuyItemResult.OutOfSeason -> onOutOfSeason()
+                BuyItemResult.ItemNotFound -> onError("Товар не найден")
+                is BuyItemResult.Error -> {
+                    Log.e("MonetizationVM", "Ошибка покупки: ${result.message}")
+                    onError(result.message)
+                }
             }
         }
     }

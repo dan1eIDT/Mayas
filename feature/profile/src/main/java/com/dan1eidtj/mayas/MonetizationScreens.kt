@@ -1,6 +1,7 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.dan1eidtj.mayas
 
+import android.annotation.SuppressLint
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
@@ -58,6 +59,7 @@ enum class SubscriptionPlan(
     MONTHLY("1 Месяц", "59 ₽", "/ мес", null, false),
     ANNUAL("1 Год", "499 ₽", "/ год", "ВЫГОДА 30%", true)
 }
+
 
 
 fun Modifier.bounceClick(onClick: () -> Unit) = this.then(

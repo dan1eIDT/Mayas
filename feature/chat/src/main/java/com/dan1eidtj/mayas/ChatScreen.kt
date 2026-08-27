@@ -2307,6 +2307,14 @@ fun ThemePickerDialog(
     onSelect: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val themeNames = mapOf(
+        ChatThemeId.DEFAULT to "Обычная",
+        ChatThemeId.PURPLE to "Фиолетовая",
+        ChatThemeId.BLUE to "Голубая",
+        ChatThemeId.RED to "Красная",
+        ChatThemeId.GOLD to "Золотая",
+        ChatThemeId.PINK to "Розовая"
+    )
     val themes = listOf(
         ChatThemeId.DEFAULT to MayasTheme.BubbleOther,
         ChatThemeId.PURPLE to MayasTheme.GlowPurple,
@@ -2317,50 +2325,80 @@ fun ThemePickerDialog(
     )
 
     val premiumThemes = listOf(ChatThemeId.GOLD, ChatThemeId.PINK)
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
+        sheetState = sheetState,
         containerColor = MayasTheme.Surface,
-        title = { Text("Выберите тему чата", color = MayasTheme.TextPrimary) },
-        text = {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                themes.forEach { (name, color) ->
-                    val isLocked = premiumThemes.contains(name) && !isPremium
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(CircleShape)
-                            .background(color)
-                            .border(
-                                width = if (currentTheme == name) 3.dp else 1.dp,
-                                color = if (currentTheme == name) MayasTheme.Accent else MayasTheme.TextSecondary.copy(0.3f),
-                                shape = CircleShape
-                            )
-                            .clickable {
+        dragHandle = { BottomSheetDefaults.DragHandle(color = MayasTheme.TextSecondary.copy(0.4f)) }
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 24.dp)
+        ) {
+            Text(
+                "Тема чата",
+                color = MayasTheme.TextPrimary,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(bottom = 20.dp)
+            )
+
+            themes.chunked(3).forEach { rowThemes ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    rowThemes.forEach { (name, color) ->
+                        val isLocked = premiumThemes.contains(name) && !isPremium
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.width(80.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(60.dp)
+                                    .aspectRatio(1f)
+                                    .clip(CircleShape)
+                                    .background(color)
+                                    .border(
+                                        width = if (currentTheme == name) 3.dp else 1.dp,
+                                        color = if (currentTheme == name) MayasTheme.Accent else MayasTheme.TextSecondary.copy(0.3f),
+                                        shape = CircleShape
+                                    )
+                                    .clickable {
+                                        if (isLocked) {
+                                            Toast.makeText(context, "Эта тема доступна только в Mayas+", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            onSelect(name)
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
                                 if (isLocked) {
-                                    Toast.makeText(context, "Эта тема доступна только в Mayas+", Toast.LENGTH_SHORT).show()
-                                } else {
-                                    onSelect(name)
+                                    Icon(Icons.Default.Lock, null, tint = Color.White.copy(0.7f), modifier = Modifier.size(22.dp))
+                                } else if (currentTheme == name) {
+                                    Icon(Icons.Default.Check, null, tint = Color.White)
                                 }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isLocked) {
-                            Icon(Icons.Default.Lock, null, tint = Color.White.copy(0.7f), modifier = Modifier.size(20.dp))
-                        } else if (currentTheme == name) {
-                            Icon(Icons.Default.Check, null, tint = Color.White)
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                themeNames[name] ?: "",
+                                color = MayasTheme.TextSecondary,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
+                    repeat(3 - rowThemes.size) { Spacer(Modifier.width(80.dp)) }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
         }
-    )
+    }
 }
 
 @Composable

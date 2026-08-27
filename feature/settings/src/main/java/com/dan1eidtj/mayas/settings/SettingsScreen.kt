@@ -31,11 +31,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.dan1eidtj.data.UserSession
+import com.dan1eidtj.data.AdminConfig
 import com.dan1eidtj.data.cache.CacheStats
 import com.dan1eidtj.data.cache.ImageCacheManager
 import com.dan1eidtj.data.cache.formatCacheSize
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.mayas.feature.auth.AuthVM
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -50,7 +52,10 @@ fun SettingsScreen(
     onNavigateToCredits: () -> Unit,
     onNavigateToAuth: () -> Unit,
     onNavigateToCustomization: () -> Unit,
-    onNavigateToThemes: () -> Unit
+    onNavigateToThemes: () -> Unit,
+    onNavigateToAdminShop: () -> Unit,
+    onNavigateToHomeScreenLayout: () -> Unit = {},
+    onNavigateToSidebarLayout: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -63,6 +68,7 @@ fun SettingsScreen(
     }
 
     var showChatSettings by remember { mutableStateOf(false) }
+    var showInterfaceSettings by remember { mutableStateOf(false) }
     var showPrivacy by remember { mutableStateOf(false) }
     var showSecurity by remember { mutableStateOf(false) }
     var showAccountSheet by remember { mutableStateOf(false) }
@@ -236,6 +242,41 @@ fun SettingsScreen(
                     iconColor = MayasTheme.Accent,
                     onClick = onNavigateToThemes
                 )
+            }
+
+            item {
+                SettingsItem(
+                    icon = Icons.Default.Dashboard,
+                    title = "Настройка интерфейса",
+                    subtitle = "Расположение элементов главного экрана и панели",
+                    iconColor = MayasTheme.Accent,
+                    onClick = { showInterfaceSettings = !showInterfaceSettings }
+                )
+            }
+
+            item {
+                AnimatedVisibility(
+                    visible = showInterfaceSettings,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    InterfaceSettingsSubSection(
+                        onNavigateToHomeScreenLayout = onNavigateToHomeScreenLayout,
+                        onNavigateToSidebarLayout = onNavigateToSidebarLayout
+                    )
+                }
+            }
+
+            if (AdminConfig.isAdmin(FirebaseAuth.getInstance().currentUser?.uid)) {
+                item {
+                    SettingsItem(
+                        icon = Icons.Default.Storefront,
+                        title = "Админка магазина",
+                        subtitle = "Добавление и редактирование товаров",
+                        iconColor = MayasTheme.Accent,
+                        onClick = onNavigateToAdminShop
+                    )
+                }
             }
 
             item {
@@ -596,6 +637,69 @@ fun ChatSettingsSubSection(vm: AuthVM) {
                     vm.updateUserData("sendByEnter", enabled.toString())
                 },
                 colors = SwitchDefaults.colors(checkedThumbColor = MayasTheme.Accent)
+            )
+        }
+    }
+}
+
+@Composable
+fun InterfaceSettingsSubSection(
+    onNavigateToHomeScreenLayout: () -> Unit,
+    onNavigateToSidebarLayout: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MayasTheme.SurfaceVariant.copy(alpha = 0.3f))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { onNavigateToHomeScreenLayout() }
+                .padding(vertical = 10.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Home, null, tint = MayasTheme.TextPrimary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Настройка главного экрана", color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text("Расположение поиска, вкладок и списка чатов", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+            }
+            Icon(Icons.Default.ChevronRight, null, tint = MayasTheme.TextSecondary.copy(alpha = 0.3f))
+        }
+
+        HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { onNavigateToSidebarLayout() }
+                .padding(vertical = 10.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Menu, null, tint = MayasTheme.TextPrimary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Настройка боковой панели", color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text("Порядок и расположение пунктов меню", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+            }
+            Icon(Icons.Default.ChevronRight, null, tint = MayasTheme.TextSecondary.copy(alpha = 0.3f))
+        }
+
+        HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
+
+        Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(top = 8.dp)) {
+            Icon(Icons.Default.Info, null, tint = MayasTheme.TextSecondary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(10.dp))
+            Text(
+                "На разных DPI настройка отличается. Между устройствами не синхронизируется.",
+                color = MayasTheme.TextSecondary,
+                fontSize = 12.sp
             )
         }
     }
@@ -1156,4 +1260,4 @@ fun SettingsSectionTitle(title: String) {
         fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)
     )
-}
+} 

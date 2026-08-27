@@ -50,8 +50,14 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
     private val _partnerPresence = MutableStateFlow<Map<String, Map<String, Any?>>>(emptyMap())
     val partnerPresence: StateFlow<Map<String, Map<String, Any?>>> = _partnerPresence.asStateFlow()
 
+    // Счётчик непрочитанных уведомлений (пропущенные звонки, системные, промо/акции)
+    // для бейджа на колокольчике в ChatListScreen
+    private val _unreadNotificationsCount = MutableStateFlow(0)
+    val unreadNotificationsCount: StateFlow<Int> = _unreadNotificationsCount.asStateFlow()
+
     private var chatsListener: ListenerRegistration? = null
     private var myProfileListener: ListenerRegistration? = null
+    private var notificationsListener: ListenerRegistration? = null
     private val partnerListeners = mutableMapOf<String, ListenerRegistration>()
 
     private var listeningUid: String? = null
@@ -106,6 +112,20 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                         "isGroup" to false
                     )
                 }
+            }
+
+        // Слушаем коллекцию уведомлений пользователя: /users/{uid}/notifications
+        // Ожидаемая структура документа: { type: "missed_call" | "system" | "promo", isRead: Boolean, ... }
+        // Подгони путь/поля под свою реальную схему в Firestore, если она отличается
+        notificationsListener = db.collection("users").document(uid)
+            .collection("notifications")
+            .whereEqualTo("isRead", false)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e("ChatListVM", "Ошибка снапшота уведомлений", error)
+                    return@addSnapshotListener
+                }
+                _unreadNotificationsCount.value = snapshot?.size() ?: 0
             }
 
         chatsListener = db.collection("chats")
@@ -182,7 +202,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                                     .firstOrNull { doc ->
                                         val participants = doc.get("participants") as? List<*>
                                         participants?.contains(partnerUid) == true &&
-                                            participants.contains(uid)
+                                                participants.contains(uid)
                                     }?.id ?: return@addSnapshotListener
 
                                 viewModelScope.launch {
@@ -206,11 +226,14 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
         chatsListener = null
         myProfileListener?.remove()
         myProfileListener = null
+        notificationsListener?.remove()
+        notificationsListener = null
         partnerListeners.values.forEach { it.remove() }
         partnerListeners.clear()
         listeningUid = null
         _myProfile.value = emptyMap()
         _partnerPresence.value = emptyMap()
+        _unreadNotificationsCount.value = 0
         syncState.value = SyncState.IDLE
     }
 

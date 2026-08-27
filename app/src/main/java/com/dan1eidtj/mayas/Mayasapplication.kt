@@ -8,6 +8,7 @@ import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.multidex.MultiDexApplication
+import com.dan1eidtj.data.ShopRepository
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CoroutineScope
@@ -45,6 +46,7 @@ class MayasApplication : MultiDexApplication(), CallManagerProvider {
     override fun onCreate() {
         installFirestorePermissionDeniedSafetyNet()
         super.onCreate()
+        ShopRepository.startListening()
         observeAppForegroundState()
         observeOutgoingCallsToStartService()
     }

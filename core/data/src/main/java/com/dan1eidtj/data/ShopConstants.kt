@@ -4,6 +4,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import java.util.Calendar
 import kotlin.random.Random
+import androidx.core.graphics.toColorInt
 
 object ShopConstants {
     val BUBBLE_STYLES = listOf(
@@ -237,12 +238,10 @@ object ShopConstants {
             get() = (item.price * (100 - discountPercent) / 100).coerceAtLeast(1)
     }
 
-    fun getDailyDeals(count: Int = 4): List<DailyDeal> {
-
-        val pool = (BUBBLE_STYLES + EMOJI_STATUSES + ICON_STATUSES + FONT_STYLES + EFFECT_STYLES)
-            .filter { it.price > 0 }
+    fun getDailyDeals(count: Int = 4, pool: List<ShopItem>? = null): List<DailyDeal> {
+        val basePool = (pool ?: fallbackItems()).filter { it.price > 0 }
         val seed = dailySeed()
-        val chosen = pool.shuffled(Random(seed)).take(count)
+        val chosen = basePool.shuffled(Random(seed)).take(count)
         return chosen.map { item ->
             val discount = listOf(10, 15, 20, 25, 30)
                 .shuffled(Random(seed * 31 + item.id.hashCode()))
@@ -261,3 +260,20 @@ object ShopConstants {
         return (cal.timeInMillis - System.currentTimeMillis()).coerceAtLeast(0)
     }
 }
+
+fun ShopConstants.fallbackItems(): List<ShopItem> =
+    BUBBLE_STYLES + ALL_STATUSES + FONT_STYLES + EFFECT_STYLES
+
+fun ShopConstants.colorFor(item: ShopItem): Color =
+    item.colorHex?.let { runCatching { Color(it.toColorInt()) }.getOrNull() }
+        ?: getStyleColor(item.id)
+
+fun ShopConstants.gradientFor(item: ShopItem): List<Color> =
+    item.gradientHex.takeIf { it.isNotEmpty() }
+        ?.mapNotNull { runCatching { Color(it.toColorInt()) }.getOrNull() }
+        ?.takeIf { it.isNotEmpty() }
+        ?: getStyleGradient(item.id)
+
+fun ShopConstants.textColorFor(item: ShopItem): Color =
+    item.textColorHex?.let { runCatching { Color(it.toColorInt()) }.getOrNull() }
+        ?: getStyleTextColor(item.id)

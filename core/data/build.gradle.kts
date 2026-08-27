@@ -65,6 +65,9 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.kotlinx.coroutines.play.services)
 
+    // Нормализация и валидация номеров телефона (общая для всех модулей)
+    implementation(libs.libphonenumber)
+
     // тесты
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

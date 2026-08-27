@@ -102,6 +102,13 @@ fun ThemeEditorScreen(
                         onClick = { editingField = field }
                     )
                 }
+                item {
+                    Text(
+                        text = "Темы между устройствами не синхронизируются.",
+                        color = MayasTheme.TextSecondary,
+                        modifier = Modifier.padding(top = 12.dp, start = 4.dp, end = 4.dp)
+                    )
+                }
                 item { Spacer(modifier = Modifier.height(24.dp)) }
             }
         }

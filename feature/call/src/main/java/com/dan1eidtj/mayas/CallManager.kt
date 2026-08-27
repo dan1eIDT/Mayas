@@ -12,8 +12,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withTimeoutOrNull
 import com.dan1eidtj.mayas.WebRtcClient
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
 
 class CallManager(
     private val callRepository: CallRepository,
@@ -39,6 +42,13 @@ class CallManager(
     private var remoteAnswerApplied = false
     private var remoteDescriptionSet = false
     private val pendingRemoteCandidates = mutableListOf<IceCandidateData>()
+
+    // Отслеживаем, успел ли этот звонок дойти до CONNECTED — если нет и мы на стороне
+    // RECEIVER, значит звонок пропущен, и надо записать уведомление
+    private var wasConnectedThisCall = false
+    private var missedCallLogged = false
+
+    private val db by lazy { FirebaseFirestore.getInstance() }
 
 
 
@@ -109,6 +119,7 @@ class CallManager(
         @RequiresPermission(Manifest.permission.VIBRATE)
         override fun onIceConnected() {
             val callId = _activeCall.value?.callId ?: return
+            wasConnectedThisCall = true
             callFeedbackController.stop()
 
             managerScope.launch {
@@ -147,6 +158,8 @@ class CallManager(
                     _activeCall.value = session
                     _callState.value = CallState.INCOMING
                     currentRole = CallParticipantRole.RECEIVER
+                    wasConnectedThisCall = false
+                    missedCallLogged = false
                     callFeedbackController.startIncoming()
                     attachToCall(session.callId)
                 }
@@ -312,6 +325,7 @@ class CallManager(
 
     fun rejectCall() {
         val callId = _activeCall.value?.callId ?: return
+        _activeCall.value?.let { session -> tryLogMissedCall(session) }
         _callState.value = CallState.REJECTED
         managerScope.launch {
             callRepository.updateCallState(callId, CallState.REJECTED)
@@ -376,6 +390,7 @@ class CallManager(
     }
 
     private fun handleCallEndedRemotely() {
+        _activeCall.value?.let { session -> tryLogMissedCall(session) }
         resetLocalState()
     }
 
@@ -396,12 +411,60 @@ class CallManager(
             remoteDescriptionSet = false
             pendingRemoteCandidates.clear()
             acceptingCallId = null
+            wasConnectedThisCall = false
+            missedCallLogged = false
 
             _activeCall.value = null
             _callState.value = CallState.IDLE
             _callError.value = null
             _isMuted.value = false
             _isSpeakerOn.value = false
+        }
+    }
+
+    /**
+     * Записывает "пропущенный звонок" в notifications получателя, если этот звонок
+     * ни разу не дошёл до CONNECTED и текущий пользователь был на приёме (RECEIVER).
+     * Защищено флагом missedCallLogged от повторной записи одного и того же звонка.
+     *
+     * ВАЖНО: используются поля session.callerId и session.receiverId — если в твоём
+     * CallSession они называются иначе, поправь тут под реальную схему.
+     */
+    private fun tryLogMissedCall(session: CallSession) {
+        if (missedCallLogged) return
+        if (currentRole != CallParticipantRole.RECEIVER) return
+        if (wasConnectedThisCall) return
+        missedCallLogged = true
+
+        val receiverId = currentUserIdProvider()
+        val callerId = session.callerId
+        if (callerId.isBlank() || receiverId.isBlank()) return
+
+        managerScope.launch {
+            try {
+                val callerDoc = db.collection("users").document(callerId).get().await()
+                val callerName = callerDoc.getString("name")
+                    ?: callerDoc.getString("username")
+                    ?: "Неизвестный"
+                val chatId = listOf(callerId, receiverId).sorted().joinToString("_")
+
+                db.collection("users").document(receiverId)
+                    .collection("notifications")
+                    .add(
+                        mapOf(
+                            "type" to "missed_call",
+                            "title" to "Пропущенный звонок",
+                            "body" to callerName,
+                            "createdAt" to FieldValue.serverTimestamp(),
+                            "isRead" to false,
+                            "chatId" to chatId,
+                            "callerId" to callerId,
+                            "callType" to session.type.name
+                        )
+                    ).await()
+            } catch (e: Exception) {
+                Log.e("CallManager", "Не удалось записать пропущенный звонок", e)
+            }
         }
     }
 }

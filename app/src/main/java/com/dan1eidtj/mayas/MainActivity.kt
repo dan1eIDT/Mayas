@@ -41,11 +41,15 @@ import com.dan1eidtj.mayas.feature.ChatScreen
 import com.dan1eidtj.mayas.feature.ChatVM
 import com.dan1eidtj.mayas.feature.JoinInviteFlow
 import com.dan1eidtj.mayas.feature.chats.ChatListScreen.ChatListScreen
+import com.dan1eidtj.mayas.NotificationsScreen
 import com.dan1eidtj.mayas.ads.AdsManager
 import com.dan1eidtj.mayas.core_ui.Screen
 import com.dan1eidtj.mayas.settings.CustomizationScreen
 import com.dan1eidtj.mayas.settings.SettingsScreen
 import com.dan1eidtj.mayas.settings.ThemesScreen
+import com.dan1eidtj.mayas.settings.HomeScreenLayoutScreen
+import com.dan1eidtj.mayas.settings.SidebarLayoutScreen
+import com.dan1eidtj.mayas.core.ui.theme.LayoutPreferences
 import com.dan1eidtj.mayas.ui.theme.ThemePreferences
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
@@ -220,6 +224,17 @@ fun MayasApp(
     val monetizationVm: MonetizationVM = viewModel()
     val user = vm.user
     var showUserSearchDialog by remember { mutableStateOf(false) }
+
+    // Настройки расположения элементов интерфейса — локальные для устройства,
+    // не синхронизируются между устройствами (см. LayoutPreferences)
+    val layoutPrefsContext = LocalContext.current
+    var homeScreenLayoutPrefs by remember {
+        mutableStateOf(LayoutPreferences.loadHomeScreenLayoutPrefs(layoutPrefsContext))
+    }
+    var sidebarLayoutPrefs by remember {
+        mutableStateOf(LayoutPreferences.loadSidebarLayoutPrefs(layoutPrefsContext))
+    }
+
     LaunchedEffect(user) {
         if (user == null) {
             callManager.stopListeningForIncomingCalls()
@@ -277,13 +292,20 @@ fun MayasApp(
                         onStartChat = { chatId -> navController.navigate(Screen.Chat.create(chatId)) },
                         onOpenProfile = { uid -> navController.navigate(Screen.Profile.create(uid, isGroup = false)) },
                         onOpenSettings = { navController.navigate(Screen.Settings.route) },
+                        onOpenNotifications = { navController.navigate(Screen.Notifications.route) },
                         onOpenCredits = { navController.navigate(Screen.Credits.route) },
                         onLogout = {
                             vm.logout()
                             navController.navigate(Screen.Auth.route) { popUpTo(0) }
                         },
                         onOpenUserSearch = { showUserSearchDialog = true },
-                        onDismissUserSearch = { showUserSearchDialog = false }
+                        onDismissUserSearch = { showUserSearchDialog = false },
+                        homeLayoutPrefs = homeScreenLayoutPrefs,
+                        sidebarLayoutPrefs = sidebarLayoutPrefs,
+                        onUpdateSidebarPrefs = { newPrefs ->
+                            sidebarLayoutPrefs = newPrefs
+                            LayoutPreferences.saveSidebarLayoutPrefs(layoutPrefsContext, newPrefs)
+                        }
                     )
                 }
 
@@ -373,8 +395,21 @@ fun MayasApp(
                         },
                         onNavigateToThemes = {
                             navController.navigate(Screen.Themes.route)
+                        },
+                        onNavigateToAdminShop = {
+                            navController.navigate(Screen.AdminShop.route)
+                        },
+                        onNavigateToHomeScreenLayout = {
+                            navController.navigate(Screen.HomeScreenLayout.route)
+                        },
+                        onNavigateToSidebarLayout = {
+                            navController.navigate(Screen.SidebarLayout.route)
                         }
                     )
+                }
+
+                composable(Screen.AdminShop.route) {
+                    AdminShopScreen(onBack = { navController.popBackStack() })
                 }
 
                 composable(Screen.Customization.route) {
@@ -391,6 +426,30 @@ fun MayasApp(
                         onSelectScheme = { scheme -> onColorSchemeChange(scheme) },
                         onNavigateToEditor = { navController.navigate(Screen.ThemeEditor.create()) },
                         onEditCustomTheme = { name -> navController.navigate(Screen.ThemeEditor.create(name)) },
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Screen.HomeScreenLayout.route) {
+                    HomeScreenLayoutScreen(
+                        initialPrefs = homeScreenLayoutPrefs,
+                        onSave = { prefs ->
+                            homeScreenLayoutPrefs = prefs
+                            LayoutPreferences.saveHomeScreenLayoutPrefs(layoutPrefsContext, prefs)
+                            navController.popBackStack()
+                        },
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Screen.SidebarLayout.route) {
+                    SidebarLayoutScreen(
+                        initialPrefs = sidebarLayoutPrefs,
+                        onSave = { prefs ->
+                            sidebarLayoutPrefs = prefs
+                            LayoutPreferences.saveSidebarLayoutPrefs(layoutPrefsContext, prefs)
+                            navController.popBackStack()
+                        },
                         onBack = { navController.popBackStack() }
                     )
                 }
@@ -424,6 +483,13 @@ fun MayasApp(
 
                 composable(Screen.Credits.route) {
                     CreditsScreen(onBack = { navController.popBackStack() })
+                }
+
+                composable(Screen.Notifications.route) {
+                    NotificationsScreen(
+                        onBack = { navController.popBackStack() },
+                        onOpenChat = { chatId -> navController.navigate(Screen.Chat.create(chatId)) }
+                    )
                 }
 
                 composable(Screen.Premium.route) {

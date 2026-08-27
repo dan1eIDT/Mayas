@@ -4,6 +4,7 @@ package com.dan1eidtj.mayas.feature.chats.ChatListScreen
 
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -57,7 +58,9 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.ExitToApp
@@ -65,6 +68,7 @@ import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PersonAdd
@@ -124,6 +128,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dan1eidtj.data.ShopConstants
 import com.dan1eidtj.mayas.core_ui.ui.components.UserAvatarView
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
+import com.dan1eidtj.mayas.core.ui.theme.HomeScreenLayoutPrefs
+import com.dan1eidtj.mayas.core.ui.theme.SidebarLayoutPrefs
+import com.dan1eidtj.mayas.core.ui.theme.VerticalSlot
+import com.dan1eidtj.mayas.core.ui.theme.HorizontalSlot
 import com.dan1eidtj.mayas.core_ui.utils.getNameColorBrush
 import com.dan1eidtj.mayas.core_ui.utils.isUserOnline
 import com.dan1eidtj.mayas.feature.TypingIndicator
@@ -163,30 +171,41 @@ fun DrawerActionRow(
     icon: ImageVector,
     iconTint: Color,
     label: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    iconAtEnd: Boolean = false,
+    compact: Boolean = false
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(48.dp)
+            .height(if (compact) 40.dp else 48.dp)
             .clip(RoundedCornerShape(12.dp))
             .combinedClickable { onClick() }
-            .padding(horizontal = 14.dp),
+            .padding(horizontal = if (compact) 10.dp else 14.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(14.dp)
+        horizontalArrangement = if (iconAtEnd) Arrangement.SpaceBetween else Arrangement.spacedBy(if (compact) 10.dp else 14.dp)
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = iconTint,
-            modifier = Modifier.size(20.dp)
-        )
-        Text(
-            text = label,
-            color = MayasTheme.TextPrimary,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium
-        )
+        val iconEl: @Composable () -> Unit = {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.size(if (compact) 17.dp else 20.dp)
+            )
+        }
+        val labelEl: @Composable () -> Unit = {
+            Text(
+                text = label,
+                color = MayasTheme.TextPrimary,
+                fontSize = if (compact) 13.sp else 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+        if (iconAtEnd) {
+            labelEl(); iconEl()
+        } else {
+            iconEl(); labelEl()
+        }
     }
 }
 
@@ -214,9 +233,13 @@ fun ChatListScreen(
     onLogout: () -> Unit,
     onOpenProfile: (String) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenNotifications: () -> Unit,
     onOpenCredits: () -> Unit,
     onOpenUserSearch: () -> Unit,
-    onDismissUserSearch: () -> Unit
+    onDismissUserSearch: () -> Unit,
+    homeLayoutPrefs: HomeScreenLayoutPrefs = HomeScreenLayoutPrefs(),
+    sidebarLayoutPrefs: SidebarLayoutPrefs = SidebarLayoutPrefs(),
+    onUpdateSidebarPrefs: (SidebarLayoutPrefs) -> Unit = {}
 ) {
     val currentUser = FirebaseAuth.getInstance().currentUser ?: return
     val myUid = currentUser.uid
@@ -285,6 +308,7 @@ fun ChatListScreen(
 
     var showCreateGroupScreen by remember { mutableStateOf(false) }
     var showCreateChannelScreen by remember { mutableStateOf(false) }
+    var showContactsSyncScreen by remember { mutableStateOf(false) }
 
 
     var selectedChats by remember { mutableStateOf(setOf<String>()) }
@@ -333,6 +357,7 @@ fun ChatListScreen(
         if (roomChats.isNotEmpty()) isInitialLoading = false
     }
     var searchQuery by remember { mutableStateOf("") }
+    var forceShowSearch by remember { mutableStateOf(false) }
     LaunchedEffect(myUid) {
         try {
             vm.ensureSavedMessagesChat(myUid)
@@ -363,6 +388,15 @@ fun ChatListScreen(
             onChannelCreated = { newChatId ->
                 showCreateChannelScreen = false
                 onStartChat(newChatId)
+            }
+        )
+    } else if (showContactsSyncScreen) {
+        ContactsSyncScreen(
+            myUid = myUid,
+            onBack = { showContactsSyncScreen = false },
+            onStartChat = { partnerUid ->
+                showContactsSyncScreen = false
+                chatListVm.openOrCreateDirectChat(myUid, partnerUid, onReady = onStartChat)
             }
         )
     } else {
@@ -503,15 +537,8 @@ fun ChatListScreen(
                     drawerContainerColor = MayasTheme.Background,
                     drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
                     modifier = Modifier
-                        .width(300.dp)
+                        .width(if (sidebarLayoutPrefs.compactMode) 250.dp else 300.dp)
                         .fillMaxHeight()
-                        .border(
-                            1.dp,
-                            Brush.verticalGradient(
-                                colors = listOf(MayasTheme.Outline, Color.Transparent)
-                            ),
-                            RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)
-                        )
                 ) {
                     Column(
                         modifier = Modifier
@@ -520,57 +547,61 @@ fun ChatListScreen(
                             .padding(vertical = 24.dp)
                     ) {
 
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .combinedClickable {
-                                    coroutineScope.launch { drawerState.close() }
-                                    onOpenProfile(myUid)
-                                }
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            UserAvatarView(
-                                avatarUrl = myProfileData["avatarUrl"] as? String,
-                                useCustomAvatar = myProfileData["useCustomAvatar"] as? Boolean ?: false,
-                                profileIcon = myProfileData["profileIcon"] as? String ?: "ghost",
-                                profileGlow = myProfileData["profileGlow"] as? String ?: "purple",
-                                isPremium = myProfileData["isPremium"] as? Boolean ?: false,
-                                frameType = myProfileData["avatarFrame"] as? String ?: "none",
-                                size = 52.dp
-                            )
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = myProfileData["name"] as? String ?: "Я",
-                                    color = MayasTheme.TextPrimary,
-                                    fontSize = 17.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
+                        val profileBlock: @Composable () -> Unit = {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = if (sidebarLayoutPrefs.compactMode) 14.dp else 24.dp)
+                                    .clip(RoundedCornerShape(16.dp))
+                                    .combinedClickable {
+                                        coroutineScope.launch { drawerState.close() }
+                                        onOpenProfile(myUid)
+                                    }
+                                    .padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                UserAvatarView(
+                                    avatarUrl = myProfileData["avatarUrl"] as? String,
+                                    useCustomAvatar = myProfileData["useCustomAvatar"] as? Boolean ?: false,
+                                    profileIcon = myProfileData["profileIcon"] as? String ?: "ghost",
+                                    profileGlow = myProfileData["profileGlow"] as? String ?: "purple",
+                                    isPremium = myProfileData["isPremium"] as? Boolean ?: false,
+                                    frameType = myProfileData["avatarFrame"] as? String ?: "none",
+                                    size = 52.dp
                                 )
-                                Text(
-                                    text = "Открыть профиль",
-                                    color = MayasTheme.TextSecondary,
-                                    fontSize = 12.sp
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = myProfileData["name"] as? String ?: "Я",
+                                        color = MayasTheme.TextPrimary,
+                                        fontSize = 17.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Открыть профиль",
+                                        color = MayasTheme.TextSecondary,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                Icon(
+                                    imageVector = Icons.Default.ChevronRight,
+                                    contentDescription = null,
+                                    tint = MayasTheme.TextSecondary.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
-                            Icon(
-                                imageVector = Icons.Default.ChevronRight,
-                                contentDescription = null,
-                                tint = MayasTheme.TextSecondary.copy(alpha = 0.6f),
-                                modifier = Modifier.size(20.dp)
-                            )
                         }
 
-                        Spacer(modifier = Modifier.height(20.dp))
-                        HorizontalDivider(color = MayasTheme.Outline.copy(alpha = 0.5f))
-                        Spacer(modifier = Modifier.height(16.dp))
+                        if (sidebarLayoutPrefs.profileBlockPosition == VerticalSlot.TOP) {
+                            profileBlock()
+                            Spacer(modifier = Modifier.height(20.dp))
+                            HorizontalDivider(color = MayasTheme.Outline.copy(alpha = 0.5f))
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
 
-                        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+                        Column(modifier = Modifier.padding(horizontal = if (sidebarLayoutPrefs.compactMode) 14.dp else 24.dp)) {
 
                             if (isUpdateAvailable) {
                                 Row(
@@ -605,6 +636,7 @@ fun ChatListScreen(
                             }
 
 
+                            if (sidebarLayoutPrefs.showQuickActions) {
                             DrawerActionRow(
                                 icon = Icons.Default.GroupAdd,
                                 iconTint = MayasTheme.GlowPurple,
@@ -612,7 +644,9 @@ fun ChatListScreen(
                                 onClick = {
                                     coroutineScope.launch { drawerState.close() }
                                     showCreateGroupScreen = true
-                                }
+                                },
+                                iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                compact = sidebarLayoutPrefs.compactMode
                             )
                             DrawerActionRow(
                                 icon = Icons.Default.Campaign,
@@ -621,7 +655,9 @@ fun ChatListScreen(
                                 onClick = {
                                     coroutineScope.launch { drawerState.close() }
                                     showCreateChannelScreen = true
-                                }
+                                },
+                                iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                compact = sidebarLayoutPrefs.compactMode
                             )
                             DrawerActionRow(
                                 icon = Icons.Default.PersonAdd,
@@ -636,11 +672,171 @@ fun ChatListScreen(
                                         }
                                         context.startActivity(Intent.createChooser(shareIntent, "Пригласить друга"))
                                     } catch (e: Exception) {}
-                                }
+                                },
+                                iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                compact = sidebarLayoutPrefs.compactMode
                             )
+                            DrawerActionRow(
+                                icon = Icons.Default.Contacts,
+                                iconTint = MayasTheme.GlowPurple,
+                                label = "Найти контакты",
+                                onClick = {
+                                    coroutineScope.launch { drawerState.close() }
+                                    showContactsSyncScreen = true
+                                },
+                                iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                compact = sidebarLayoutPrefs.compactMode
+                            )
+                            }
+
+                            if (!homeLayoutPrefs.showAddFriendButton) {
+                                DrawerActionRow(
+                                    icon = Icons.Default.PersonAdd,
+                                    iconTint = MayasTheme.GlowPurple,
+                                    label = "Новый чат",
+                                    onClick = {
+                                        coroutineScope.launch { drawerState.close() }
+                                        showUserSearchDialog = true; onOpenUserSearch()
+                                    },
+                                    iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                compact = sidebarLayoutPrefs.compactMode
+                                )
+                            }
+                            if (!homeLayoutPrefs.showSearchField) {
+                                DrawerActionRow(
+                                    icon = Icons.Default.Search,
+                                    iconTint = MayasTheme.TextSecondary,
+                                    label = "Поиск чатов",
+                                    onClick = {
+                                        coroutineScope.launch { drawerState.close() }
+                                        forceShowSearch = true
+                                    },
+                                    iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                compact = sidebarLayoutPrefs.compactMode
+                                )
+                            }
+
+                            if (sidebarLayoutPrefs.customLinks.isNotEmpty()) {
+                                sidebarLayoutPrefs.customLinks.forEach { link ->
+                                    DrawerActionRow(
+                                        icon = Icons.Default.Link,
+                                        iconTint = MayasTheme.Accent,
+                                        label = link.label,
+                                        onClick = {
+                                            coroutineScope.launch { drawerState.close() }
+                                            val safeUrl = if (link.url.startsWith("http://") || link.url.startsWith("https://")) {
+                                                link.url
+                                            } else {
+                                                "https://${link.url}"
+                                            }
+                                            try {
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(safeUrl)))
+                                            } catch (e: Exception) {
+                                                Toast.makeText(context, "Не удалось открыть ссылку: ${link.url}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                compact = sidebarLayoutPrefs.compactMode
+                                    )
+                                }
+                            }
 
                             Spacer(modifier = Modifier.height(16.dp))
 
+                            if (sidebarLayoutPrefs.showPinnedChats && sidebarLayoutPrefs.pinnedChatIds.isNotEmpty()) {
+                                val pinnedChats = sidebarLayoutPrefs.pinnedChatIds.mapNotNull { pinnedId ->
+                                    chats.firstOrNull { it["chatId"] == pinnedId }
+                                }
+                                if (pinnedChats.isNotEmpty()) {
+                                    Text(
+                                        text = "ЗАКРЕПЛЁННЫЕ ЧАТЫ",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
+                                        letterSpacing = 1.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    pinnedChats.forEach { pinnedChat ->
+                                        val pinnedChatId = pinnedChat["chatId"] as? String ?: return@forEach
+                                        val isGroupChat = pinnedChat["isGroup"] as? Boolean ?: false
+                                        val displayName = if (isGroupChat) {
+                                            pinnedChat["groupName"] as? String ?: "Группа"
+                                        } else {
+                                            pinnedChat["partnerName"] as? String ?: "Чат"
+                                        }
+                                        val avatarUrl = if (isGroupChat) {
+                                            pinnedChat["groupAvatarUrl"] as? String
+                                        } else {
+                                            pinnedChat["partnerAvatarUrl"] as? String
+                                        }
+                                        val profileIcon = if (isGroupChat) {
+                                            pinnedChat["groupIcon"] as? String ?: "groups"
+                                        } else {
+                                            pinnedChat["partnerProfileIcon"] as? String ?: "ghost"
+                                        }
+                                        val profileGlow = if (isGroupChat) {
+                                            pinnedChat["groupProfileGlow"] as? String ?: "purple"
+                                        } else {
+                                            pinnedChat["partnerProfileGlow"] as? String ?: "purple"
+                                        }
+                                        val useCustomAvatar = pinnedChat["useCustomAvatar"] as? Boolean ?: false
+
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(if (sidebarLayoutPrefs.compactMode) 44.dp else 52.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .combinedClickable(
+                                                    onClick = {
+                                                        coroutineScope.launch { drawerState.close() }
+                                                        onStartChat(pinnedChatId)
+                                                    },
+                                                    onLongClick = {
+                                                        onUpdateSidebarPrefs(
+                                                            sidebarLayoutPrefs.copy(
+                                                                pinnedChatIds = sidebarLayoutPrefs.pinnedChatIds - pinnedChatId
+                                                            )
+                                                        )
+                                                        Toast.makeText(context, "Откреплено из панели", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                )
+                                                .padding(horizontal = if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            UserAvatarView(
+                                                avatarUrl = avatarUrl,
+                                                useCustomAvatar = useCustomAvatar,
+                                                profileIcon = profileIcon,
+                                                profileGlow = profileGlow,
+                                                isPremium = false,
+                                                frameType = "none",
+                                                size = if (sidebarLayoutPrefs.compactMode) 26.dp else 32.dp
+                                            )
+                                            Text(
+                                                text = displayName,
+                                                color = MayasTheme.TextPrimary,
+                                                fontSize = if (sidebarLayoutPrefs.compactMode) 13.sp else 14.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            Icon(
+                                                imageVector = Icons.Default.PushPin,
+                                                contentDescription = null,
+                                                tint = MayasTheme.TextSecondary.copy(alpha = 0.4f),
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                }
+                            }
+
+                            val foldersBlock: @Composable () -> Unit = {
                             Text(
                                 text = "ПАПКИ",
                                 fontSize = 11.sp,
@@ -656,7 +852,7 @@ fun ChatListScreen(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(48.dp)
+                                        .height(if (sidebarLayoutPrefs.compactMode) 40.dp else 48.dp)
                                         .clip(RoundedCornerShape(12.dp))
                                         .background(
                                             if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.12f)
@@ -666,20 +862,20 @@ fun ChatListScreen(
                                             selectedFolder = folder
                                             coroutineScope.launch { drawerState.close() }
                                         }
-                                        .padding(horizontal = 14.dp),
+                                        .padding(horizontal = if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                                    horizontalArrangement = Arrangement.spacedBy(if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp)
                                 ) {
                                     Icon(
                                         imageVector = folder.icon,
                                         contentDescription = null,
                                         tint = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(if (sidebarLayoutPrefs.compactMode) 17.dp else 20.dp)
                                     )
                                     Text(
                                         text = folder.displayName,
                                         color = if (isSelected) MayasTheme.TextPrimary else MayasTheme.TextSecondary,
-                                        fontSize = 14.sp,
+                                        fontSize = if (sidebarLayoutPrefs.compactMode) 13.sp else 14.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                         modifier = Modifier.weight(1f)
                                     )
@@ -725,9 +921,9 @@ fun ChatListScreen(
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
                             }
+                            }
 
-                            Spacer(modifier = Modifier.height(16.dp))
-
+                            val appBlock: @Composable () -> Unit = {
                             Text(
                                 text = "ПРИЛОЖЕНИЕ",
                                 fontSize = 11.sp,
@@ -745,7 +941,9 @@ fun ChatListScreen(
                                 onClick = {
                                     coroutineScope.launch { drawerState.close() }
                                     onOpenSettings()
-                                }
+                                },
+                                iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                compact = sidebarLayoutPrefs.compactMode
                             )
                             DrawerActionRow(
                                 icon = Icons.Default.Info,
@@ -754,11 +952,38 @@ fun ChatListScreen(
                                 onClick = {
                                     coroutineScope.launch { drawerState.close() }
                                     onOpenCredits()
-                                }
+                                },
+                                iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                compact = sidebarLayoutPrefs.compactMode
                             )
+                            }
+
+                            val foldersIdx = sidebarLayoutPrefs.itemsOrder.indexOf("Папки чатов")
+                            val appIdx = sidebarLayoutPrefs.itemsOrder.indexOf("Настройки")
+                            val foldersFirst = if (foldersIdx == -1 || appIdx == -1) true else foldersIdx < appIdx
+                            val showFoldersBlock = sidebarLayoutPrefs.showFolders
+                            val showAppBlock = sidebarLayoutPrefs.showAppSection
+
+                            if (foldersFirst) {
+                                if (showFoldersBlock) foldersBlock()
+                                if (showFoldersBlock && showAppBlock) Spacer(modifier = Modifier.height(16.dp))
+                                if (showAppBlock) appBlock()
+                            } else {
+                                if (showAppBlock) appBlock()
+                                if (showFoldersBlock && showAppBlock) Spacer(modifier = Modifier.height(16.dp))
+                                if (showFoldersBlock) foldersBlock()
+                            }
                         }
 
                         Spacer(modifier = Modifier.weight(1f))
+
+                        if (sidebarLayoutPrefs.profileBlockPosition == VerticalSlot.BOTTOM) {
+                            HorizontalDivider(color = MayasTheme.Outline.copy(alpha = 0.5f))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            profileBlock()
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+
                         Spacer(modifier = Modifier.height(16.dp))
                         HorizontalDivider(color = MayasTheme.Outline.copy(alpha = 0.5f))
                         Spacer(modifier = Modifier.height(12.dp))
@@ -766,7 +991,7 @@ fun ChatListScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 24.dp)
+                                .padding(horizontal = if (sidebarLayoutPrefs.compactMode) 14.dp else 24.dp)
                                 .height(48.dp)
                                 .clip(RoundedCornerShape(12.dp))
                                 .combinedClickable { onLogout() }
@@ -858,7 +1083,11 @@ fun ChatListScreen(
                                 onAddFriendClick = {
                                     showUserSearchDialog = true; onOpenUserSearch()
                                 },
-                                onMenuClick = { coroutineScope.launch { drawerState.open() } }
+                                onMenuClick = { coroutineScope.launch { drawerState.open() } },
+                                fabAtStart = homeLayoutPrefs.fabPosition == HorizontalSlot.START,
+                                showSearchField = homeLayoutPrefs.showSearchField &&
+                                    (homeLayoutPrefs.searchPosition == VerticalSlot.TOP || forceShowSearch),
+                                showAddFriendButton = homeLayoutPrefs.showAddFriendButton
                             )
                         } else {
                             HeaderSelection(
@@ -890,6 +1119,12 @@ fun ChatListScreen(
                                                 }
                                             }
                                     }
+                                    selectedChats = emptySet()
+                                },
+                                onPinToSidebar = {
+                                    val newPinned = (sidebarLayoutPrefs.pinnedChatIds + selectedChats).distinct()
+                                    onUpdateSidebarPrefs(sidebarLayoutPrefs.copy(pinnedChatIds = newPinned))
+                                    Toast.makeText(context, "Закреплено в панели", Toast.LENGTH_SHORT).show()
                                     selectedChats = emptySet()
                                 }
                             )
@@ -1004,7 +1239,9 @@ fun ChatListScreen(
                                                 if (!isSavedMessages) {
                                                     selectedChats = selectedChats + chatId
                                                 }
-                                            }
+                                            },
+                                            avatarAtEnd = homeLayoutPrefs.avatarPosition == HorizontalSlot.END,
+                                            compact = homeLayoutPrefs.compactList
                                         )
                                     } else {
                                         val partnerUid = chat["partnerUid"] as? String ?: ""
@@ -1051,7 +1288,9 @@ fun ChatListScreen(
                                             },
                                             onLongClick = {
                                                 selectedChats = selectedChats + chatId
-                                            }
+                                            },
+                                            avatarAtEnd = homeLayoutPrefs.avatarPosition == HorizontalSlot.END,
+                                            compact = homeLayoutPrefs.compactList
                                         )
                                     }
                                 }
@@ -1060,6 +1299,14 @@ fun ChatListScreen(
                     }
 
 
+                    if (homeLayoutPrefs.searchPosition == VerticalSlot.BOTTOM &&
+                        (homeLayoutPrefs.showSearchField || forceShowSearch)) {
+                        ChatSearchField(searchQuery = searchQuery, onSearchChange = { searchQuery = it })
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+
+                    val unreadNotificationsCount by chatListVm.unreadNotificationsCount.collectAsState()
+
                     BottomProfileBar(
                         myUid = myUid,
                         myProfileData = myProfileData,
@@ -1067,7 +1314,9 @@ fun ChatListScreen(
                         glowColor = glowColor,
                         pulseScale = pulseScale,
                         onOpenProfile = onOpenProfile,
-                        onOpenSettings = onOpenSettings
+                        onOpenSettings = onOpenSettings,
+                        onOpenNotifications = onOpenNotifications,
+                        unreadNotificationsCount = unreadNotificationsCount
                     )
                 }
             }
@@ -1102,7 +1351,10 @@ fun HeaderSection(
     searchQuery: String,
     onSearchChange: (String) -> Unit,
     onAddFriendClick: () -> Unit,
-    onMenuClick: () -> Unit
+    onMenuClick: () -> Unit,
+    fabAtStart: Boolean = false,
+    showSearchField: Boolean = true,
+    showAddFriendButton: Boolean = true
 ) {
     Column(
         modifier = Modifier
@@ -1114,6 +1366,7 @@ fun HeaderSection(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            val menuGroup: @Composable () -> Unit = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -1121,15 +1374,13 @@ fun HeaderSection(
 
                 IconButton(
                     onClick = onMenuClick,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(MayasTheme.SurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                        .border(1.dp, MayasTheme.Outline, RoundedCornerShape(12.dp))
+                    modifier = Modifier.size(40.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Menu,
                         contentDescription = "Открыть меню",
-                        tint = MayasTheme.TextPrimary
+                        tint = MayasTheme.TextPrimary,
+                        modifier = Modifier.size(24.dp)
                     )
                 }
 
@@ -1141,14 +1392,14 @@ fun HeaderSection(
                     letterSpacing = (-0.5).sp
                 )
             }
+            }
 
-
+            val addFriendButton: @Composable () -> Unit = {
             IconButton(
                 onClick = onAddFriendClick,
                 modifier = Modifier
                     .size(40.dp)
                     .background(MayasTheme.SurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                    .border(1.dp, MayasTheme.Outline, RoundedCornerShape(12.dp))
             ) {
                 Icon(
                     imageVector = Icons.Default.PersonAdd,
@@ -1156,40 +1407,57 @@ fun HeaderSection(
                     tint = MayasTheme.GlowPurple
                 )
             }
+            }
+
+            if (fabAtStart) {
+                if (showAddFriendButton) addFriendButton()
+                menuGroup()
+            } else {
+                menuGroup()
+                if (showAddFriendButton) addFriendButton()
+            }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        if (showSearchField) {
+            Spacer(modifier = Modifier.height(14.dp))
+            ChatSearchField(searchQuery = searchQuery, onSearchChange = onSearchChange)
+        }
+    }
+}
 
-
+@Composable
+fun ChatSearchField(searchQuery: String, onSearchChange: (String) -> Unit) {
         OutlinedTextField(
             value = searchQuery,
             onValueChange = onSearchChange,
-            placeholder = { Text("Поиск по чатам...", color = MayasTheme.TextSecondary.copy(alpha = 0.6f), fontSize = 14.sp) },
+            placeholder = { Text("Поиск по чатам...", color = MayasTheme.TextSecondary.copy(alpha = 0.6f), fontSize = 13.sp) },
             singleLine = true,
+            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,
                     contentDescription = null,
                     tint = MayasTheme.TextSecondary.copy(alpha = 0.6f),
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(16.dp)
                 )
             },
             trailingIcon = {
                 if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { onSearchChange("") }) {
+                    IconButton(onClick = { onSearchChange("") }, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = "Очистить",
                             tint = MayasTheme.TextSecondary,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                     }
                 }
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp),
-            shape = RoundedCornerShape(14.dp),
+                .padding(horizontal = 20.dp)
+                .height(40.dp),
+            shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedContainerColor = MayasTheme.SurfaceVariant.copy(alpha = 0.4f),
                 unfocusedContainerColor = MayasTheme.SurfaceVariant.copy(alpha = 0.2f),
@@ -1197,7 +1465,6 @@ fun HeaderSection(
                 unfocusedBorderColor = MayasTheme.Outline
             )
         )
-    }
 }
 
 @Composable
@@ -1205,14 +1472,14 @@ fun HeaderSelection(
     selectedCount: Int,
     onClearSelection: () -> Unit,
     onTogglePin: () -> Unit,
-    onDeleteChats: () -> Unit
+    onDeleteChats: () -> Unit,
+    onPinToSidebar: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .height(68.dp)
             .background(MayasTheme.Surface.copy(alpha = 0.2f))
-            .border(1.dp, MayasTheme.GlowPurple.copy(alpha = 0.2f))
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1226,6 +1493,9 @@ fun HeaderSelection(
             fontWeight = FontWeight.Bold,
             color = MayasTheme.TextPrimary
         )
+        IconButton(onClick = onPinToSidebar) {
+            Icon(Icons.Default.Dashboard, null, tint = MayasTheme.GlowPurple)
+        }
         IconButton(onClick = onTogglePin) {
             Icon(Icons.Default.PushPin, null, tint = MayasTheme.TextPrimary)
         }
@@ -1274,7 +1544,9 @@ fun ChatItemNew(
     isOnline: Boolean = false,
     isTyping: Boolean = false,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    avatarAtEnd: Boolean = false,
+    compact: Boolean = false
 ) {
     val avatarGlow = when (userData?.get("profileGlow")) {
         "pink" -> MayasTheme.GlowPink
@@ -1323,10 +1595,11 @@ fun ChatItemNew(
             .fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .background(itemBgColor)
-            .padding(horizontal = 18.dp, vertical = 12.dp),
+            .padding(horizontal = 18.dp, vertical = if (compact) 8.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        val avatarEl: @Composable () -> Unit = {
         Box(contentAlignment = Alignment.Center) {
             UserAvatarView(
                 avatarUrl = userData?.get("avatarUrl") as? String,
@@ -1337,7 +1610,7 @@ fun ChatItemNew(
                     ?: userData?.get("premium") as? Boolean
                     ?: false,
                 frameType = userData?.get("avatarFrame") as? String ?: "none",
-                size = 54.dp
+                size = if (compact) 40.dp else 54.dp
             )
 
 
@@ -1353,8 +1626,10 @@ fun ChatItemNew(
                 )
             }
         }
+        }
 
 
+        val contentEl: @Composable () -> Unit = {
         Column(modifier = Modifier.weight(1f)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1480,6 +1755,15 @@ fun ChatItemNew(
                 }
             }
         }
+        }
+
+        if (avatarAtEnd) {
+            contentEl()
+            avatarEl()
+        } else {
+            avatarEl()
+            contentEl()
+        }
     }
 }
 
@@ -1491,7 +1775,9 @@ fun BottomProfileBar(
     glowColor: Color,
     pulseScale: Float,
     onOpenProfile: (String) -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenNotifications: () -> Unit,
+    unreadNotificationsCount: Int = 0
 ) {
     Surface(
         modifier = Modifier
@@ -1607,17 +1893,38 @@ fun BottomProfileBar(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(MayasTheme.SurfaceVariant.copy(alpha = 0.4f))
-                    .border(1.dp, MayasTheme.Outline, RoundedCornerShape(12.dp)),
+                    .background(MayasTheme.SurfaceVariant.copy(alpha = 0.4f)),
                 contentAlignment = Alignment.Center
             ) {
-                IconButton(onClick = onOpenSettings) {
+                IconButton(onClick = onOpenNotifications) {
                     Icon(
                         imageVector = Icons.Outlined.Notifications,
                         contentDescription = "Уведомления",
                         tint = MayasTheme.TextPrimary,
                         modifier = Modifier.size(18.dp)
                     )
+                }
+
+                if (unreadNotificationsCount > 0) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .offset(x = (-2).dp, y = 2.dp)
+                            .size(if (unreadNotificationsCount > 9) 16.dp else 14.dp)
+                            .clip(CircleShape)
+                            .background(MayasTheme.GlowPurple)
+                            .border(1.5.dp, MayasTheme.Background, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (unreadNotificationsCount > 9) {
+                            Text(
+                                text = "9+",
+                                color = Color.White,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1715,7 +2022,21 @@ fun UserSearchDialog(
 
     LaunchedEffect(searchInput) {
         val name = searchInput.removePrefix("@").trim()
-        if (name.length >= 3) {
+        // Если ввод похож на номер телефона (только цифры, +, пробелы, скобки, дефисы,
+        // и хотя бы 6 цифр) — ищем по номеру, а не по юзернейму/каналу.
+        val digitsOnly = searchInput.filter { it.isDigit() }
+        val looksLikePhone = searchInput.isNotBlank() &&
+            searchInput.all { it.isDigit() || it in "+ ()-" } &&
+            digitsOnly.length >= 6
+
+        if (looksLikePhone) {
+            isSearching = true
+            foundChannel = null
+            vm.resolveUserByPhone(searchInput) { user ->
+                foundUser = user
+                isSearching = false
+            }
+        } else if (name.length >= 3) {
             isSearching = true
             var userDone = false
             var channelDone = false
@@ -1785,7 +2106,7 @@ fun UserSearchDialog(
                 }
 
                 Text(
-                    text = "Поиск по юзернейму — люди и публичные каналы",
+                    text = "Поиск по юзернейму или номеру телефона",
                     color = MayasTheme.TextSecondary.copy(alpha = 0.8f),
                     fontSize = 13.sp,
                     modifier = Modifier.padding(bottom = 12.dp)
@@ -1794,7 +2115,7 @@ fun UserSearchDialog(
                 OutlinedTextField(
                     value = searchInput,
                     onValueChange = onInputChange,
-                    placeholder = { Text("@username", color = MayasTheme.TextSecondary.copy(alpha = 0.5f)) },
+                    placeholder = { Text("@username или +7 999 123-45-67", color = MayasTheme.TextSecondary.copy(alpha = 0.5f)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),

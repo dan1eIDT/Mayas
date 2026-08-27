@@ -63,6 +63,7 @@ import com.dan1eidtj.data.ItemRarity
 import com.dan1eidtj.data.ItemType
 import com.dan1eidtj.data.ShopConstants
 import com.dan1eidtj.data.ShopItem
+import com.dan1eidtj.data.ShopRepository
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.mayas.core_ui.ui.components.ChatBubble
 import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
@@ -1082,7 +1083,7 @@ private fun DailyDealsSection(
                     .fillMaxWidth()
                     .clickable {
                         if (isOwned) onSelectItem(item.id, item.type)
-                        else onBuyItem(item.id, deal.discountedPrice, item.name)
+                        else if (item.isAvailableNow()) onBuyItem(item.id, deal.discountedPrice, item.name)
                     }
             ) {
                 Column(
@@ -1200,7 +1201,7 @@ private fun EmojiSection(
                     isOwned = ownedItems.contains(previewId),
                     price = previewItem.price,
                     onApply = { onSelectItem(previewId, ItemType.EMOJI_STATUS) },
-                    onBuy = { onBuyItem(previewId, previewItem.price, previewItem.name) }
+                    onBuy = { if (previewItem.isAvailableNow()) onBuyItem(previewId, previewItem.price, previewItem.name) }
                 )
             } else if (previewId.isEmpty()) {
                 Text("Без статуса", color = MayasTheme.TextSecondary, fontSize = 12.sp)
@@ -1261,6 +1262,7 @@ private fun EmojiSection(
                         when {
                             isEquipped -> Icon(Icons.Default.Check, null, tint = MayasTheme.Accent, modifier = Modifier.size(12.dp))
                             isOwned -> Text("Есть", fontSize = 9.5.sp, color = MayasTheme.TextSecondary)
+                            !item.isAvailableNow() -> Text("🔒 Скоро", fontSize = 9.sp, color = MayasTheme.TextSecondary)
                             else -> Text("${item.price} 🪙", fontSize = 9.5.sp, color = MayasTheme.TextSecondary)
                         }
                     }
@@ -1318,7 +1320,7 @@ private fun BubbleStylesSection(
                     isOwned = ownedItems.contains(previewId),
                     price = previewItem.price,
                     onApply = { onSelectItem(previewId, ItemType.BUBBLE) },
-                    onBuy = { onBuyItem(previewId, previewItem.price, previewItem.name) }
+                    onBuy = { if (previewItem.isAvailableNow()) onBuyItem(previewId, previewItem.price, previewItem.name) }
                 )
             }
         }
@@ -1383,6 +1385,7 @@ private fun BubbleStylesSection(
                 when {
                     isEquipped -> Text("Используется", color = MayasTheme.Accent, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     isOwned -> Text("Куплено", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                    !item.isAvailableNow() -> Text("🔒 Скоро", color = MayasTheme.TextSecondary, fontSize = 12.sp)
                     else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text("🪙", fontSize = 12.sp)
                         Text("${item.price}", color = MayasTheme.GlowGold, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -1435,7 +1438,7 @@ private fun FontSection(
                     isOwned = ownedItems.contains(previewId),
                     price = previewItem.price,
                     onApply = { onSelectItem(previewId, ItemType.FONT) },
-                    onBuy = { onBuyItem(previewId, previewItem.price, previewItem.name) }
+                    onBuy = { if (previewItem.isAvailableNow()) onBuyItem(previewId, previewItem.price, previewItem.name) }
                 )
             }
         }
@@ -1491,6 +1494,7 @@ private fun FontSection(
                 when {
                     isEquipped -> Text("Используется", color = MayasTheme.Accent, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                     isOwned -> Text("Куплено", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                    !item.isAvailableNow() -> Text("🔒 Скоро", color = MayasTheme.TextSecondary, fontSize = 12.sp)
                     else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text("🪙", fontSize = 12.sp)
                         Text("${item.price}", color = MayasTheme.GlowGold, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -1570,7 +1574,7 @@ private fun EffectSection(
                     isOwned = ownedItems.contains(previewId),
                     price = previewItem.price,
                     onApply = { onSelectItem(previewId, ItemType.EFFECT) },
-                    onBuy = { onBuyItem(previewId, previewItem.price, previewItem.name) }
+                    onBuy = { if (previewItem.isAvailableNow()) onBuyItem(previewId, previewItem.price, previewItem.name) }
                 )
             }
         }
@@ -1629,6 +1633,7 @@ private fun EffectSection(
                     when {
                         isEquipped -> Icon(Icons.Default.Check, null, tint = MayasTheme.Accent, modifier = Modifier.size(12.dp))
                         isOwned -> Text("Есть", fontSize = 9.5.sp, color = MayasTheme.TextSecondary)
+                        !item.isAvailableNow() -> Text("🔒 Скоро", fontSize = 9.sp, color = MayasTheme.TextSecondary)
                         else -> Text("${item.price} 🪙", fontSize = 9.5.sp, color = MayasTheme.TextSecondary)
                     }
                 }
@@ -1650,22 +1655,23 @@ fun ShopDialog(
     currentFont: String = "",
     currentEffect: String = ""
 ) {
-    val emojis = ShopConstants.EMOJI_STATUSES + ShopConstants.ICON_STATUSES
-    val styles = ShopConstants.BUBBLE_STYLES
-    val fonts = ShopConstants.FONT_STYLES
-    val effects = ShopConstants.EFFECT_STYLES
+    val allItems by ShopRepository.items.collectAsState()
+    val emojis = allItems.filter { it.type == ItemType.EMOJI_STATUS }
+    val styles = allItems.filter { it.type == ItemType.BUBBLE }
+    val fonts = allItems.filter { it.type == ItemType.FONT }
+    val effects = allItems.filter { it.type == ItemType.EFFECT }
 
     val categories = remember { ShopCategory.values().toList() }
     var selectedCategory by remember { mutableStateOf(ShopCategory.DAILY) }
 
-    var dailyDeals by remember { mutableStateOf(ShopConstants.getDailyDeals()) }
+    var dailyDeals by remember { mutableStateOf(ShopConstants.getDailyDeals(pool = allItems)) }
     var msUntilReset by remember { mutableLongStateOf(ShopConstants.millisUntilNextDailyReset()) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(allItems) {
         while (true) {
             delay(60_000L)
             msUntilReset = ShopConstants.millisUntilNextDailyReset()
             if (msUntilReset > 23 * 60 * 60 * 1000L) {
-                dailyDeals = ShopConstants.getDailyDeals()
+                dailyDeals = ShopConstants.getDailyDeals(pool = allItems)
             }
         }
     }

@@ -2,6 +2,7 @@ package com.dan1eidtj.mayas.feature
 
 import android.content.Context
 import com.dan1eidtj.data.FirestoreListenerCoordinator
+import com.dan1eidtj.data.BackendApi
 import android.media.AudioAttributes
 import android.media.SoundPool
 import android.util.Log
@@ -197,103 +198,7 @@ private fun postSystemMessage(
 }
 
 
-private object BackendApi {
-
-    private val BASE_URL: String get() = Configtebeblat.functionUrl.trimEnd('/')
-
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .writeTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-        .build()
-    private val jsonMediaType = "application/json".toMediaType()
-
-    data class PresignUploadResult(val uploadUrl: String, val key: String)
-
-
-    suspend fun presignUpload(idToken: String, key: String, contentType: String): PresignUploadResult =
-        withContext(Dispatchers.IO) {
-            val requestJson = buildJsonObject {
-                put("key", key)
-                put("contentType", contentType)
-            }.toString()
-
-            val request = Request.Builder()
-                .url("$BASE_URL/presign-upload")
-                .addHeader("Authorization", "Bearer $idToken")
-                .post(requestJson.toRequestBody(jsonMediaType))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                val bodyText = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    throw Exception("presign-upload: ${response.code} $bodyText")
-                }
-                val json = Json.parseToJsonElement(bodyText).jsonObject
-                PresignUploadResult(
-                    uploadUrl = json.getValue("uploadUrl").jsonPrimitive.content,
-                    key = json.getValue("key").jsonPrimitive.content
-                )
-            }
-        }
-
-    suspend fun presignDownload(idToken: String, key: String): String =
-        withContext(Dispatchers.IO) {
-            val requestJson = buildJsonObject { put("key", key) }.toString()
-
-            val request = Request.Builder()
-                .url("$BASE_URL/presign-download")
-                .addHeader("Authorization", "Bearer $idToken")
-                .post(requestJson.toRequestBody(jsonMediaType))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                val bodyText = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    throw Exception("presign-download: ${response.code} $bodyText")
-                }
-                Json.parseToJsonElement(bodyText).jsonObject
-                    .getValue("downloadUrl").jsonPrimitive.content
-            }
-        }
-
-
-    suspend fun uploadBytes(uploadUrl: String, bytes: ByteArray, contentType: String) =
-        withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url(uploadUrl)
-                .put(bytes.toRequestBody(contentType.toMediaType()))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw Exception("B2 upload: ${response.code} ${response.body?.string()}")
-                }
-            }
-        }
-
-
-    suspend fun notify(token: String, senderName: String, text: String, silent: Boolean = false) =
-        withContext(Dispatchers.IO) {
-            val requestJson = buildJsonObject {
-                put("token", token)
-                put("senderName", senderName)
-                put("text", text)
-                put("silent", silent)
-            }.toString()
-
-            val request = Request.Builder()
-                .url("$BASE_URL/notify")
-                .post(requestJson.toRequestBody(jsonMediaType))
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw Exception("notify: ${response.code} ${response.body?.string()}")
-                }
-            }
-        }
-}
+
 
 class ChatVM(application: Application) : AndroidViewModel(application) {
 
@@ -866,7 +771,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                     playSound(messageSentSoundId)
 
                     if (!isGroupChat && partnerUid.isNotBlank()) {
-                        sendPushNotification(partnerUid, text, silent)
+                        sendPushNotification(chatId, uid, partnerUid, text, silent)
                     }
                 }
             }
@@ -968,7 +873,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                         playSound(messageSentSoundId)
 
                         if (!isGroupChat && partnerUid.isNotBlank()) {
-                            sendPushNotification(partnerUid, previewText)
+                            sendPushNotification(chatId, uid, partnerUid, previewText)
                         }
                     }
                     .addOnFailureListener { e -> Log.e("ChatVM", "Failed to send media batch", e) }
@@ -1450,7 +1355,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             .addOnFailureListener { e -> onError(e.localizedMessage ?: "Ошибка проверки ссылки") }
     }
 
-    private fun sendPushNotification(receiverUid: String, messageText: String, silent: Boolean = false) {
+    private fun sendPushNotification(chatId: String, senderId: String, receiverUid: String, messageText: String, silent: Boolean = false) {
         if (receiverUid.isBlank()) return
 
         db.collection("users").document(receiverUid).get().addOnSuccessListener { doc ->
@@ -1458,7 +1363,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    BackendApi.notify(token = token, senderName = myName, text = messageText, silent = silent)
+                    BackendApi.notify(chatId = chatId, senderId = senderId, token = token, senderName = myName, text = messageText, silent = silent)
                 } catch (e: Exception) {
                     Log.e("ChatVM", "Push notification failed", e)
                 }
@@ -1597,7 +1502,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         batch.commit()
             .addOnSuccessListener {
                 if (!isGroupChat && partnerUid.isNotBlank() && status == CallStatus.MISSED) {
-                    sendPushNotification(partnerUid, text)
+                    sendPushNotification(chatId, uid, partnerUid, text)
                 }
             }
             .addOnFailureListener { e -> Log.e("ChatVM", "Не удалось сохранить сообщение о звонке", e) }
@@ -1790,7 +1695,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                         playSound(messageSentSoundId)
 
                         if (!isGroupChat && partnerUid.isNotBlank()) {
-                            sendPushNotification(partnerUid, "🎤 Голосовое сообщение ($duration сек.)")
+                            sendPushNotification(chatId, uid, partnerUid, "🎤 Голосовое сообщение ($duration сек.)")
                         }
                     }
                     .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка batch ГС", e) }
