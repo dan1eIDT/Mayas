@@ -34,7 +34,11 @@ interface ChatDao {
             partnerIsPremium = :isPremium,
             partnerAvatarFrame = :avatarFrame,
             partnerNameColor = :nameColor,
-            partnerEmoji = :emoji
+            partnerEmoji = :emoji,
+            partnerVerified = :verified,
+            partnerVerificationType = :verificationType,
+            partnerVerifiedBy = :verifiedBy,
+            partnerRank = :rank
         WHERE chatId = :chatId
     """)
     suspend fun updatePartnerInfo(
@@ -47,7 +51,11 @@ interface ChatDao {
         isPremium: Boolean,
         avatarFrame: String?,
         nameColor: String?,
-        emoji: String?
+        emoji: String?,
+        verified: Boolean,
+        verificationType: String?,
+        verifiedBy: String?,
+        rank: Int
     )
 
     @Query("DELETE FROM chats_table")

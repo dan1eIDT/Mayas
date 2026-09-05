@@ -7,11 +7,13 @@ import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import android.widget.Toast
 import com.dan1eidtj.mayas.ads.AdsManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -54,9 +56,14 @@ import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
 import com.dan1eidtj.data.ItemType
 import com.dan1eidtj.mayas.core_ui.ui.components.UserAvatarView
 import com.dan1eidtj.mayas.core_ui.ui.components.AllProfileIcons
+import com.dan1eidtj.mayas.core_ui.ui.components.VerificationBadge
+import com.dan1eidtj.mayas.core_ui.ui.components.AdminLevelBadge
+import com.dan1eidtj.mayas.core_ui.ui.components.VerificationInfoDialog
 import com.dan1eidtj.mayas.feature.GroupMemberUi
+import com.dan1eidtj.mayas.feature.Message
 import com.dan1eidtj.mayas.feature.auth.AuthVM
 import com.dan1eidtj.mayas.feature.GroupMembersVM
+import com.dan1eidtj.mayas.feature.BlockUserConfirmDialog
 import com.dan1eidtj.mayas.storage.B2MediaClient
 import com.dan1eidtj.mayas.storage.ImageCompressor
 import com.dan1eidtj.mayas.storage.MediaKind
@@ -67,6 +74,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun ProfileScreen(
     targetId: String?,
@@ -75,7 +83,7 @@ fun ProfileScreen(
     onBack: () -> Unit,
     onNavigateToPremium: () -> Unit,
     onNavigateToSettings: () -> Unit,
-    onNavigateToChat: (String) -> Unit,
+    onNavigateToChat: (String, String?) -> Unit,
     onNavigateToProfile: (String, Boolean) -> Unit,
     onNavigateToCredits: () -> Unit,
     onNavigateToCustomization: () -> Unit,
@@ -87,6 +95,7 @@ fun ProfileScreen(
     val context = LocalContext.current
     val activity = context as Activity
     val chatVM: ChatVM = viewModel()
+    val chatListVM: com.dan1eidtj.mayas.feature.chats.ChatListScreen.ChatListViewModel = viewModel()
 
     val coroutineScope = rememberCoroutineScope()
 
@@ -109,6 +118,8 @@ fun ProfileScreen(
     var isInvisible by remember { mutableStateOf(false) }
     var nameColor by remember { mutableStateOf("gold") }
     var phone by remember { mutableStateOf("") }
+    var verification by remember { mutableStateOf(com.dan1eidtj.data.VerificationInfo()) }
+    var profileRank by remember { mutableStateOf(com.dan1eidtj.data.Rank.USER) }
 
     var isEditing by remember { mutableStateOf(false) }
     var isUsernameAvailable by remember { mutableStateOf(true) }
@@ -150,16 +161,60 @@ fun ProfileScreen(
     var adminIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var ownerId by remember { mutableStateOf("") }
 
+    // chatId для вкладок Медиа/Ссылки/Закреплённые: у группы/канала это сам finalId
+    // (chats/{id}), у обычного юзера — детерминированный id личного чата. Переиспользую
+    // Screen.getChatId — ровно ту же функцию, которую уже использует ChatListVM для
+    // личных чатов, чтобы не считать sorted(uid1, uid2) второй раз своей копией.
+    // Чат может ещё не существовать (переписки не было) — тогда запросы просто вернут
+    // пустые списки, без крашей.
+    val chatIdForTabs = remember(finalId, isGroup, currentMyUid) {
+        if (finalId.isBlank() || currentMyUid.isBlank()) ""
+        else if (isGroup) finalId
+        else com.dan1eidtj.mayas.core_ui.Screen.getChatId(currentMyUid, finalId)
+    }
+    var isLoadingProfileTabs by remember { mutableStateOf(false) }
+    var profileMediaMessages by remember { mutableStateOf<List<Message>>(emptyList()) }
+    var profileLinkMessages by remember { mutableStateOf<List<Message>>(emptyList()) }
+    var profilePinnedMessages by remember { mutableStateOf<List<Message>>(emptyList()) }
+    val showProfileTabs = chatIdForTabs.isNotBlank() && (isGroup || !isMyProfile)
+
+    LaunchedEffect(chatIdForTabs, showProfileTabs) {
+        if (!showProfileTabs) return@LaunchedEffect
+        isLoadingProfileTabs = true
+        val recent = chatVM.fetchRecentMessages(chatIdForTabs)
+        profileMediaMessages = recent.filter { !it.mediaUrl.isNullOrBlank() }
+        profileLinkMessages = recent.filter { extractUrls(it.text).isNotEmpty() }
+        profilePinnedMessages = chatVM.fetchPinnedMessages(chatIdForTabs)
+        isLoadingProfileTabs = false
+    }
+
     val isGroupAdmin =
         isGroup && currentMyUid.isNotBlank() && (currentMyUid in adminIds || currentMyUid == ownerId)
     val isGroupOwner = isGroup && currentMyUid == ownerId
     val canEdit = isMyProfile || isGroupAdmin
+
+    // Статус блокировки — только для чужого обычного профиля (Этап 2).
+    var isBlockedByMe by remember { mutableStateOf(false) }
+    var isBlockActionLoading by remember { mutableStateOf(false) }
+    var showBlockConfirm by remember { mutableStateOf(false) }
+    LaunchedEffect(finalId, currentMyUid, isGroup, isMyProfile) {
+        if (isGroup || isMyProfile || finalId.isBlank() || currentMyUid.isBlank()) {
+            isBlockedByMe = false
+            return@LaunchedEffect
+        }
+        vm.db.collection("users").document(currentMyUid).get()
+            .addOnSuccessListener { doc ->
+                val blocked = doc.get("blocked") as? List<*>
+                isBlockedByMe = blocked?.contains(finalId) == true
+            }
+    }
 
     var showImagePicker by remember { mutableStateOf(false) }
     var showIconPicker by remember { mutableStateOf(false) }
     var showShop by remember { mutableStateOf(false) }
     var showGroupMembers by remember { mutableStateOf(false) }
     var fullScreenAvatarUrl by remember { mutableStateOf<String?>(null) }
+    var showVerificationDialog by remember { mutableStateOf(false) }
 
     val glowColor = getGlowColor(profileGlow)
     var isAdLoading by remember { mutableStateOf(false) }
@@ -189,13 +244,16 @@ fun ProfileScreen(
                         membersUids = (data["participants"] as? List<String>)
                             ?: (data["members"] as? List<String>) ?: emptyList()
                         useCustomAvatar = avatar.isNotEmpty()
+                        // Верификация канала — только для type == CHANNEL, у обычных
+                        // групп её не бывает (VerificationInfo.fromMap безопасен и для них).
+                        verification = if (docType == "CHANNEL")
+                            com.dan1eidtj.data.VerificationInfo.fromMap(data)
+                        else com.dan1eidtj.data.VerificationInfo()
                     } else {
                         name = data["name"] as? String ?: "Без имени"
                         username = data["username"] as? String ?: ""
-                        avatar = data["avatarUrl"] as? String ?: ""
                         profileIcon = data["profileIcon"] as? String ?: "ghost"
                         profileGlow = data["profileGlow"] as? String ?: "purple"
-                        useCustomAvatar = data["useCustomAvatar"] as? Boolean ?: true
                         desc = data["description"] as? String ?: ""
                         emojiStatus = data["emojiStatus"] as? String ?: ""
                         isPremium = data["isPremium"] as? Boolean ?: false
@@ -207,11 +265,27 @@ fun ProfileScreen(
                         isInvisible = data["isInvisible"] as? Boolean ?: false
                         nameColor = data["nameColor"] as? String ?: "gold"
                         messagesSent = (data["messagesSent"] as? Long)?.toInt() ?: 0
-                        isOnline = isUserOnline(data)
+                        verification = com.dan1eidtj.data.VerificationInfo.fromMap(data)
+                        profileRank = com.dan1eidtj.data.Rank.fromMap(data)
+                        val lastSeenAllowed = isMyProfile ||
+                                (data["privacy_last_seen"] as? String ?: "all") == "all"
+                        val photoAllowed = isMyProfile ||
+                                (data["privacy_photo"] as? String ?: "all") == "all"
+
+                        avatar = if (photoAllowed) data["avatarUrl"] as? String ?: "" else ""
+                        useCustomAvatar = if (photoAllowed) {
+                            data["useCustomAvatar"] as? Boolean ?: true
+                        } else false
+
+                        isOnline = if (lastSeenAllowed) isUserOnline(data) else false
                         val status = data["status"] as? Map<String, Any>
                         val lastSeen = (data["lastSeen"] as? Timestamp)
                             ?: (status?.get("lastSeen") as? Timestamp)
-                        lastSeenText = if (isOnline) "в сети" else formatLastSeen(lastSeen)
+                        lastSeenText = when {
+                            !lastSeenAllowed -> "был(а) недавно"
+                            isOnline -> "в сети"
+                            else -> formatLastSeen(lastSeen)
+                        }
                     }
                 }
             }
@@ -425,7 +499,10 @@ fun ProfileScreen(
                     onMembersClick = { showGroupMembers = true },
                     isMyProfile = isMyProfile,
                     phone = phone,
-                    onPhoneChange = { phone = it }
+                    onPhoneChange = { phone = it },
+                    verification = verification,
+                    onVerificationClick = { showVerificationDialog = true },
+                    rank = profileRank
                 )
             }
 
@@ -472,6 +549,32 @@ fun ProfileScreen(
                     )
                 }
 
+                if (!isGroup && !isMyProfile) {
+                    item {
+                        ProfileActionsRow(
+                            isBlocked = isBlockedByMe,
+                            isLoading = isBlockActionLoading,
+                            onWriteClick = {
+                                chatListVM.openOrCreateDirectChat(currentMyUid, finalId) { chatId ->
+                                    onNavigateToChat(chatId, null)
+                                }
+                            },
+                            onBlockClick = {
+                                if (isBlockedByMe) {
+                                    isBlockActionLoading = true
+                                    chatVM.unblockUser(currentMyUid, finalId) {
+                                        isBlockActionLoading = false
+                                        isBlockedByMe = false
+                                        Toast.makeText(context, "Пользователь разблокирован", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    showBlockConfirm = true
+                                }
+                            }
+                        )
+                    }
+                }
+
                 if (isGroup) {
                     item {
                         Button(
@@ -506,7 +609,9 @@ fun ProfileScreen(
                             )
                         }
                     }
+                }
 
+                if (showProfileTabs) {
                     item {
                         PrimaryTabRow(
                             selectedTabIndex = selectedTab,
@@ -520,7 +625,7 @@ fun ProfileScreen(
                             },
                             divider = {}
                         ) {
-                            listOf("Медиа", "Файлы", "Ссылки").forEachIndexed { i, label ->
+                            listOf("Медиа", "Ссылки", "Закреплённые").forEachIndexed { i, label ->
                                 Tab(selected = selectedTab == i, onClick = { selectedTab = i }) {
                                     Text(
                                         label, modifier = Modifier.padding(16.dp),
@@ -533,18 +638,22 @@ fun ProfileScreen(
                     }
 
                     item {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().height(180.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                when (selectedTab) {
-                                    0 -> "Здесь будут фото и видео"
-                                    1 -> "Здесь будут файлы"
-                                    else -> "Здесь будут ссылки"
-                                },
-                                color = MayasTheme.TextSecondary, fontSize = 14.sp
-                            )
+                        if (isLoadingProfileTabs) {
+                            ProfileTabLoading()
+                        } else {
+                            when (selectedTab) {
+                                0 -> ProfileMediaGrid(profileMediaMessages) { mediaKey ->
+                                    coroutineScope.launch {
+                                        fullScreenAvatarUrl = if (mediaKey.startsWith("http")) {
+                                            mediaKey
+                                        } else {
+                                            B2MediaClient.resolveDownloadUrl(mediaKey)
+                                        }
+                                    }
+                                }
+                                1 -> ProfileLinksList(profileLinkMessages)
+                                else -> ProfilePinnedList(profilePinnedMessages) { msg -> onNavigateToChat(chatIdForTabs, msg.id) }
+                            }
                         }
                     }
                 }
@@ -552,7 +661,7 @@ fun ProfileScreen(
                 if (isMyProfile) {
                     item {
                         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                            SectionTitle("ЗАРАБОТОК И МАГАЗИН")
+                            SectionTitle("ЗАРАБОТОК")
                             EarnAndShopSection(
                                 adsWatched = adsWatchedToday,
                                 isAdLoading = isAdLoading,
@@ -642,8 +751,7 @@ fun ProfileScreen(
                                         kotlinx.coroutines.delay(10_000L)
                                         isAdLoading = false
                                     }
-                                },
-                                onOpenShop = { showShop = true }
+                                }
                             )
                         }
                     }
@@ -714,39 +822,9 @@ fun ProfileScreen(
                             SectionTitle("MAYAS+")
                             PremiumSectionCollapsible(
                                 isPremium = isPremium,
-                                verifiedIcon = verifiedIcon,
                                 avatarFrame = avatarFrame,
-                                isInvisible = isInvisible,
                                 nameColor = nameColor,
                                 onNavigateToPremium = onNavigateToPremium,
-                                onInvisibleChange = { checked ->
-                                    if (isPremium) {
-                                        isInvisible = checked
-                                        vm.db.collection("users").document(finalId)
-                                            .update("isInvisible", checked)
-                                            .addOnFailureListener {
-                                                Toast.makeText(
-                                                    context,
-                                                    "Ошибка",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
-                                    } else onNavigateToPremium()
-                                },
-                                onIconSelect = { newIcon ->
-                                    if (isPremium) {
-                                        verifiedIcon = newIcon
-                                        vm.db.collection("users").document(finalId)
-                                            .update("verifiedIcon", newIcon)
-                                            .addOnFailureListener {
-                                                Toast.makeText(
-                                                    context,
-                                                    "Ошибка",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
-                                    } else onNavigateToPremium()
-                                },
                                 onFrameSelect = { newFrame ->
                                     if (isPremium) {
                                         avatarFrame = newFrame
@@ -884,6 +962,28 @@ fun ProfileScreen(
             onDismiss = { fullScreenAvatarUrl = null }
         )
     }
+
+    if (showVerificationDialog) {
+        VerificationInfoDialog(
+            info = verification,
+            onDismiss = { showVerificationDialog = false }
+        )
+    }
+
+    if (showBlockConfirm) {
+        BlockUserConfirmDialog(
+            onConfirm = {
+                showBlockConfirm = false
+                isBlockActionLoading = true
+                chatVM.blockUser(currentMyUid, finalId) {
+                    isBlockActionLoading = false
+                    isBlockedByMe = true
+                    Toast.makeText(context, "Пользователь заблокирован", Toast.LENGTH_SHORT).show()
+                }
+            },
+            onDismiss = { showBlockConfirm = false }
+        )
+    }
 }
 
 @Composable
@@ -900,7 +1000,10 @@ private fun ProfileHeader(
     onMembersClick: () -> Unit = {},
     isMyProfile: Boolean = false,
     phone: String = "",
-    onPhoneChange: (String) -> Unit = {}
+    onPhoneChange: (String) -> Unit = {},
+    verification: com.dan1eidtj.data.VerificationInfo = com.dan1eidtj.data.VerificationInfo(),
+    onVerificationClick: () -> Unit = {},
+    rank: com.dan1eidtj.data.Rank = com.dan1eidtj.data.Rank.USER
 ) {
     val nameBrush = com.dan1eidtj.mayas.core_ui.utils.getNameColorBrush(nameColor)
 
@@ -966,93 +1069,24 @@ private fun ProfileHeader(
 
         if (isEditing) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(MayasTheme.Surface)
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                OutlinedTextField(
-                    value = name, onValueChange = onNameChange,
-                    label = { Text("Имя", fontSize = 12.sp) },
-                    singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MayasTheme.Accent,
-                        unfocusedBorderColor = MayasTheme.TextSecondary.copy(alpha = 0.25f),
-                        focusedLabelColor = MayasTheme.Accent,
-                        unfocusedLabelColor = MayasTheme.TextSecondary,
-                        focusedTextColor = MayasTheme.TextPrimary,
-                        unfocusedTextColor = MayasTheme.TextPrimary,
-                        cursorColor = MayasTheme.Accent
-                    )
-                )
-                if (!isGroup || isChannel) {
+                // Секция "Имя и юзернейм" — сгруппированы в одной карточке,
+                // как в Telegram (там это первый экран редактора профиля).
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MayasTheme.Surface)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
                     OutlinedTextField(
-                        value = username, onValueChange = onUsernameChange,
-                        label = {
-                            Text(
-                                if (isChannel) "Username канала (@)" else "Имя пользователя (@)",
-                                fontSize = 12.sp
-                            )
-                        },
+                        value = name, onValueChange = onNameChange,
+                        label = { Text("Имя", fontSize = 12.sp) },
                         singleLine = true, modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
-                        isError = !isUsernameAvailable,
-                        trailingIcon = {
-                            if (isCheckingUsername) {
-                                CircularProgressIndicator(
-                                    Modifier.size(20.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MayasTheme.Accent
-                                )
-                            } else if (username.length >= 3) {
-                                Icon(
-                                    if (isUsernameAvailable) Icons.Default.CheckCircle else Icons.Default.Error,
-                                    null,
-                                    tint = if (isUsernameAvailable) MayasTheme.Success else MayasTheme.ErrorRed
-                                )
-                            }
-                        },
-                        supportingText = {
-                            if (!isUsernameAvailable) Text(
-                                "Этот юзернейм уже занят",
-                                color = MayasTheme.ErrorRed
-                            )
-                        },
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = if (isUsernameAvailable) MayasTheme.Accent else MayasTheme.ErrorRed,
-                            unfocusedBorderColor = if (isUsernameAvailable) MayasTheme.TextSecondary.copy(
-                                alpha = 0.25f
-                            ) else MayasTheme.ErrorRed,
-                            focusedLabelColor = if (isUsernameAvailable) MayasTheme.Accent else MayasTheme.ErrorRed,
-                            unfocusedLabelColor = MayasTheme.TextSecondary,
-                            focusedTextColor = MayasTheme.TextPrimary,
-                            unfocusedTextColor = MayasTheme.TextPrimary,
-                            cursorColor = MayasTheme.Accent
-                        )
-                    )
-                }
-
-                if (isMyProfile && !isGroup) {
-                    OutlinedTextField(
-                        value = phone, onValueChange = onPhoneChange,
-                        label = { Text("Номер телефона", fontSize = 12.sp) },
-                        placeholder = { Text("+7 999 123-45-67") },
-                        singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone
-                        ),
-                        supportingText = {
-                            Text(
-                                "По номеру тебя смогут найти другие пользователи. Оставь пустым, чтобы не показывать номер",
-                                color = MayasTheme.TextSecondary,
-                                fontSize = 11.sp
-                            )
-                        },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = MayasTheme.Accent,
                             unfocusedBorderColor = MayasTheme.TextSecondary.copy(alpha = 0.25f),
@@ -1063,36 +1097,141 @@ private fun ProfileHeader(
                             cursorColor = MayasTheme.Accent
                         )
                     )
+                    if (!isGroup || isChannel) {
+                        OutlinedTextField(
+                            value = username, onValueChange = onUsernameChange,
+                            label = {
+                                Text(
+                                    if (isChannel) "Username канала (@)" else "Имя пользователя (@)",
+                                    fontSize = 12.sp
+                                )
+                            },
+                            singleLine = true, modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            isError = !isUsernameAvailable,
+                            trailingIcon = {
+                                if (isCheckingUsername) {
+                                    CircularProgressIndicator(
+                                        Modifier.size(20.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MayasTheme.Accent
+                                    )
+                                } else if (username.length >= 3) {
+                                    Icon(
+                                        if (isUsernameAvailable) Icons.Default.CheckCircle else Icons.Default.Error,
+                                        null,
+                                        tint = if (isUsernameAvailable) MayasTheme.Success else MayasTheme.ErrorRed
+                                    )
+                                }
+                            },
+                            supportingText = {
+                                Text(
+                                    if (!isUsernameAvailable) "Этот юзернейм уже занят"
+                                    else "Можно использовать a-z, 0-9 и подчёркивания",
+                                    color = if (!isUsernameAvailable) MayasTheme.ErrorRed else MayasTheme.TextSecondary,
+                                    fontSize = 11.sp
+                                )
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = if (isUsernameAvailable) MayasTheme.Accent else MayasTheme.ErrorRed,
+                                unfocusedBorderColor = if (isUsernameAvailable) MayasTheme.TextSecondary.copy(
+                                    alpha = 0.25f
+                                ) else MayasTheme.ErrorRed,
+                                focusedLabelColor = if (isUsernameAvailable) MayasTheme.Accent else MayasTheme.ErrorRed,
+                                unfocusedLabelColor = MayasTheme.TextSecondary,
+                                focusedTextColor = MayasTheme.TextPrimary,
+                                unfocusedTextColor = MayasTheme.TextPrimary,
+                                cursorColor = MayasTheme.Accent
+                            )
+                        )
+                    }
                 }
 
-                OutlinedTextField(
-                    value = desc, onValueChange = onDescChange,
-                    label = {
-                        Text(
-                            if (isChannel) "Описание канала" else if (isGroup) "Описание группы" else "О себе",
-                            fontSize = 12.sp
+                // Секция "О себе" — своя карточка, как Bio в Telegram (текст-подсказка
+                // под полем, а не внутри общего блока с именем).
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MayasTheme.Surface)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = desc, onValueChange = onDescChange,
+                        label = {
+                            Text(
+                                if (isChannel) "Описание канала" else if (isGroup) "Описание группы" else "О себе",
+                                fontSize = 12.sp
+                            )
+                        },
+                        minLines = 2, maxLines = 5, modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MayasTheme.Accent,
+                            unfocusedBorderColor = MayasTheme.TextSecondary.copy(alpha = 0.25f),
+                            focusedLabelColor = MayasTheme.Accent,
+                            unfocusedLabelColor = MayasTheme.TextSecondary,
+                            focusedTextColor = MayasTheme.TextPrimary,
+                            unfocusedTextColor = MayasTheme.TextPrimary,
+                            cursorColor = MayasTheme.Accent
                         )
-                    },
-                    minLines = 2, maxLines = 5, modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MayasTheme.Accent,
-                        unfocusedBorderColor = MayasTheme.TextSecondary.copy(alpha = 0.25f),
-                        focusedLabelColor = MayasTheme.Accent,
-                        unfocusedLabelColor = MayasTheme.TextSecondary,
-                        focusedTextColor = MayasTheme.TextPrimary,
-                        unfocusedTextColor = MayasTheme.TextPrimary,
-                        cursorColor = MayasTheme.Accent
                     )
-                )
+                    Text(
+                        if (isGroup) "Видно всем участникам."
+                        else "Пара слов о себе — видно всем, кто откроет твой профиль.",
+                        color = MayasTheme.TextSecondary,
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                }
+
+                // Секция "Номер телефона" — отдельная карточка, только для своего профиля.
+                if (isMyProfile && !isGroup) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MayasTheme.Surface)
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = phone, onValueChange = onPhoneChange,
+                            label = { Text("Номер телефона", fontSize = 12.sp) },
+                            placeholder = { Text("+7 999 123-45-67") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone
+                            ),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MayasTheme.Accent,
+                                unfocusedBorderColor = MayasTheme.TextSecondary.copy(alpha = 0.25f),
+                                focusedLabelColor = MayasTheme.Accent,
+                                unfocusedLabelColor = MayasTheme.TextSecondary,
+                                focusedTextColor = MayasTheme.TextPrimary,
+                                unfocusedTextColor = MayasTheme.TextPrimary,
+                                cursorColor = MayasTheme.Accent
+                            )
+                        )
+                        Text(
+                            "По номеру тебя смогут найти другие пользователи. Оставь пустым, чтобы не показывать номер.",
+                            color = MayasTheme.TextSecondary,
+                            fontSize = 11.sp,
+                            modifier = Modifier.padding(horizontal = 4.dp)
+                        )
+                    }
+                }
+
                 if (isGroup) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MayasTheme.Background)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MayasTheme.Surface)
                             .clickable { onMembersClick() }
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                            .padding(horizontal = 14.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
@@ -1137,20 +1276,25 @@ private fun ProfileHeader(
                         fontWeight = FontWeight.Bold
                     )
                 }
+                // Значок верификации — независим от Mayas+/emojiStatus, показывается
+                // только если verification.verified == true (см. VerificationInfo.fromMap).
+                if (verification.verified) {
+                    Spacer(Modifier.width(6.dp))
+                    VerificationBadge(
+                        info = verification,
+                        size = 20.dp,
+                        onClick = onVerificationClick
+                    )
+                }
+                // Глобальный ранг (модератор/админ/овнер) — отдельно от верификации,
+                // ничего не рисуется для обычного юзера (rank == USER).
+                if (rank != com.dan1eidtj.data.Rank.USER) {
+                    Spacer(Modifier.width(6.dp))
+                    AdminLevelBadge(rank = rank, size = 20.dp)
+                }
                 if (emojiStatus.isNotEmpty()) {
                     Spacer(Modifier.width(6.dp))
                     StatusBadge(value = emojiStatus, fontSize = 20.sp)
-                } else if (isPremium) {
-                    Spacer(Modifier.width(6.dp))
-                    val vIcon = when (verifiedIcon) {
-                        "star" -> Icons.Default.Star; "diamond" -> Icons.Default.Diamond
-                        "auto_awesome" -> Icons.Default.AutoAwesome
-                        "crown" -> Icons.Default.WorkspacePremium; "bolt" -> Icons.Default.Bolt
-                        "fire" -> Icons.Default.LocalFireDepartment; "trophy" -> Icons.Default.EmojiEvents
-                        "heart" -> Icons.Default.Favorite; "shield" -> Icons.Default.Shield
-                        else -> Icons.Default.Verified
-                    }
-                    Icon(vIcon, null, tint = Color(0xFFFFAA00), modifier = Modifier.size(20.dp))
                 }
             }
             Spacer(Modifier.height(4.dp))
@@ -1853,6 +1997,12 @@ private fun GroupMemberRow(
                     Spacer(Modifier.width(6.dp)); RoleChip("админ", MayasTheme.GlowPurple)
                 } else if (member.isModerator) {
                     Spacer(Modifier.width(6.dp)); RoleChip("модератор", MayasTheme.GlowBlue)
+                }
+                if (member.verification.verified) {
+                    Spacer(Modifier.width(4.dp)); VerificationBadge(info = member.verification, size = 14.dp)
+                }
+                if (member.globalRank != com.dan1eidtj.data.Rank.USER) {
+                    Spacer(Modifier.width(4.dp)); AdminLevelBadge(rank = member.globalRank, size = 14.dp)
                 }
             }
             if (member.username.isNotEmpty()) Text(

@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.data
 
 import androidx.compose.ui.graphics.Color
@@ -268,11 +269,15 @@ fun ShopConstants.colorFor(item: ShopItem): Color =
     item.colorHex?.let { runCatching { Color(it.toColorInt()) }.getOrNull() }
         ?: getStyleColor(item.id)
 
-fun ShopConstants.gradientFor(item: ShopItem): List<Color> =
-    item.gradientHex.takeIf { it.isNotEmpty() }
-        ?.mapNotNull { runCatching { Color(it.toColorInt()) }.getOrNull() }
-        ?.takeIf { it.isNotEmpty() }
-        ?: getStyleGradient(item.id)
+fun ShopConstants.gradientFor(item: ShopItem): List<Color> {
+    val parsed = item.gradientHex
+        .mapNotNull { runCatching { Color(it.toColorInt()) }.getOrNull() }
+    return when {
+        parsed.size >= 2 -> parsed
+        parsed.size == 1 -> listOf(parsed[0], parsed[0])
+        else -> getStyleGradient(item.id)
+    }
+}
 
 fun ShopConstants.textColorFor(item: ShopItem): Color =
     item.textColorHex?.let { runCatching { Color(it.toColorInt()) }.getOrNull() }

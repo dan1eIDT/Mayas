@@ -1,6 +1,7 @@
 package com.dan1eidtj.data
 
 import android.content.Context
+import android.os.Build
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.util.UUID
 
 @Serializable
 data class UserSession(
@@ -26,9 +28,43 @@ class SessionManager(private val context: Context) {
         private val Context.dataStore by preferencesDataStore(name = "sessions")
         private val SESSIONS_KEY = stringPreferencesKey("active_sessions")
         private val ACTIVE_UID_KEY = stringPreferencesKey("active_session_uid")
+        private val DEVICE_ID_KEY = stringPreferencesKey("device_id")
 
 
         const val MAX_SESSIONS = 3
+
+        /**
+         * Человекочитаемое имя устройства для списка "активных сессий" — например
+         * "Honor 90, Android 14" или "Samsung SM-S911B, Android 15". Собирается из
+         * системных Build.MANUFACTURER/Build.MODEL, поэтому работает для любого
+         * производителя без хардкода конкретных брендов.
+         */
+        fun deviceDisplayName(): String {
+            val manufacturer = Build.MANUFACTURER.replaceFirstChar { it.uppercase() }
+            val model = Build.MODEL
+            val name = if (model.startsWith(manufacturer, ignoreCase = true)) {
+                model
+            } else {
+                "$manufacturer $model"
+            }
+            return "$name, Android ${Build.VERSION.RELEASE}"
+        }
+    }
+
+    /**
+     * Стабильный ID этой установки приложения — не привязан к конкретному
+     * аккаунту, живёт, пока приложение не переустановят или не почистят
+     * данные. Используется как id документа в users/{uid}/sessions/{deviceId},
+     * чтобы у одного физического устройства всегда был один и тот же "слот"
+     * сессии в списке активных сессий, независимо от того, сколько раз на
+     * нём логинились.
+     */
+    suspend fun getOrCreateDeviceId(): String {
+        val existing = context.dataStore.data.first()[DEVICE_ID_KEY]
+        if (existing != null) return existing
+        val newId = UUID.randomUUID().toString()
+        context.dataStore.edit { prefs -> prefs[DEVICE_ID_KEY] = newId }
+        return newId
     }
 
 

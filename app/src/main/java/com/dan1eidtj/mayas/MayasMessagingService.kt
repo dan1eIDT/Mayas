@@ -1,17 +1,20 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas
 
 import android.Manifest
-import android.R
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import androidx.annotation.RequiresPermission
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
+import com.dan1eidtj.data.NotificationPrefs
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
@@ -25,6 +28,13 @@ class MayasMessagingService : FirebaseMessagingService() {
     override fun onMessageReceived(message: RemoteMessage) {
         super.onMessageReceived(message)
 
+        if (ActivityCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
         when (message.data["type"]) {
             "incoming_call" -> handleIncomingCallPush(message)
             else -> handleChatMessagePush(message)
@@ -32,6 +42,9 @@ class MayasMessagingService : FirebaseMessagingService() {
     }
 
     private fun handleIncomingCallPush(remoteMessage: RemoteMessage) {
+        if (!NotificationPrefs.pushEnabled(applicationContext)) return
+        if (!NotificationPrefs.callsEnabled(applicationContext)) return
+
         val callId = remoteMessage.data["callId"] ?: return
         val callerId = remoteMessage.data["callerId"] ?: return
 
@@ -40,18 +53,25 @@ class MayasMessagingService : FirebaseMessagingService() {
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     private fun handleChatMessagePush(message: RemoteMessage) {
+        if (!NotificationPrefs.pushEnabled(applicationContext)) return
+
         val data = message.data
-
-
-
 
         val chatId = data["chatId"] ?: return
         val senderId = data["senderId"].orEmpty()
         val senderName = data["senderName"] ?: "MAYAS"
         val text = data["text"] ?: "Новое сообщение"
+        val isGroup = data["isGroup"] == "true"
 
-        createChatChannel()
+        if (isGroup && !NotificationPrefs.groupMessagesEnabled(applicationContext)) return
+
+        val myUid = FirebaseAuth.getInstance().currentUser?.uid
+        if (senderId.isNotBlank() && senderId == myUid) return
+        if (ChatUiVisibility.isChatOpen(chatId)) return
+
+        val channelId = ensureChatChannel()
         postChatNotification(
+            channelId = channelId,
             chatId = chatId,
             senderId = senderId,
             senderName = senderName,
@@ -60,47 +80,20 @@ class MayasMessagingService : FirebaseMessagingService() {
         )
     }
 
-
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     private fun postChatNotification(
+        channelId: String,
         chatId: String,
         senderId: String,
         senderName: String,
         text: String,
         timestampMs: Long,
     ) {
-
-
-
         if (!MayasNotifications.canPostNotifications(this)) return
 
         val notificationId = chatId.hashCode()
         val notificationManager = NotificationManagerCompat.from(this)
-
-        val sender = Person.Builder().setName(senderName).setKey(senderId.ifBlank { senderName }).build()
-        val me = Person.Builder()
-            .setName(FirebaseAuth.getInstance().currentUser?.displayName ?: "Я")
-            .build()
-
-        val history = ChatNotificationStore.appendMessage(
-            context = this,
-            chatId = chatId,
-            text = text,
-            timestampMs = timestampMs,
-            mine = false
-        )
-
-        val messagingStyle = NotificationCompat.MessagingStyle(me)
-        messagingStyle.conversationTitle = senderName
-        messagingStyle.isGroupConversation = false
-
-        history.forEach { stored ->
-            if (stored.mine) {
-                messagingStyle.addMessage(stored.text, stored.timestampMs, null as Person?)
-            } else {
-                messagingStyle.addMessage(stored.text, stored.timestampMs, sender)
-            }
-        }
+        val showPreview = NotificationPrefs.previewEnabled(this)
 
         val contentIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -111,9 +104,8 @@ class MayasMessagingService : FirebaseMessagingService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(this, MayasNotifications.CHANNEL_MESSAGES)
-            .setSmallIcon(R.drawable.sym_action_chat)
-            .setStyle(messagingStyle)
+        val builder = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(android.R.drawable.sym_action_chat)
             .setAutoCancel(true)
             .setContentIntent(contentPendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -121,12 +113,49 @@ class MayasMessagingService : FirebaseMessagingService() {
             .setGroup(MayasNotifications.GROUP_KEY_MESSAGES)
             .addAction(buildReplyAction(chatId, notificationId, senderName))
             .addAction(buildMarkReadAction(chatId, notificationId))
-            .build()
 
-        notificationManager.notify(notificationId, notification)
-        postSummaryNotification(notificationManager)
+        if (showPreview) {
+            val sender = Person.Builder().setName(senderName).setKey(senderId.ifBlank { senderName }).build()
+            val me = Person.Builder()
+                .setName(FirebaseAuth.getInstance().currentUser?.displayName ?: "Я")
+                .build()
+
+            val history = ChatNotificationStore.appendMessage(
+                context = this,
+                chatId = chatId,
+                text = text,
+                timestampMs = timestampMs,
+                mine = false
+            )
+
+            val messagingStyle = NotificationCompat.MessagingStyle(me)
+            messagingStyle.conversationTitle = senderName
+            messagingStyle.isGroupConversation = false
+
+            history.forEach { stored ->
+                if (stored.mine) {
+                    messagingStyle.addMessage(stored.text, stored.timestampMs, null as Person?)
+                } else {
+                    messagingStyle.addMessage(stored.text, stored.timestampMs, sender)
+                }
+            }
+
+            builder.setStyle(messagingStyle)
+        } else {
+            builder
+                .setContentTitle(senderName)
+                .setContentText("Новое сообщение")
+                .setPublicVersion(
+                    NotificationCompat.Builder(this, channelId)
+                        .setSmallIcon(android.R.drawable.sym_action_chat)
+                        .setContentTitle("Новое сообщение")
+                        .build()
+                )
+        }
+
+        notificationManager.notify(notificationId, builder.build())
+        postSummaryNotification(notificationManager, channelId)
     }
-
 
     private fun buildReplyAction(chatId: String, notificationId: Int, senderName: String): NotificationCompat.Action {
         val remoteInput = RemoteInput.Builder(MayasNotifications.KEY_REPLY_TEXT)
@@ -139,7 +168,6 @@ class MayasMessagingService : FirebaseMessagingService() {
             putExtra(MayasNotifications.EXTRA_NOTIFICATION_ID, notificationId)
             putExtra(MayasNotifications.EXTRA_SENDER_NAME, senderName)
         }
-
 
         val replyPendingIntent = PendingIntent.getBroadcast(
             this, notificationId, replyIntent,
@@ -156,7 +184,6 @@ class MayasMessagingService : FirebaseMessagingService() {
             .build()
     }
 
-
     private fun buildMarkReadAction(chatId: String, notificationId: Int): NotificationCompat.Action {
         val markReadIntent = Intent(this, NotificationMarkReadReceiver::class.java).apply {
             action = MayasNotifications.ACTION_MARK_READ
@@ -164,8 +191,6 @@ class MayasMessagingService : FirebaseMessagingService() {
             putExtra(MayasNotifications.EXTRA_NOTIFICATION_ID, notificationId)
         }
         val markReadPendingIntent = PendingIntent.getBroadcast(
-
-
             this, notificationId + 1, markReadIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -178,13 +203,12 @@ class MayasMessagingService : FirebaseMessagingService() {
             .build()
     }
 
-
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
-    private fun postSummaryNotification(notificationManager: NotificationManagerCompat) {
+    private fun postSummaryNotification(notificationManager: NotificationManagerCompat, channelId: String) {
         if (!MayasNotifications.canPostNotifications(this)) return
 
-        val summary = NotificationCompat.Builder(this, MayasNotifications.CHANNEL_MESSAGES)
-            .setSmallIcon(R.drawable.sym_action_chat)
+        val summary = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(android.R.drawable.sym_action_chat)
             .setStyle(
                 NotificationCompat.InboxStyle()
                     .setSummaryText("Новые сообщения")
@@ -198,17 +222,27 @@ class MayasMessagingService : FirebaseMessagingService() {
         notificationManager.notify(MayasNotifications.SUMMARY_NOTIFICATION_ID, summary)
     }
 
-    private fun createChatChannel() {
+    private fun ensureChatChannel(): String {
+        val soundOn = NotificationPrefs.soundEnabled(this)
+        val vibrateOn = NotificationPrefs.vibrationEnabled(this)
+        val channelId = MayasNotifications.channelIdFor(soundOn, vibrateOn)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                MayasNotifications.CHANNEL_MESSAGES,
-                "Messages",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Уведомления о новых сообщениях в Маяс"
-            }
             val manager = getSystemService(NotificationManager::class.java)
-            manager?.createNotificationChannel(channel)
+            if (manager?.getNotificationChannel(channelId) == null) {
+                val channel = NotificationChannel(
+                    channelId,
+                    "Messages",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Уведомления о новых сообщениях в Маяс"
+                    enableVibration(vibrateOn)
+                    if (!soundOn) setSound(null, null)
+                }
+                manager?.createNotificationChannel(channel)
+            }
         }
+
+        return channelId
     }
 }

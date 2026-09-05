@@ -17,8 +17,8 @@ android {
     defaultConfig {
         applicationId = "com.dan1eidtj.mayas"
         minSdk = 24
-        versionCode = 4
-        versionName = "1.0"
+        versionCode = 5
+        versionName = "1.1"
         multiDexEnabled = true
         val properties = Properties()
         val localPropertiesFile = rootProject.file("local.properties")

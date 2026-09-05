@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 @file:OptIn(ExperimentalMaterial3Api::class)
 
 package com.dan1eidtj.mayas
@@ -20,6 +21,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.*
 import androidx.compose.animation.core.EaseInOutQuart
 import androidx.compose.animation.core.tween
@@ -35,6 +37,9 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.dan1eidtj.data.SharedContentManager
+import com.dan1eidtj.data.ShopBannerRepository
+import com.dan1eidtj.data.ShopRepository
+import com.dan1eidtj.data.ShopTabRepository
 import com.dan1eidtj.mayas.core_ui.ui.components.*
 import com.dan1eidtj.mayas.feature.auth.*
 import com.dan1eidtj.mayas.feature.ChatScreen
@@ -49,8 +54,10 @@ import com.dan1eidtj.mayas.settings.SettingsScreen
 import com.dan1eidtj.mayas.settings.ThemesScreen
 import com.dan1eidtj.mayas.settings.HomeScreenLayoutScreen
 import com.dan1eidtj.mayas.settings.SidebarLayoutScreen
+import com.dan1eidtj.mayas.settings.NotificationSettingsScreen
 import com.dan1eidtj.mayas.core.ui.theme.LayoutPreferences
 import com.dan1eidtj.mayas.ui.theme.ThemePreferences
+import com.dan1eidtj.data.ItemType
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -72,6 +79,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -105,7 +113,6 @@ class MainActivity : ComponentActivity() {
             }
 
             MayasAppTheme(
-                darkTheme = systemDark,
                 colorScheme = currentColorScheme
             ) {
                 LaunchedEffect(Unit) {
@@ -157,7 +164,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-
+    // pay 2 win для тф2 2 функции ниже :
     override fun onResume() {
         super.onResume()
         updateOnlineStatus(true)
@@ -210,6 +217,7 @@ class MainActivity : ComponentActivity() {
         dialog.show()
     }
 }
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun MayasApp(
     vm: AuthVM = viewModel(),
@@ -225,8 +233,7 @@ fun MayasApp(
     val user = vm.user
     var showUserSearchDialog by remember { mutableStateOf(false) }
 
-    // Настройки расположения элементов интерфейса — локальные для устройства,
-    // не синхронизируются между устройствами (см. LayoutPreferences)
+    // ты че дебил?
     val layoutPrefsContext = LocalContext.current
     var homeScreenLayoutPrefs by remember {
         mutableStateOf(LayoutPreferences.loadHomeScreenLayoutPrefs(layoutPrefsContext))
@@ -243,6 +250,13 @@ fun MayasApp(
             }
         } else {
             callManager.startListeningForIncomingCalls()
+            // Стартуем эти три подписки только когда юзер точно авторизован — раньше они
+            // запускались в onCreate() безусловно, до восстановления сессии FirebaseAuth
+            // на холодном старте, из-за чего Firestore видел request.auth == null и отдавал
+            // PERMISSION_DENIED даже на правила, которые сами по себе корректны.
+            ShopRepository.startListening()
+            ShopBannerRepository.startListening()
+            ShopTabRepository.startListening()
             if (navController.currentDestination?.route == Screen.Auth.route) {
                 navController.navigate(Screen.Chats.route) {
                     popUpTo(Screen.Auth.route) { inclusive = true }
@@ -311,9 +325,17 @@ fun MayasApp(
 
                 composable(
                     Screen.Chat.route,
-                    arguments = listOf(navArgument("chatId") { type = NavType.StringType })
+                    arguments = listOf(
+                        navArgument("chatId") { type = NavType.StringType },
+                        navArgument("messageId") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        }
+                    )
                 ) { backStack ->
                     val chatId = backStack.arguments?.getString("chatId") ?: return@composable
+                    val scrollToMessageId = backStack.arguments?.getString("messageId")
                     val context = LocalContext.current
                     var pendingCall by remember { mutableStateOf<Pair<String, CallType>?>(null) }
                     val recordAudioLauncher = rememberLauncherForActivityResult(
@@ -327,6 +349,7 @@ fun MayasApp(
 
                     ChatScreen(
                         chatId = chatId,
+                        scrollToMessageId = scrollToMessageId,
                         onBack = { navController.popBackStack() },
                         onOpenProfile = { uid, isGroup ->
                             navController.navigate(Screen.Profile.create(uid, isGroup)) },
@@ -360,9 +383,8 @@ fun MayasApp(
                         onNavigateToProfile = { targetUid, targetIsGroup ->
                             navController.navigate(Screen.Profile.create(targetUid, targetIsGroup))
                         },
-                        onNavigateToChat = { chatId ->
-
-                            navController.navigate(Screen.Chat.create(chatId))
+                        onNavigateToChat = { chatId, messageId ->
+                            navController.navigate(Screen.Chat.create(chatId, messageId))
                         },
                         onNavigateToCredits = {
                             navController.navigate(Screen.Credits.route)
@@ -399,17 +421,58 @@ fun MayasApp(
                         onNavigateToAdminShop = {
                             navController.navigate(Screen.AdminShop.route)
                         },
+                        onNavigateToShop = {
+                            navController.navigate(Screen.Shop.route)
+                        },
                         onNavigateToHomeScreenLayout = {
                             navController.navigate(Screen.HomeScreenLayout.route)
                         },
                         onNavigateToSidebarLayout = {
                             navController.navigate(Screen.SidebarLayout.route)
+                        },
+                        onNavigateToNotificationSettings = {
+                            navController.navigate(Screen.NotificationSettings.route)
                         }
+                    )
+                }
+
+                composable(Screen.NotificationSettings.route) {
+                    NotificationSettingsScreen(
+                        vm = vm,
+                        onBack = { navController.popBackStack() }
                     )
                 }
 
                 composable(Screen.AdminShop.route) {
                     AdminShopScreen(onBack = { navController.popBackStack() })
+                }
+
+                composable(Screen.Shop.route) {
+                    // Магазин теперь доступен и из Настроек (не только из топбара профиля).
+                    // Переиспользуем уже существующий ShopDialog и данные из vm.userData/vm.ownedItems —
+                    // ровно те же поля, что читает ProfileScreen (balance/emojiStatus/messageStyle).
+                    ShopDialog(
+                        balance = vm.userData["balance"]?.toIntOrNull() ?: 0,
+                        ownedItems = vm.ownedItems,
+                        onDismiss = { navController.popBackStack() },
+                        onBuyItem = { id, price, itemName ->
+                            vm.buyItem(
+                                id, price,
+                                onSuccess = {},
+                                onError = {}
+                            )
+                        },
+                        onSelectItem = { id, type ->
+                            val key = when (type) {
+                                ItemType.EMOJI_STATUS -> "emojiStatus"
+                                ItemType.BUBBLE -> "messageStyle"
+                                else -> null
+                            }
+                            key?.let { vm.updateUserData(it, id) }
+                        },
+                        currentEmoji = vm.userData["emojiStatus"] ?: "",
+                        messageStyle = vm.userData["messageStyle"] ?: ""
+                    )
                 }
 
                 composable(Screen.Customization.route) {

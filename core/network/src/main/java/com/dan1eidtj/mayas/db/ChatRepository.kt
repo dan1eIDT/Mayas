@@ -78,6 +78,10 @@ class ChatRepository(context: Context) {
                         partnerAvatarFrame = existing?.partnerAvatarFrame ?: "none",
                         partnerNameColor = existing?.partnerNameColor ?: "gold",
                         partnerEmoji = existing?.partnerEmoji,
+                        partnerVerified = existing?.partnerVerified ?: false,
+                        partnerVerificationType = existing?.partnerVerificationType,
+                        partnerVerifiedBy = existing?.partnerVerifiedBy,
+                        partnerRank = existing?.partnerRank ?: 0,
                         typingText = null,
                         isSavedMessages = isSavedMessages
                     )
@@ -95,6 +99,7 @@ class ChatRepository(context: Context) {
 
     suspend fun updatePartnerInfoFromSnapshot(chatId: String, userDoc: DocumentSnapshot) {
         try {
+            val verified = userDoc.getBoolean("verification") ?: false
             chatDao.updatePartnerInfo(
                 chatId = chatId,
                 name = userDoc.getString("name") ?: userDoc.getString("username"),
@@ -105,7 +110,11 @@ class ChatRepository(context: Context) {
                 isPremium = userDoc.getBoolean("isPremium") ?: false,
                 avatarFrame = userDoc.getString("avatarFrame") ?: "none",
                 nameColor = userDoc.getString("nameColor") ?: "gold",
-                emoji = userDoc.getString("emojiStatus")
+                emoji = userDoc.getString("emojiStatus"),
+                verified = verified,
+                verificationType = if (verified) userDoc.getString("verificationType") else null,
+                verifiedBy = userDoc.getString("verifiedBy"),
+                rank = (userDoc.getLong("rank") ?: 0L).toInt()
             )
         } catch (e: Exception) {
             Log.e("ChatRepository", "Ошибка updatePartnerInfo для $chatId", e)
@@ -115,6 +124,7 @@ class ChatRepository(context: Context) {
     suspend fun updatePartnerInfoFromFirestore(chatId: String, partnerId: String) {
         try {
             val userDoc = firestore.collection("users").document(partnerId).get().await()
+            val verified = userDoc.getBoolean("verification") ?: false
             chatDao.updatePartnerInfo(
                 chatId = chatId,
                 name = userDoc.getString("name") ?: userDoc.getString("username"),
@@ -125,7 +135,11 @@ class ChatRepository(context: Context) {
                 isPremium = userDoc.getBoolean("isPremium") ?: false,
                 avatarFrame = userDoc.getString("avatarFrame") ?: "none",
                 nameColor = userDoc.getString("nameColor") ?: "gold",
-                emoji = userDoc.getString("emojiStatus")
+                emoji = userDoc.getString("emojiStatus"),
+                verified = verified,
+                verificationType = if (verified) userDoc.getString("verificationType") else null,
+                verifiedBy = userDoc.getString("verifiedBy"),
+                rank = (userDoc.getLong("rank") ?: 0L).toInt()
             )
         } catch (e: Exception) {
             Log.e("ChatRepository", "Ошибка updatePartnerInfoFromFirestore", e)

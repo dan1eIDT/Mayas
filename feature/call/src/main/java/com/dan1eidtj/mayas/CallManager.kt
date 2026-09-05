@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas
 
 import android.Manifest
@@ -50,26 +51,7 @@ class CallManager(
 
     private val db by lazy { FirebaseFirestore.getInstance() }
 
-
-
-
-
-
-
-
-
     private var acceptingCallId: String? = null
-
-
-
-
-
-
-
-
-
-
-
 
     private val resetLock = Any()
 
@@ -123,11 +105,6 @@ class CallManager(
             callFeedbackController.stop()
 
             managerScope.launch {
-
-
-
-
-
                 callRepository.updateCallState(callId, CallState.CONNECTED).onFailure { error ->
                     Log.e("CallManager", "Не удалось обновить статус звонка на CONNECTED", error)
                     showError("Звонок соединён, но статус не синхронизировался с сервером.")
@@ -193,15 +170,12 @@ class CallManager(
                             )
                         }
 
-
                         is PushNotifyResult.Error -> {
-
                             showError(
                                 "⚠️ ${result.message}\n\n" +
                                         "Попросите собеседника открыть приложение " +
                                         "или свяжитесь другим способом."
                             )
-
                         }
                     }
                 }
@@ -224,7 +198,6 @@ class CallManager(
 
     fun acceptCall(callId: String) {
 
-
         if (acceptingCallId == callId) {
             Log.d("CallManager", "acceptCall($callId) проигнорирован — уже в процессе/принят")
             return
@@ -246,22 +219,11 @@ class CallManager(
                 }
 
             if (session == null) {
-
-
-
                 resetLocalState()
                 return@launch
             }
 
             _activeCall.value = session
-
-
-
-
-
-
-
-
 
             if (cachedSession == null) {
                 attachToCall(callId)
@@ -272,9 +234,6 @@ class CallManager(
             webRtcClient.init(webRtcListener)
             webRtcClient.startLocalAudio()
             observeRemoteCandidates(callId, fromRole = CallParticipantRole.CALLER)
-
-
-
 
             val offer = session.offer
                 ?: withTimeoutOrNull(OFFER_WAIT_TIMEOUT_MS) {
@@ -287,12 +246,6 @@ class CallManager(
             }
 
             webRtcClient.createAnswer(offer)
-
-
-
-
-
-
 
             callRepository.updateCallState(callId, CallState.CONNECTING).onFailure { error ->
                 Log.e("CallManager", "Не удалось обновить статус звонка на CONNECTING", error)
@@ -361,7 +314,6 @@ class CallManager(
                     }
                 }
 
-
                 if (session.state == CallState.REJECTED) {
                     _callState.value = CallState.REJECTED
                     callFeedbackController.stop()
@@ -402,8 +354,8 @@ class CallManager(
             remoteCandidatesJob = null
 
             callFeedbackController.stop()
-            webRtcClient.close()
             webRtcClient.setMuted(false)
+            webRtcClient.close()
             audioController.release()
 
             currentRole = null

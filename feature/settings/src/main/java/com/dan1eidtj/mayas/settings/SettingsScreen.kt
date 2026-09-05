@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas.settings
 
 import android.widget.Toast
@@ -54,8 +55,10 @@ fun SettingsScreen(
     onNavigateToCustomization: () -> Unit,
     onNavigateToThemes: () -> Unit,
     onNavigateToAdminShop: () -> Unit,
+    onNavigateToShop: () -> Unit = {},
     onNavigateToHomeScreenLayout: () -> Unit = {},
-    onNavigateToSidebarLayout: () -> Unit = {}
+    onNavigateToSidebarLayout: () -> Unit = {},
+    onNavigateToNotificationSettings: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -70,6 +73,7 @@ fun SettingsScreen(
     var showChatSettings by remember { mutableStateOf(false) }
     var showInterfaceSettings by remember { mutableStateOf(false) }
     var showPrivacy by remember { mutableStateOf(false) }
+    var showActiveSessions by remember { mutableStateOf(false) }
     var showSecurity by remember { mutableStateOf(false) }
     var showAccountSheet by remember { mutableStateOf(false) }
     var accountToSwitch by remember { mutableStateOf<UserSession?>(null) }
@@ -213,6 +217,16 @@ fun SettingsScreen(
 
             item {
                 SettingsItem(
+                    icon = Icons.Default.ShoppingBag,
+                    title = "Магазин Маяса",
+                    subtitle = "Уникальные стили и фишки",
+                    iconColor = MayasTheme.GlowGold,
+                    onClick = onNavigateToShop
+                )
+            }
+
+            item {
+                SettingsItem(
                     icon = Icons.Default.People,
                     title = "Управление аккаунтами",
                     subtitle = "Активных профилей: ${vm.activeSessions.size}",
@@ -319,6 +333,25 @@ fun SettingsScreen(
 
             item {
                 SettingsItem(
+                    icon = Icons.Default.PhoneAndroid,
+                    title = "Активные сессии",
+                    subtitle = "${vm.remoteSessions.size} устройств(а) залогинено",
+                    onClick = { showActiveSessions = !showActiveSessions }
+                )
+            }
+
+            item {
+                AnimatedVisibility(
+                    visible = showActiveSessions,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    ActiveSessionsSubSection(vm)
+                }
+            }
+
+            item {
+                SettingsItem(
                     icon = Icons.Default.Security,
                     title = "Безопасность",
                     subtitle = "Пароль, сессии, удаление аккаунта",
@@ -341,7 +374,7 @@ fun SettingsScreen(
                     icon = Icons.Default.Notifications,
                     title = "Уведомления и звуки",
                     subtitle = "Настроить пуши",
-                    onClick = {  }
+                    onClick = onNavigateToNotificationSettings
                 )
             }
 
@@ -798,6 +831,122 @@ fun PrivacySubSection(vm: AuthVM, onNavigateToPremium: () -> Unit) {
 }
 
 @Composable
+fun ActiveSessionsSubSection(vm: AuthVM) {
+    var sessionToEnd by remember { mutableStateOf<AuthVM.RemoteSession?>(null) }
+
+    sessionToEnd?.let { session ->
+        AlertDialog(
+            onDismissRequest = { sessionToEnd = null },
+            title = { Text(if (session.isCurrent) "Выйти?" else "Завершить сессию?") },
+            text = {
+                Text(
+                    if (session.isCurrent) {
+                        "Вы выйдете из аккаунта на этом устройстве."
+                    } else {
+                        "Устройство «${session.deviceName}» будет разлогинено."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.endSession(session.id)
+                    sessionToEnd = null
+                }) {
+                    Text(if (session.isCurrent) "Выйти" else "Завершить", color = Color.Red)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { sessionToEnd = null }) { Text("Отмена") }
+            }
+        )
+    }
+
+    Column(
+        modifier = Modifier
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MayasTheme.SurfaceVariant.copy(alpha = 0.3f))
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text(
+            "Активные сессии",
+            color = MayasTheme.TextPrimary,
+            fontSize = 14.sp,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        if (vm.remoteSessions.isEmpty()) {
+            Text("Загрузка...", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+        }
+
+        vm.remoteSessions.forEach { session ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { sessionToEnd = session }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    when (session.platform) {
+                        "android", "ios" -> Icons.Default.PhoneAndroid
+                        "web" -> Icons.Default.Language
+                        else -> Icons.Default.Computer
+                    },
+                    null,
+                    tint = if (session.isCurrent) MayasTheme.Accent else MayasTheme.TextSecondary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(session.deviceName, color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                        if (session.isCurrent) {
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "Это устройство",
+                                color = MayasTheme.Accent,
+                                fontSize = 10.sp,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(MayasTheme.Accent.copy(alpha = 0.15f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        formatSessionLastActive(session.lastActiveAt),
+                        color = MayasTheme.TextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+                if (!session.isCurrent) {
+                    Icon(
+                        Icons.Default.Close,
+                        null,
+                        tint = Color.Red.copy(alpha = 0.6f),
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatSessionLastActive(timestamp: com.google.firebase.Timestamp?): String {
+    if (timestamp == null) return "недавно"
+    val diffMs = System.currentTimeMillis() - timestamp.toDate().time
+    val minutes = diffMs / 60_000
+    return when {
+        minutes < 1 -> "активен только что"
+        minutes < 60 -> "был(а) $minutes мин назад"
+        minutes < 24 * 60 -> "был(а) ${minutes / 60} ч назад"
+        else -> "был(а) ${minutes / (24 * 60)} дн назад"
+    }
+}
+
+@Composable
 fun PrivacySelectorDialog(
     title: String,
     currentValue: String,
@@ -965,7 +1114,10 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
                     onClick = {
                         vm.deleteUserAccount(
                             onSuccess = { showDeleteDialog = false },
-                            onError = {  }
+                            onError = {
+                                showDeleteDialog = false
+                                Toast.makeText(context, "Не удалось удалить аккаунт", Toast.LENGTH_SHORT).show()
+                            }
                         )
                     }
                 ) {
@@ -1260,4 +1412,4 @@ fun SettingsSectionTitle(title: String) {
         fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)
     )
-} 
+}

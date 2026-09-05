@@ -43,6 +43,22 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
     var activeSessions by mutableStateOf<List<UserSession>>(emptyList())
         private set
 
+    /** Одна запись в списке "Активные сессии" — устройство, где залогинен этот аккаунт. */
+    data class RemoteSession(
+        val id: String,
+        val deviceName: String,
+        val platform: String,
+        val lastActiveAt: com.google.firebase.Timestamp?,
+        val isCurrent: Boolean
+    )
+
+    var remoteSessions by mutableStateOf<List<RemoteSession>>(emptyList())
+        private set
+
+    private var myDeviceId: String? = null
+    private var selfSessionListener: ListenerRegistration? = null
+    private var remoteSessionsListener: ListenerRegistration? = null
+
     private var userDataListener: ListenerRegistration? = null
 
     var emailInput by mutableStateOf("")
@@ -126,6 +142,9 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             }
         }
         user?.uid?.let { loadUserData(it) }
+        // Восстанавливаем трекинг сессии и для случая "юзер уже был залогинен
+        // при прошлом запуске" (Firebase Auth сам восстанавливает currentUser).
+        user?.uid?.let { bindSessionTracking(it) }
 
         user?.let { u ->
             showVerifyScreen = !u.isEmailVerified
@@ -139,6 +158,105 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
 
             }
         }
+    }
+    private fun bindSessionTracking(uid: String) {
+        viewModelScope.launch {
+            val deviceId = sessionManager.getOrCreateDeviceId()
+            myDeviceId = deviceId
+            val ref = db.collection("users").document(uid)
+                .collection("sessions").document(deviceId)
+
+            ref.get().addOnSuccessListener { snap ->
+                val write = if (snap.exists()) {
+                    ref.update(
+                        mapOf(
+                            "lastActiveAt" to FieldValue.serverTimestamp()
+                        )
+                    )
+                } else {
+                    ref.set(
+                        mapOf(
+                            "deviceName" to SessionManager.deviceDisplayName(),
+                            "platform" to "android",
+                            "createdAt" to FieldValue.serverTimestamp(),
+                            "lastActiveAt" to FieldValue.serverTimestamp()
+                        )
+                    )
+                }
+                write
+                    .addOnSuccessListener {
+                        // Включаем self-listener только ПОСЛЕ подтверждённой записи —
+                        // иначе он поймает состояние "документа ещё нет" до первого
+                        // set() и тут же ложно разлогинит нас самих.
+                        startSelfSessionListener(uid, deviceId)
+                        startRemoteSessionsListener(uid, deviceId)
+                    }
+                    .addOnFailureListener { e -> Log.e("AuthVM", "Ошибка записи сессии устройства", e) }
+            }.addOnFailureListener { e -> Log.e("AuthVM", "Ошибка чтения сессии устройства", e) }
+        }
+    }
+
+    private fun startSelfSessionListener(uid: String, deviceId: String) {
+        selfSessionListener?.remove()
+        selfSessionListener = db.collection("users").document(uid)
+            .collection("sessions").document(deviceId)
+            .addSnapshotListener { snap, error ->
+                if (error != null) {
+                    Log.e("AuthVM", "Ошибка self-session listener", error)
+                    return@addSnapshotListener
+                }
+                if (snap != null && !snap.exists() && auth.currentUser?.uid == uid) {
+                    Log.w("AuthVM", "Сессия завершена удалённо, выходим из аккаунта")
+                    logout()
+                }
+            }
+    }
+
+    private fun startRemoteSessionsListener(uid: String, myDeviceId: String) {
+        remoteSessionsListener?.remove()
+        remoteSessionsListener = db.collection("users").document(uid)
+            .collection("sessions")
+            .addSnapshotListener { snap, error ->
+                if (error != null) {
+                    Log.e("AuthVM", "Ошибка списка активных сессий", error)
+                    return@addSnapshotListener
+                }
+                remoteSessions = snap?.documents.orEmpty().map { doc ->
+                    RemoteSession(
+                        id = doc.id,
+                        deviceName = doc.getString("deviceName") ?: "Неизвестное устройство",
+                        platform = doc.getString("platform") ?: "unknown",
+                        lastActiveAt = doc.getTimestamp("lastActiveAt"),
+                        isCurrent = doc.id == myDeviceId
+                    )
+                }.sortedByDescending { it.lastActiveAt?.toDate()?.time ?: 0L }
+            }
+    }
+
+    private fun unbindSessionTracking() {
+        selfSessionListener?.remove()
+        selfSessionListener = null
+        remoteSessionsListener?.remove()
+        remoteSessionsListener = null
+        remoteSessions = emptyList()
+    }
+
+    /**
+     * Завершить сессию из списка "Активные сессии". Если это сессия ТЕКУЩЕГО
+     * устройства — это просто обычный выход. Если чужая — удаляем её документ,
+     * а то устройство само себя разлогинит через свой selfSessionListener,
+     * как только увидит, что документ пропал (при следующем подключении к сети).
+     */
+    fun endSession(sessionId: String) {
+        val uid = auth.currentUser?.uid ?: return
+        if (sessionId == myDeviceId) {
+            logout()
+            return
+        }
+        db.collection("users").document(uid)
+            .collection("sessions").document(sessionId)
+            .delete()
+            .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось завершить сессию", e) }
     }
 
     private fun loadUserData(uid: String) {
@@ -300,6 +418,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                 val uid = loggedUser?.uid
                 if (uid != null) {
                     loadUserData(uid)
+                    bindSessionTracking(uid)
                     viewModelScope.launch {
                         sessionManager.saveSession(UserSession(
                             uid = uid,
@@ -369,13 +488,20 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                             "description" to "",
                             "avatarUrl" to "",
                             "emojiStatus" to " ",
-                            "emailVerified" to false
+                            "emailVerified" to false,
+                            // Верификация и роль — явные дефолты для новых юзеров.
+                            // Firestore rules всё равно требуют rank=0 и verification=false
+                            // на create, это просто делает документ сразу читаемым без
+                            // дополнительных .get(..., default) на клиенте.
+                            "rank" to 0,
+                            "verification" to false
                         )
 
                         db.collection("users").document(u.uid).set(userMap)
                             .addOnSuccessListener {
                                 user = auth.currentUser
                                 loadUserData(u.uid)
+                                bindSessionTracking(u.uid)
                                 viewModelScope.launch {
                                     sessionManager.saveSession(UserSession(
                                         uid = u.uid,
@@ -411,6 +537,18 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
     }
 
     fun logout() {
+        // Снимаем self-listener ДО удаления документа сессии — иначе поймаем
+        // своё же удаление как "сессию завершили с другого устройства" и
+        // рекурсивно ещё раз вызовем logout().
+        val uid = auth.currentUser?.uid
+        val deviceId = myDeviceId
+        unbindSessionTracking()
+        if (uid != null && deviceId != null) {
+            db.collection("users").document(uid)
+                .collection("sessions").document(deviceId)
+                .delete()
+                .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось удалить сессию при выходе", e) }
+        }
         logoutSilently {
             viewModelScope.launch {
                 ChatRepository(getApplication()).clearAll()
@@ -458,6 +596,11 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
 
     fun switchAccount(targetEmail: String, targetPass: String, onSuccess: () -> Unit) {
         isLoading = true
+        // Как и в logout() — снимаем слушателей сессии старого аккаунта ДО signOut().
+        // Без этого selfSessionListener/remoteSessionsListener остаются висеть на
+        // users/{oldUid}/sessions, и как только меняется auth-состояние, правило
+        // request.auth.uid == userId перестаёт совпадать -> PERMISSION_DENIED.
+        unbindSessionTracking()
         logoutSilently {
             auth.signOut()
             login(targetEmail, targetPass, onSuccess = {
@@ -471,6 +614,9 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
     }
 
     fun addNewAccount(onNavigateToAuth: () -> Unit) {
+        // Та же причина, что и в switchAccount() — иначе слушатели старого uid
+        // переживают signOut() и ловят PERMISSION_DENIED.
+        unbindSessionTracking()
         logoutSilently {
             auth.signOut()
             user = null

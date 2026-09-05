@@ -1,7 +1,7 @@
 package com.dan1eidtj.mayas.core.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import com.dan1eidtj.mayas.core_ui.ui.theme.MayasTypography
 
@@ -152,13 +153,43 @@ object MayasTheme {
 }
 
 
+/**
+ * Строит Material3 [ColorScheme] на основе активной [MayasColorScheme],
+ * а не из статичных Dark/Light пресетов, привязанных к системной теме.
+ *
+ * Это единственная точка конвертации Mayas-палитры в цвета, которые
+ * используют "голые" M3-компоненты без явных MayasTheme.* цветов
+ * (Button, TextField, Scaffold, AlertDialog, Switch и т.д.). Благодаря
+ * этому такие компоненты автоматически следуют выбранной теме Mayas
+ * (включая кастомные темы), а не системной тёмной/светлой теме Android.
+ */
+private fun mayasToMaterialColorScheme(scheme: MayasColorScheme): ColorScheme {
+    val isDark = scheme.background.luminance() < 0.5f
+    val base = if (isDark) darkColorScheme() else lightColorScheme()
+
+    return base.copy(
+        primary = scheme.accent,
+        onPrimary = Color.White,
+        secondary = scheme.accentLight,
+        onSecondary = Color.White,
+        background = scheme.background,
+        onBackground = scheme.textPrimary,
+        surface = scheme.surface,
+        onSurface = scheme.textPrimary,
+        surfaceVariant = scheme.surfaceVariant,
+        onSurfaceVariant = scheme.textSecondary,
+        outline = scheme.outline,
+        error = scheme.error,
+        onError = Color.White,
+    )
+}
+
 @Composable
 fun MayasAppTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
-    colorScheme: MayasColorScheme = if (darkTheme) DarkMayasColorScheme else LightMayasColorScheme,
+    colorScheme: MayasColorScheme = DarkMayasColorScheme,
     content: @Composable () -> Unit
 ) {
-    val materialColors = if (darkTheme) MayasTheme.DarkColors else MayasTheme.LightColors
+    val materialColors = remember(colorScheme) { mayasToMaterialColorScheme(colorScheme) }
 
     CompositionLocalProvider(LocalMayasColorScheme provides colorScheme) {
         MaterialTheme(

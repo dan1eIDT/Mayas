@@ -1,19 +1,21 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas
 
 import android.Manifest
-import android.R
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import androidx.annotation.RequiresPermission
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
+import com.dan1eidtj.data.NotificationPrefs
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-
 
 class NotificationReplyReceiver : BroadcastReceiver() {
 
@@ -33,11 +35,6 @@ class NotificationReplyReceiver : BroadcastReceiver() {
         val myUid = FirebaseAuth.getInstance().currentUser?.uid ?: return
         val pendingResult = goAsync()
 
-
-
-
-
-
         val messageDoc = hashMapOf(
             "senderId" to myUid,
             "text" to replyText,
@@ -51,13 +48,18 @@ class NotificationReplyReceiver : BroadcastReceiver() {
             .collection("messages")
             .add(messageDoc)
             .addOnCompleteListener {
-
-
+                if (ActivityCompat.checkSelfPermission(
+                        context,
+                        Manifest.permission.POST_NOTIFICATIONS
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    pendingResult.finish()
+                    return@addOnCompleteListener
+                }
                 appendReplyToNotification(context, chatId, notificationId, senderName, replyText)
                 pendingResult.finish()
             }
     }
-
 
     @RequiresPermission(Manifest.permission.POST_NOTIFICATIONS)
     private fun appendReplyToNotification(
@@ -67,8 +69,6 @@ class NotificationReplyReceiver : BroadcastReceiver() {
         senderName: String,
         replyText: String,
     ) {
-
-
         if (!MayasNotifications.canPostNotifications(context)) return
 
         val history = ChatNotificationStore.appendMessage(
@@ -96,8 +96,14 @@ class NotificationReplyReceiver : BroadcastReceiver() {
             }
         }
 
-        val updated = NotificationCompat.Builder(context, MayasNotifications.CHANNEL_MESSAGES)
-            .setSmallIcon(R.drawable.sym_action_chat)
+        val updated = NotificationCompat.Builder(
+            context,
+            MayasNotifications.channelIdFor(
+                soundOn = NotificationPrefs.soundEnabled(context),
+                vibrateOn = NotificationPrefs.vibrationEnabled(context)
+            )
+        )
+            .setSmallIcon(android.R.drawable.sym_action_chat)
             .setStyle(style)
             .setAutoCancel(true)
             .setGroup(MayasNotifications.GROUP_KEY_MESSAGES)

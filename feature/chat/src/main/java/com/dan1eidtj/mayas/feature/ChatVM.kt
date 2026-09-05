@@ -1,48 +1,36 @@
 package com.dan1eidtj.mayas.feature
 
+import android.app.Application
 import android.content.Context
-import com.dan1eidtj.data.FirestoreListenerCoordinator
-import com.dan1eidtj.data.BackendApi
 import android.media.AudioAttributes
 import android.media.SoundPool
 import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.dan1eidtj.data.BackendApi
+import com.dan1eidtj.data.FirestoreListenerCoordinator
+import com.dan1eidtj.mayas.core_ui.utils.formatLastSeen
+import com.dan1eidtj.mayas.db.ChatRepository
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FieldPath
+import com.google.firebase.firestore.Exclude
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.PropertyName
 import com.google.firebase.firestore.Query
-import com.google.firebase.firestore.SetOptions
-import com.google.firebase.firestore.Exclude
 import com.google.firebase.firestore.ServerTimestamp
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.util.Date
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
-import com.dan1eidtj.mayas.core_ui.utils.formatLastSeen
 import kotlinx.coroutines.tasks.await
-import android.app.Application
-import androidx.lifecycle.AndroidViewModel
-import com.dan1eidtj.mayas.storage.Configtebeblat
-import com.dan1eidtj.mayas.db.ChatRepository
-import com.google.firebase.firestore.PropertyName
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import java.util.Date
 import java.util.Locale
+
 data class Message(
     @get:Exclude var id: String = "",
     val senderId: String = "",
@@ -83,13 +71,21 @@ data class Message(
     val ttlSeconds: Long = 0,
     val expireAt: Date? = null,
 
-
+    @get:PropertyName("isSilent")
     val isSilent: Boolean = false,
 
+    @get:PropertyName("isRead")
+    val isRead: Boolean = false,
 
     val scheduledFor: Date? = null,
     val messageState: String = MessageState.SENT,
 )
+
+// Единый паттерн распознавания ссылок в тексте сообщений. Используется и для подсветки
+// URL прямо в пузыре сообщения (ChatScreen.rememberParsedMessageText), и для вкладки
+// "Ссылки" в профиле (ProfileComponents.extractUrls) — раньше там жили две чуть разные
+// регулярки, теперь источник один, чтобы поведение не расходилось.
+const val MESSAGE_URL_REGEX = "(https?://[\\w-]+(\\.[\\w-]+)+(/[^\\s]*)?)"
 
 object MessageType {
     const val TEXT = "TEXT"
@@ -198,7 +194,8 @@ private fun postSystemMessage(
 }
 
 
-
+
+
 
 class ChatVM(application: Application) : AndroidViewModel(application) {
 
@@ -242,11 +239,26 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     var partnerEmoji by mutableStateOf<String?>(null)
         private set
 
-    var pinnedMessageId by mutableStateOf<String?>(null)
+    // Закреплённые сообщения теперь список (chats/{id}/pinnedMessages), а не одно поле
+    // на документе чата. Старые поля pinnedMessageId/pinnedMessage на chats/{id} могут
+    // остаться от старых версий — они читаются как legacy-фолбэк, пока подколлекция
+    // пуста, чтобы у старых чатов не "потерялось" уже закреплённое сообщение.
+    var pinnedMessages by mutableStateOf<List<Message>>(emptyList())
         private set
 
-    var pinnedMessageText by mutableStateOf<String?>(null)
-        private set
+    private var legacyPinnedId: String? = null
+    private var legacyPinnedText: String? = null
+    private var pinnedFromSub: List<Message> = emptyList()
+
+    private fun recomputePinnedMessages() {
+        pinnedMessages = pinnedFromSub.ifEmpty {
+            val id = legacyPinnedId
+            val text = legacyPinnedText
+            if (!id.isNullOrBlank() && !text.isNullOrBlank()) {
+                listOf(Message(id = id, text = text, senderName = ""))
+            } else emptyList()
+        }
+    }
 
     var chatTheme by mutableStateOf<String?>(null)
         private set
@@ -264,6 +276,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     private var messagesListener: ListenerRegistration? = null
     private var userListener: ListenerRegistration? = null
     private var chatDocListener: ListenerRegistration? = null
+    private var pinnedMessagesListener: ListenerRegistration? = null
 
 
 
@@ -296,6 +309,12 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     var partnerVerifiedIcon by mutableStateOf("verified")
         private set
 
+    var partnerVerification by mutableStateOf(com.dan1eidtj.data.VerificationInfo())
+        private set
+
+    var partnerRank by mutableStateOf(com.dan1eidtj.data.Rank.USER)
+        private set
+
     var partnerAvatarFrame by mutableStateOf("rainbow")
         private set
 
@@ -309,6 +328,12 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         private set
 
     var myVerifiedIcon by mutableStateOf("verified")
+        private set
+
+    var myVerification by mutableStateOf(com.dan1eidtj.data.VerificationInfo())
+        private set
+
+    var myRank by mutableStateOf(com.dan1eidtj.data.Rank.USER)
         private set
 
     var isRecording by mutableStateOf(false)
@@ -442,6 +467,28 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     val myUid: String?
         get() = auth.currentUser?.uid
 
+    private suspend fun addUserChatIndex(uid: String, chatId: String) {
+        if (uid.isBlank() || chatId.isBlank()) return
+
+        db.collection("userChats")
+            .document(uid)
+            .collection("chats")
+            .document(chatId)
+            .set(mapOf("chatId" to chatId), SetOptions.merge())
+            .await()
+    }
+
+    private suspend fun removeUserChatIndex(uid: String, chatId: String) {
+        if (uid.isBlank() || chatId.isBlank()) return
+
+        db.collection("userChats")
+            .document(uid)
+            .collection("chats")
+            .document(chatId)
+            .delete()
+            .await()
+    }
+
     private var myName: String = "Вы"
 
 
@@ -506,6 +553,8 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                     myName = doc.getString("name") ?: doc.getString("username") ?: "Вы"
                     myIsPremium = doc.getBoolean("isPremium") ?: false
                     myVerifiedIcon = doc.getString("verifiedIcon") ?: "verified"
+                    myVerification = com.dan1eidtj.data.VerificationInfo.fromMap(doc.data)
+                    myRank = com.dan1eidtj.data.Rank.fromMap(doc.data)
                     myMessageStyle = doc.getString("messageStyle")
                 }
             }
@@ -514,6 +563,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     private fun stopAllListeners() {
         messagesListener?.remove(); messagesListener = null
         chatDocListener?.remove(); chatDocListener = null
+        pinnedMessagesListener?.remove(); pinnedMessagesListener = null
         userListener?.remove(); userListener = null
         userListenerChatId = null
         myProfileListener?.remove(); myProfileListener = null
@@ -574,6 +624,28 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 }
             }
 
+        pinnedMessagesListener?.remove()
+        pinnedMessagesListener = db.collection("chats").document(chatId)
+            .collection("pinnedMessages")
+            .orderBy("pinnedAt", Query.Direction.ASCENDING)
+            .addSnapshotListener { snap, error ->
+                if (error != null) {
+                    Log.e("ChatVM", "Ошибка снапшота закреплённых сообщений", error)
+                    return@addSnapshotListener
+                }
+                pinnedFromSub = snap?.documents?.mapNotNull { doc ->
+                    val msgId = doc.getString("messageId") ?: doc.id
+                    Message(
+                        id = msgId,
+                        senderName = doc.getString("senderName") ?: "",
+                        text = doc.getString("text"),
+                        mediaUrl = doc.getString("mediaUrl"),
+                        type = doc.getString("type") ?: MessageType.TEXT
+                    )
+                } ?: emptyList()
+                recomputePinnedMessages()
+            }
+
         chatDocListener?.remove()
         chatDocListener = db.collection("chats").document(chatId)
             .addSnapshotListener { doc, error ->
@@ -582,8 +654,9 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                     return@addSnapshotListener
                 }
                 if (doc != null && doc.exists()) {
-                    pinnedMessageId = doc.getString("pinnedMessageId")
-                    pinnedMessageText = doc.getString("pinnedMessage")
+                    legacyPinnedId = doc.getString("pinnedMessageId")
+                    legacyPinnedText = doc.getString("pinnedMessage")
+                    recomputePinnedMessages()
                     chatTheme = doc.getString("theme")
                     chatDisappearingTimerSec = doc.getLong("disappearingTimerSec") ?: 0L
 
@@ -639,21 +712,29 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                         return@addSnapshotListener
                     }
                     if (doc != null && doc.exists() && !isGroupChat) {
-                        val lastSeen = doc.getTimestamp("lastSeen")
-                        lastSeenText = formatLastSeen(lastSeen)
+                        // Настройки приватности собеседника (privacy_last_seen, privacy_photo).
+                        // Это всегда чужой профиль (мы в его личном чате), поэтому без
+                        // isMyProfile-исключения, в отличие от ProfileScreen.
+                        val lastSeenAllowed = (doc.getString("privacy_last_seen") ?: "all") == "all"
+                        val photoAllowed = (doc.getString("privacy_photo") ?: "all") == "all"
+
+                        val lastSeen = if (lastSeenAllowed) doc.getTimestamp("lastSeen") else null
+                        lastSeenText = if (lastSeenAllowed) formatLastSeen(lastSeen) else "был(а) недавно"
 
                         val typingMap = doc.get("typing") as? Map<*, *>
                         val isTypingInThisChat = typingMap?.get(chatId) == true
 
                         typingText = if (isTypingInThisChat) "печатает..." else ""
                         partnerName = doc.getString("name") ?: doc.getString("username") ?: "User"
-                        partnerAvatarUrl = doc.getString("avatarUrl")
+                        partnerAvatarUrl = if (photoAllowed) doc.getString("avatarUrl") else null
                         partnerEmoji = doc.getString("emojiStatus")
-                        partnerUseCustomAvatar = doc.getBoolean("useCustomAvatar") ?: true
+                        partnerUseCustomAvatar = if (photoAllowed) doc.getBoolean("useCustomAvatar") ?: true else false
                         partnerProfileIcon = doc.getString("profileIcon") ?: "face"
                         partnerProfileGlow = doc.getString("profileGlow") ?: "purple"
                         partnerIsPremium = doc.getBoolean("isPremium") ?: false
                         partnerVerifiedIcon = doc.getString("verifiedIcon") ?: "verified"
+                        partnerVerification = com.dan1eidtj.data.VerificationInfo.fromMap(doc.data)
+                        partnerRank = com.dan1eidtj.data.Rank.fromMap(doc.data)
                         partnerAvatarFrame = doc.getString("avatarFrame") ?: "rainbow"
 
 
@@ -910,6 +991,9 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             ).await()
         }
 
+        addUserChatIndex(myUid, chatId)
+        addUserChatIndex(partnerUid, chatId)
+
         return chatId
     }
 
@@ -936,6 +1020,8 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 )
             ).await()
         }
+
+        addUserChatIndex(myUid, chatId)
 
         return chatId
     }
@@ -1023,6 +1109,16 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         db.collection("chats").document(newChatId)
             .set(groupData)
             .addOnSuccessListener {
+                viewModelScope.launch {
+                    allMembers.forEach { memberUid ->
+                        try {
+                            addUserChatIndex(memberUid, newChatId)
+                        } catch (e: Exception) {
+                            Log.e("ChatVM", "Ошибка создания userChats для $memberUid", e)
+                        }
+                    }
+                }
+
                 val systemMessage = mapOf(
                     "type" to MessageType.SYSTEM,
                     "text" to "$myName создал(а) группу \"$title\"",
@@ -1080,6 +1176,14 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             db.collection("chats").document(newChatId)
                 .set(channelData)
                 .addOnSuccessListener {
+                    viewModelScope.launch {
+                        try {
+                            addUserChatIndex(uid, newChatId)
+                        } catch (e: Exception) {
+                            Log.e("ChatVM", "Ошибка создания userChats канала", e)
+                        }
+                    }
+
                     val systemMessage = mapOf(
                         "type" to MessageType.SYSTEM,
                         "text" to "Канал \"$title\" создан",
@@ -1425,11 +1529,19 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     }
 
     fun pinMessage(chatId: String, message: Message) {
+        val uid = myUid ?: return
+        val data = mutableMapOf<String, Any?>(
+            "messageId" to message.id,
+            "text" to (message.text ?: if (message.mediaUrl != null) "📷 Фотография" else "Голосовое сообщение"),
+            "mediaUrl" to message.mediaUrl,
+            "senderName" to message.senderName,
+            "type" to message.type,
+            "pinnedAt" to FieldValue.serverTimestamp(),
+            "pinnedBy" to uid
+        )
         db.collection("chats").document(chatId)
-            .update(
-                "pinnedMessageId", message.id,
-                "pinnedMessage", message.text ?: if (message.mediaUrl != null) "📷 Фотография" else "Голосовое сообщение"
-            )
+            .collection("pinnedMessages").document(message.id)
+            .set(data)
             .addOnSuccessListener {
                 postSystemMessage(
                     db, chatId,
@@ -1441,13 +1553,84 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка закрепления сообщения", e) }
     }
 
-    fun unpinMessage(chatId: String) {
+    fun unpinMessage(chatId: String, messageId: String) {
         db.collection("chats").document(chatId)
-            .update("pinnedMessageId", null, "pinnedMessage", null)
+            .collection("pinnedMessages").document(messageId)
+            .delete()
             .addOnSuccessListener {
                 postSystemMessage(db, chatId, text = "$myName открепил(а) сообщение", action = SystemAction.UNPINNED)
+                // Если это было старое (legacy) закрепление на самом документе чата — чистим и его.
+                if (legacyPinnedId == messageId) {
+                    db.collection("chats").document(chatId)
+                        .update("pinnedMessageId", null, "pinnedMessage", null)
+                }
             }
             .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка открепления сообщения", e) }
+    }
+
+    fun unpinAllMessages(chatId: String) {
+        val chatRef = db.collection("chats").document(chatId)
+        chatRef.collection("pinnedMessages").get()
+            .addOnSuccessListener { snap ->
+                val batch = db.batch()
+                snap.documents.forEach { batch.delete(it.reference) }
+                batch.update(chatRef, mapOf("pinnedMessageId" to null, "pinnedMessage" to null))
+                batch.commit()
+                    .addOnSuccessListener {
+                        postSystemMessage(db, chatId, text = "$myName открепил(а) все сообщения", action = SystemAction.UNPINNED)
+                    }
+            }
+            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка открепления всех сообщений", e) }
+    }
+
+    // ==== Данные для вкладок профиля (Медиа / Ссылки / Закреплённые) ====
+    // Разовая (не realtime) загрузка — открывается только когда пользователь
+    // смотрит вкладку профиля, поэтому постоянный слушатель не нужен.
+
+    suspend fun fetchRecentMessages(chatId: String, limit: Long = 300): List<Message> {
+        if (chatId.isBlank()) return emptyList()
+        return try {
+            db.collection("chats").document(chatId)
+                .collection("messages")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(limit)
+                .get().await()
+                .documents.mapNotNull { it.toObject(Message::class.java)?.copy(id = it.id) }
+        } catch (e: Exception) {
+            Log.e("ChatVM", "Ошибка загрузки сообщений профиля", e)
+            emptyList()
+        }
+    }
+
+    suspend fun fetchPinnedMessages(chatId: String): List<Message> {
+        if (chatId.isBlank()) return emptyList()
+        return try {
+            val fromSub = db.collection("chats").document(chatId)
+                .collection("pinnedMessages")
+                .orderBy("pinnedAt", Query.Direction.DESCENDING)
+                .get().await()
+                .documents.map { doc ->
+                    Message(
+                        id = doc.getString("messageId") ?: doc.id,
+                        senderName = doc.getString("senderName") ?: "",
+                        text = doc.getString("text"),
+                        mediaUrl = doc.getString("mediaUrl"),
+                        type = doc.getString("type") ?: MessageType.TEXT
+                    )
+                }
+            if (fromSub.isNotEmpty()) return fromSub
+
+            // Старый чат без подколлекции — фолбэк на legacy-поля документа чата.
+            val chatDoc = db.collection("chats").document(chatId).get().await()
+            val legacyId = chatDoc.getString("pinnedMessageId")
+            val legacyText = chatDoc.getString("pinnedMessage")
+            if (!legacyId.isNullOrBlank() && !legacyText.isNullOrBlank()) {
+                listOf(Message(id = legacyId, text = legacyText, senderName = ""))
+            } else emptyList()
+        } catch (e: Exception) {
+            Log.e("ChatVM", "Ошибка загрузки закреплённых сообщений профиля", e)
+            emptyList()
+        }
     }
 
 
@@ -1555,8 +1738,15 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка блокировки пользователя", e) }
     }
 
+    fun unblockUser(myUid: String, partnerUid: String, onSuccess: () -> Unit) {
+        db.collection("users").document(myUid)
+            .update("blocked", FieldValue.arrayRemove(partnerUid))
+            .addOnSuccessListener { onSuccess() }
+            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка разблокировки пользователя", e) }
+    }
+
     private fun markAsRead(chatId: String, list: List<Message>, uid: String) {
-        val unread = list.filter { !it.readBy.contains(uid) }
+        val unread = list.filter { it.senderId != uid && !it.readBy.contains(uid) }
         if (unread.isEmpty()) return
 
         val batch = db.batch()
@@ -1591,24 +1781,60 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteGroup(chatId: String, onSuccess: () -> Unit) {
-        db.collection("chats").document(chatId)
-            .collection("messages").get()
-            .addOnSuccessListener { snapshot ->
-                val batch = db.batch()
-                snapshot.documents.forEach { batch.delete(it.reference) }
-                batch.commit()
-                    .addOnCompleteListener {
-                        db.collection("chats").document(chatId).delete()
+        db.collection("chats").document(chatId).get()
+            .addOnSuccessListener { chatDoc ->
+                val participantIds = (chatDoc.get("participants") as? List<*>)
+                    ?.filterIsInstance<String>()
+                    ?.distinct()
+                    ?: emptyList()
+
+                chatDoc.reference
+                    .collection("messages")
+                    .get()
+                    .addOnSuccessListener { snapshot ->
+                        val batch = db.batch()
+
+                        snapshot.documents.forEach { messageDoc ->
+                            batch.delete(messageDoc.reference)
+                        }
+
+                        batch.commit()
                             .addOnSuccessListener {
-                                viewModelScope.launch {
-                                    repository.clearChatHistoryLocally(chatId)
-                                }
-                                onSuccess()
+                                chatDoc.reference.delete()
+                                    .addOnSuccessListener {
+                                        viewModelScope.launch {
+                                            participantIds.forEach { memberUid ->
+                                                try {
+                                                    removeUserChatIndex(memberUid, chatId)
+                                                } catch (e: Exception) {
+                                                    Log.e(
+                                                        "ChatVM",
+                                                        "Ошибка удаления userChats/$memberUid/$chatId",
+                                                        e
+                                                    )
+                                                }
+                                            }
+
+                                            repository.clearChatHistoryLocally(chatId)
+                                        }
+
+                                        onSuccess()
+                                    }
+                                    .addOnFailureListener { e ->
+                                        Log.e("ChatVM", "Ошибка удаления группы", e)
+                                    }
                             }
-                            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка удаления группы", e) }
+                            .addOnFailureListener { e ->
+                                Log.e("ChatVM", "Ошибка удаления сообщений группы", e)
+                            }
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("ChatVM", "Ошибка чтения сообщений группы", e)
                     }
             }
-            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка удаления сообщений группы", e) }
+            .addOnFailureListener { e ->
+                Log.e("ChatVM", "Ошибка чтения группы перед удалением", e)
+            }
     }
 
     fun leaveGroup(chatId: String, myUid: String, onSuccess: () -> Unit) {
@@ -1617,7 +1843,16 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             "members", FieldValue.arrayRemove(myUid),
             "admins", FieldValue.arrayRemove(myUid),
             "moderators", FieldValue.arrayRemove(myUid)
-        ).addOnSuccessListener { onSuccess() }
+        ).addOnSuccessListener {
+            viewModelScope.launch {
+                try {
+                    removeUserChatIndex(myUid, chatId)
+                } catch (e: Exception) {
+                    Log.e("ChatVM", "Ошибка удаления собственного userChats индекса", e)
+                }
+                onSuccess()
+            }
+        }
     }
 
     fun startRecording() {
@@ -1729,7 +1964,11 @@ data class GroupMemberUi(
     val profileGlow: String,
     val isOwner: Boolean,
     val isAdmin: Boolean,
-    val isModerator: Boolean
+    val isModerator: Boolean,
+    val verification: com.dan1eidtj.data.VerificationInfo = com.dan1eidtj.data.VerificationInfo(),
+    // Глобальный ранг юзера в приложении (rank в users/{uid}), НЕ путать с isOwner/
+    // isAdmin/isModerator выше — те про права внутри конкретного чата.
+    val globalRank: com.dan1eidtj.data.Rank = com.dan1eidtj.data.Rank.USER
 )
 
 
@@ -1827,7 +2066,9 @@ class GroupMembersVM(application: Application) : AndroidViewModel(application) {
                 profileGlow = snap.getString("profileGlow") ?: "purple",
                 isOwner = uid == ownerId,
                 isAdmin = uid != ownerId && uid in adminsList && fullAdmin,
-                isModerator = uid != ownerId && uid in adminsList && !fullAdmin
+                isModerator = uid != ownerId && uid in adminsList && !fullAdmin,
+                verification = com.dan1eidtj.data.VerificationInfo.fromMap(snap.data),
+                globalRank = com.dan1eidtj.data.Rank.fromMap(snap.data)
             )
         } catch (e: Exception) {
             null
@@ -1872,7 +2113,23 @@ class GroupMembersVM(application: Application) : AndroidViewModel(application) {
                     "members" to FieldValue.arrayUnion(*uids.toTypedArray())
                 )
             )
-            .addOnSuccessListener { onResult(true) }
+            .addOnSuccessListener {
+                viewModelScope.launch {
+                    uids.distinct().forEach { memberUid ->
+                        try {
+                            db.collection("userChats")
+                                .document(memberUid)
+                                .collection("chats")
+                                .document(chatId)
+                                .set(mapOf("chatId" to chatId), SetOptions.merge())
+                                .await()
+                        } catch (e: Exception) {
+                            Log.e("GroupMembersVM", "Ошибка создания userChats для $memberUid", e)
+                        }
+                    }
+                    onResult(true)
+                }
+            }
             .addOnFailureListener { onResult(false) }
     }
 
@@ -1928,7 +2185,10 @@ class GroupMembersVM(application: Application) : AndroidViewModel(application) {
                     "adminPermissions.$uid" to FieldValue.delete()
                 )
             )
-            .addOnSuccessListener { onResult(true, null) }
+            .addOnSuccessListener {
+                db.collection("userChats").document(uid).collection("chats").document(chatId).delete()
+                    .addOnCompleteListener { onResult(true, null) }
+            }
             .addOnFailureListener { e -> onResult(false, e.localizedMessage) }
     }
 
@@ -1943,7 +2203,10 @@ class GroupMembersVM(application: Application) : AndroidViewModel(application) {
                     "bannedUids" to FieldValue.arrayUnion(uid)
                 )
             )
-            .addOnSuccessListener { onResult(true, null) }
+            .addOnSuccessListener {
+                db.collection("userChats").document(uid).collection("chats").document(chatId).delete()
+                    .addOnCompleteListener { onResult(true, null) }
+            }
             .addOnFailureListener { e -> onResult(false, e.localizedMessage) }
     }
 

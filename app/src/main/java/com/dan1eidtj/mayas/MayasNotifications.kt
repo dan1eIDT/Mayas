@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas
 
 import android.Manifest
@@ -27,6 +28,8 @@ object MayasNotifications {
     const val EXTRA_NOTIFICATION_ID = "extra_notification_id"
     const val EXTRA_SENDER_NAME = "extra_sender_name"
 
+    fun channelIdFor(soundOn: Boolean, vibrateOn: Boolean): String =
+        "${CHANNEL_MESSAGES}_s${if (soundOn) 1 else 0}_v${if (vibrateOn) 1 else 0}"
 
     fun canPostNotifications(context: Context): Boolean {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true

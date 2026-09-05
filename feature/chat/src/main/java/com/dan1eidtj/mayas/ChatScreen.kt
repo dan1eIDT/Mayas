@@ -82,6 +82,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import com.dan1eidtj.mayas.CallType
+import com.dan1eidtj.mayas.core_ui.ui.components.VerificationBadge
+import com.dan1eidtj.mayas.core_ui.ui.components.AdminLevelBadge
 import com.dan1eidtj.mayas.core_ui.ui.components.BubbleShape
 import com.dan1eidtj.mayas.core_ui.ui.components.BubbleType
 import com.dan1eidtj.mayas.core_ui.ui.components.FrameStyles
@@ -148,7 +150,7 @@ fun rememberParsedMessageText(text: String, accentColor: Color): AnnotatedString
                 addStyle(style, range.first, range.last + 1)
             }
 
-            val urlMatcher = Pattern.compile("(https?://[\\w-]+(\\.[\\w-]+)+(/[^\\s]*)?)").matcher(finalString)
+            val urlMatcher = Pattern.compile(MESSAGE_URL_REGEX).matcher(finalString)
             while (urlMatcher.find()) {
                 addStyle(SpanStyle(color = accentColor, fontWeight = FontWeight.Bold), urlMatcher.start(), urlMatcher.end())
                 addStringAnnotation("URL", urlMatcher.group(), urlMatcher.start(), urlMatcher.end())
@@ -346,6 +348,7 @@ fun ChatScreen(
     onBack: () -> Unit,
     onOpenProfile: (String, Boolean) -> Unit,
     onStartCall: (peerId: String, callType: CallType) -> Unit = { _, _ -> },
+    scrollToMessageId: String? = null,
 ) {
     val chatVM: ChatVM = viewModel()
     val authVM: AuthVM = viewModel()
@@ -424,6 +427,18 @@ fun ChatScreen(
     val chatProfileGlow = chatVM.partnerProfileGlow ?: "purple"
     val chatEmoji = chatVM.partnerEmoji
 
+    // Переход из профиля (вкладка "Закреплённые") с конкретным сообщением — как только
+    // список сообщений реально загрузился, проматываем к нему один раз.
+    var didScrollToTarget by remember(chatId, scrollToMessageId) { mutableStateOf(false) }
+    LaunchedEffect(messages, scrollToMessageId) {
+        if (didScrollToTarget || scrollToMessageId.isNullOrBlank()) return@LaunchedEffect
+        val index = messages.indexOfFirst { it.id == scrollToMessageId }
+        if (index != -1) {
+            didScrollToTarget = true
+            listState.animateScrollToItem(index)
+        }
+    }
+
     LaunchedEffect(SharedContentManager.sharedText) {
         SharedContentManager.sharedText?.let { sharedText ->
             input = sharedText
@@ -453,8 +468,13 @@ fun ChatScreen(
     val typingText = chatVM.typingText
     val isPartnerTyping = !typingText.isNullOrBlank()
     val partnerUid = chatVM.partnerUid
-    val pinnedMessageId = chatVM.pinnedMessageId
-    val pinnedMessageText = chatVM.pinnedMessageText
+    val pinnedMessages = chatVM.pinnedMessages
+    var pinnedIndex by remember(chatId) { mutableStateOf(0) }
+    val currentPinned = pinnedMessages.getOrNull(pinnedIndex.coerceIn(0, (pinnedMessages.size - 1).coerceAtLeast(0)))
+    var showPinnedList by remember { mutableStateOf(false) }
+    LaunchedEffect(pinnedMessages.size) {
+        if (pinnedIndex >= pinnedMessages.size) pinnedIndex = 0
+    }
     val partnerIsPremium = chatVM.partnerIsPremium
     val myIsPremium = chatVM.myIsPremium
 
@@ -681,20 +701,19 @@ fun ChatScreen(
                                                     )
                                                 }
 
-                                                if (partnerIsPremium && !chatVM.isGroupChat) {
+                                                // Верификация — независима от Premium, показывается
+                                                // и для юзеров, и для каналов (chatVM.isGroupChat не
+                                                // фильтрует канал, только группы без верификации).
+                                                if (chatVM.partnerVerification.verified) {
                                                     Spacer(Modifier.width(4.dp))
-                                                    val vIcon = when(chatVM.partnerVerifiedIcon) {
-                                                        "star" -> Icons.Default.Star
-                                                        "diamond" -> Icons.Default.Diamond
-                                                        "auto_awesome" -> Icons.Default.AutoAwesome
-                                                        else -> Icons.Default.Verified
-                                                    }
-                                                    Icon(
-                                                        imageVector = vIcon,
-                                                        contentDescription = "Premium",
-                                                        tint = MayasTheme.GlowGold,
-                                                        modifier = Modifier.size(16.dp)
+                                                    VerificationBadge(
+                                                        info = chatVM.partnerVerification,
+                                                        size = 15.dp
                                                     )
+                                                }
+                                                if (chatVM.partnerRank != com.dan1eidtj.data.Rank.USER && !chatVM.isGroupChat) {
+                                                    Spacer(Modifier.width(4.dp))
+                                                    AdminLevelBadge(rank = chatVM.partnerRank, size = 15.dp)
                                                 }
 
                                                 if (!chatEmoji.isNullOrBlank()) {
@@ -833,19 +852,23 @@ fun ChatScreen(
                             }
                         )
 
-                        AnimatedVisibility(visible = !pinnedMessageText.isNullOrBlank()) {
+                        AnimatedVisibility(visible = currentPinned != null) {
                             Column {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .background(surfaceColor)
                                         .clickable {
-                                            messages.indexOfFirst { it.id == pinnedMessageId }
+                                            val pinned = currentPinned ?: return@clickable
+                                            messages.indexOfFirst { it.id == pinned.id }
                                                 .takeIf { it != -1 }?.let { index ->
                                                     coroutineScope.launch {
                                                         listState.animateScrollToItem(index)
                                                     }
                                                 }
+                                            if (pinnedMessages.size > 1) {
+                                                pinnedIndex = (pinnedIndex + 1) % pinnedMessages.size
+                                            }
                                         }
                                         .padding(horizontal = 16.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically
@@ -859,13 +882,19 @@ fun ChatScreen(
                                     Spacer(Modifier.width(12.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            "Закрепленное сообщение",
+                                            if (pinnedMessages.size > 1)
+                                                "Закреплено (${pinnedIndex + 1}/${pinnedMessages.size})"
+                                            else "Закрепленное сообщение",
                                             fontSize = 12.sp,
                                             color = MayasTheme.GlowBlue,
-                                            fontWeight = FontWeight.Bold
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = if (pinnedMessages.size > 1) {
+                                                Modifier.clickable { showPinnedList = true }
+                                            } else Modifier
                                         )
                                         Text(
-                                            pinnedMessageText.orEmpty(),
+                                            currentPinned?.text
+                                                ?: if (currentPinned?.mediaUrl != null) "📷 Фотография" else "",
                                             fontSize = 13.sp,
                                             maxLines = 1,
                                             color = textSecondaryColor,
@@ -873,7 +902,9 @@ fun ChatScreen(
                                         )
                                     }
                                     IconButton(
-                                        onClick = { chatVM.unpinMessage(chatId) },
+                                        onClick = {
+                                            currentPinned?.let { chatVM.unpinMessage(chatId, it.id) }
+                                        },
                                         modifier = Modifier.size(24.dp)
                                     ) {
                                         Icon(
@@ -938,6 +969,7 @@ fun ChatScreen(
                                 }
 
                                 val isMe = msg.senderId == myUid
+                                val isChannelPost = chatVM.chatType == "CHANNEL"
                                 val isGroupChat = chatVM.isGroupChat
 
                                 val nextMsg = messages.getOrNull(index - 1)
@@ -1212,13 +1244,27 @@ fun ChatScreen(
                                                         .background(MayasTheme.GlowPurple.copy(alpha = 0.2f)),
                                                     contentAlignment = Alignment.Center
                                                 ) {
-                                                    Text(
-                                                        text = (msg.senderName ?: "").take(1)
-                                                            .uppercase(),
-                                                        color = textPrimaryColor,
-                                                        fontSize = 12.sp,
-                                                        fontWeight = FontWeight.Bold
-                                                    )
+                                                    if (isChannelPost && chatVM.partnerUseCustomAvatar && !chatVM.partnerAvatarUrl.isNullOrBlank()) {
+                                                        B2Image(
+                                                            key = chatVM.partnerAvatarUrl!!,
+                                                            contentDescription = null,
+                                                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                                            contentScale = ContentScale.Crop
+                                                        )
+                                                    } else if (isChannelPost) {
+                                                        Text(
+                                                            text = chatVM.partnerEmoji ?: "📢",
+                                                            fontSize = 14.sp
+                                                        )
+                                                    } else {
+                                                        Text(
+                                                            text = (msg.senderName ?: "").take(1)
+                                                                .uppercase(),
+                                                            color = textPrimaryColor,
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
                                                 }
                                             } else {
                                                 Spacer(modifier = Modifier.width(40.dp))
@@ -1249,12 +1295,12 @@ fun ChatScreen(
                                                             modifier = Modifier.padding(bottom = 4.dp)
                                                         ) {
                                                             Text(
-                                                                text = msg.senderName.orEmpty(),
+                                                                text = if (isChannelPost) chatVM.partnerName else msg.senderName.orEmpty(),
                                                                 fontSize = 13.sp,
                                                                 fontWeight = FontWeight.Bold,
-                                                                color = if (msg.isPremium) MayasTheme.GlowGold else MayasTheme.GlowPurple
+                                                                color = if (msg.isPremium && !isChannelPost) MayasTheme.GlowGold else MayasTheme.GlowPurple
                                                             )
-                                                            if (msg.isPremium) {
+                                                            if (msg.isPremium && !isChannelPost) {
                                                                 Spacer(Modifier.width(4.dp))
                                                                 Icon(
                                                                     imageVector = Icons.Default.Verified,
@@ -1262,6 +1308,21 @@ fun ChatScreen(
                                                                     tint = MayasTheme.GlowGold,
                                                                     modifier = Modifier.size(14.dp)
                                                                 )
+                                                            }
+                                                            if (chatVM.chatType != "CHANNEL") {
+                                                                val role = when {
+                                                                    msg.senderId.isNotBlank() && msg.senderId == chatVM.chatOwnerId -> "владелец"
+                                                                    msg.senderId.isNotBlank() && msg.senderId in chatVM.chatAdmins -> "админ"
+                                                                    else -> null
+                                                                }
+                                                                if (role != null) {
+                                                                    Spacer(Modifier.width(6.dp))
+                                                                    Text(
+                                                                        text = role,
+                                                                        fontSize = 11.sp,
+                                                                        color = MayasTheme.TextSecondary
+                                                                    )
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -2180,34 +2241,19 @@ fun ChatScreen(
         }
 
         if (showBlockUserConfirm) {
-            AlertDialog(
-                onDismissRequest = { showBlockUserConfirm = false },
-                containerColor = surfaceColor,
-                title = { Text("Заблокировать пользователя?", color = textPrimaryColor) },
-                text = {
-                    Text(
-                        "Вы больше не будете получать сообщения от этого пользователя.",
-                        color = textSecondaryColor
-                    )
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            showBlockUserConfirm = false
-                            chatVM.blockUser(myUid ?: "", partnerUid) {
-                                Toast.makeText(context, "Пользователь заблокирован", Toast.LENGTH_SHORT)
-                                    .show()
-                                onBack()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.ErrorRed)
-                    ) { Text("Заблокировать") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showBlockUserConfirm = false }) {
-                        Text("Отмена", color = textSecondaryColor)
+            BlockUserConfirmDialog(
+                onConfirm = {
+                    showBlockUserConfirm = false
+                    chatVM.blockUser(myUid ?: "", partnerUid) {
+                        Toast.makeText(context, "Пользователь заблокирован", Toast.LENGTH_SHORT)
+                            .show()
+                        onBack()
                     }
-                }
+                },
+                onDismiss = { showBlockUserConfirm = false },
+                containerColor = surfaceColor,
+                titleColor = textPrimaryColor,
+                textColor = textSecondaryColor
             )
         }
 
@@ -2219,6 +2265,25 @@ fun ChatScreen(
                 onSelect = { theme ->
                     chatVM.setChatTheme(chatId, theme)
                     showThemePicker = false
+                }
+            )
+        }
+
+        if (showPinnedList) {
+            PinnedMessagesSheet(
+                pinnedMessages = pinnedMessages,
+                onDismiss = { showPinnedList = false },
+                onJumpTo = { pinned ->
+                    showPinnedList = false
+                    messages.indexOfFirst { it.id == pinned.id }
+                        .takeIf { it != -1 }?.let { index ->
+                            coroutineScope.launch { listState.animateScrollToItem(index) }
+                        }
+                },
+                onUnpin = { pinned -> chatVM.unpinMessage(chatId, pinned.id) },
+                onUnpinAll = {
+                    chatVM.unpinAllMessages(chatId)
+                    showPinnedList = false
                 }
             )
         }
@@ -2296,6 +2361,118 @@ fun ChatScreen(
 private fun withContextMainToast(context: Context, message: String) {
     android.os.Handler(context.mainLooper).post {
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+}
+
+@Composable
+fun BlockUserConfirmDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    containerColor: Color = MayasTheme.Surface,
+    titleColor: Color = MayasTheme.TextPrimary,
+    textColor: Color = MayasTheme.TextSecondary
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = containerColor,
+        title = { Text("Заблокировать пользователя?", color = titleColor) },
+        text = {
+            Text(
+                "Вы больше не будете получать сообщения от этого пользователя.",
+                color = textColor
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.ErrorRed)
+            ) { Text("Заблокировать") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Отмена", color = textColor)
+            }
+        }
+    )
+}
+
+@Composable
+fun PinnedMessagesSheet(
+    pinnedMessages: List<Message>,
+    onDismiss: () -> Unit,
+    onJumpTo: (Message) -> Unit,
+    onUnpin: (Message) -> Unit,
+    onUnpinAll: () -> Unit
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MayasTheme.Surface,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = MayasTheme.TextSecondary.copy(0.4f)) }
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Закреплённые сообщения",
+                    color = MayasTheme.TextPrimary,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (pinnedMessages.size > 1) {
+                    TextButton(onClick = onUnpinAll) {
+                        Text("Открепить все", color = MayasTheme.ErrorRed, fontSize = 13.sp)
+                    }
+                }
+            }
+            LazyColumn(modifier = Modifier.heightIn(max = 420.dp)) {
+                itemsIndexed(pinnedMessages, key = { _, item -> item.id }) { _, pinned ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onJumpTo(pinned) }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.PushPin, null,
+                            modifier = Modifier.size(16.dp),
+                            tint = MayasTheme.GlowBlue
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            if (pinned.senderName.isNotBlank()) {
+                                Text(
+                                    pinned.senderName,
+                                    fontSize = 12.sp,
+                                    color = MayasTheme.GlowBlue,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            Text(
+                                pinned.text ?: if (pinned.mediaUrl != null) "📷 Фотография" else "",
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                color = MayasTheme.TextSecondary,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                        IconButton(onClick = { onUnpin(pinned) }, modifier = Modifier.size(24.dp)) {
+                            Icon(
+                                Icons.Default.Close, null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MayasTheme.TextSecondary
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

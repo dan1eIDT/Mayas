@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 @file:OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package com.dan1eidtj.mayas.core_ui.ui.components
@@ -50,6 +51,10 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.data.ShopConstants
+import com.dan1eidtj.data.ShopRepository
+import com.dan1eidtj.data.colorFor
+import com.dan1eidtj.data.gradientFor
+import com.dan1eidtj.data.textColorFor
 
 
 import com.dan1eidtj.mayas.ui.R
@@ -389,6 +394,11 @@ fun ChatBubble(
 
     val linkColor = MayasTheme.LinkColor
 
+    val shopItems by ShopRepository.items.collectAsState()
+    val customShopItem = remember(messageStyle, shopItems) {
+        messageStyle?.let { style -> shopItems.find { it.id == style } }
+    }
+
     val bubbleShape = remember(isMe, isLastInChain) {
         BubbleShape(
             type = if (isMe) BubbleType.Outgoing else BubbleType.Incoming,
@@ -528,10 +538,11 @@ fun ChatBubble(
         }
 
         else -> {
-            val accent = ShopConstants.getStyleColor(messageStyle)
+            val accent = customShopItem?.let { ShopConstants.colorFor(it) } ?: ShopConstants.getStyleColor(messageStyle)
+            val gradientColors = customShopItem?.let { ShopConstants.gradientFor(it) } ?: ShopConstants.getStyleGradient(messageStyle)
             Modifier.background(
                 brush = Brush.linearGradient(
-                    colors = ShopConstants.getStyleGradient(messageStyle)
+                    colors = gradientColors
                 ),
                 shape = bubbleShape
             ).border(
@@ -641,7 +652,7 @@ fun ChatBubble(
 
 
 
-                            else -> ShopConstants.getStyleTextColor(messageStyle)
+                            else -> customShopItem?.let { ShopConstants.textColorFor(it) } ?: ShopConstants.getStyleTextColor(messageStyle)
                         }
                         RichText(
                             text = text,
@@ -673,7 +684,7 @@ fun ChatBubble(
                             null -> timeColor
 
 
-                            else -> ShopConstants.getStyleTextColor(messageStyle).copy(alpha = 0.7f)
+                            else -> (customShopItem?.let { ShopConstants.textColorFor(it) } ?: ShopConstants.getStyleTextColor(messageStyle)).copy(alpha = 0.7f)
                         }
 
                         if (isPremium && isMe) {
@@ -710,31 +721,5 @@ fun ChatBubble(
                 }
             }
         }
-    }
-}
-
-@androidx.compose.ui.tooling.preview.Preview(showBackground = true, backgroundColor = 0xFFEFEFEF)
-@Composable
-private fun ChatBubbleCustomFramePreview() {
-    Column(modifier = Modifier.padding(8.dp)) {
-        ChatBubble(
-            text = "коротко",
-            time = "12:34",
-            isMe = true,
-            isRead = true,
-            onLongClick = {},
-            messageStyle = MessageStyle.dan1,
-            isLastInChain = true
-        )
-        Spacer(Modifier.height(8.dp))
-        ChatBubble(
-            text = "а тут текст подлиннее, чтобы проверить как ведёт себя рамка когда пузырь растягивается на несколько строк подряд",
-            time = "12:35",
-            isMe = false,
-            isRead = false,
-            onLongClick = {},
-            messageStyle = MessageStyle.CUSTOM_FRAME,
-            isLastInChain = true
-        )
     }
 }

@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas
 
 import android.content.Context
@@ -66,10 +67,6 @@ class WebRtcClientImpl(
     private val appContext: Context
 ) : WebRtcClient {
 
-
-
-
-
     private val iceServers = listOf(
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer()
     )
@@ -81,18 +78,11 @@ class WebRtcClientImpl(
     private var localAudioTrack: AudioTrack? = null
     private var listener: WebRtcClient.Listener? = null
 
-
-
-
-
-
-
-
-
-
     private val closeLock = Any()
 
     override fun init(listener: WebRtcClient.Listener) {
+        close()
+
         this.listener = listener
 
         val initOptions = PeerConnectionFactory.InitializationOptions
@@ -306,13 +296,10 @@ class WebRtcClientImpl(
                 return
             }
 
-
-
-
-
-
             runCatching { peerConnection?.close() }
                 .onFailure { android.util.Log.w(TAG, "peerConnection.close() failed", it) }
+            runCatching { peerConnection?.dispose() }
+                .onFailure { android.util.Log.w(TAG, "peerConnection.dispose() failed", it) }
             peerConnection = null
 
 

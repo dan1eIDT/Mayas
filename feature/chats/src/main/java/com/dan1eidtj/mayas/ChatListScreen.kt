@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 
 package com.dan1eidtj.mayas.feature.chats.ChatListScreen
@@ -127,6 +128,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dan1eidtj.data.ShopConstants
 import com.dan1eidtj.mayas.core_ui.ui.components.UserAvatarView
+import com.dan1eidtj.mayas.core_ui.ui.components.VerificationBadge
+import com.dan1eidtj.mayas.core_ui.utils.InstallSource
+import com.dan1eidtj.mayas.core_ui.utils.InstallSourceProvider
+import com.dan1eidtj.mayas.core_ui.utils.accentColor
+import com.dan1eidtj.mayas.core_ui.utils.onAccentColor
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.mayas.core.ui.theme.HomeScreenLayoutPrefs
 import com.dan1eidtj.mayas.core.ui.theme.SidebarLayoutPrefs
@@ -144,6 +150,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -271,6 +278,8 @@ fun ChatListScreen(
     var bannerDismissed by rememberSaveable { mutableStateOf(false) }
     var updateUrl by remember { mutableStateOf("") }
 
+    val installSource = remember(context) { InstallSourceProvider.detect(context) }
+
     val currentVersionName = remember(context) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -285,7 +294,8 @@ fun ChatListScreen(
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             try {
-                val versionInfo: AppVersion = httpClient.get("https://raw.githubusercontent.com/dan1eIDT/Mayas/master/version.json").body()
+                val rawJson = httpClient.get("https://raw.githubusercontent.com/dan1eIDT/Mayas/master/version.json").bodyAsText()
+                val versionInfo: AppVersion = Json { ignoreUnknownKeys = true }.decodeFromString(rawJson)
                 withContext(Dispatchers.Main) {
                     updateUrl = versionInfo.updateUrl
                     if (versionInfo.latestVersion.isNotEmpty() && versionInfo.latestVersion != currentVersionName) {
@@ -345,6 +355,10 @@ fun ChatListScreen(
                 put("partnerNameColor", entity.partnerNameColor ?: "gold")
                 put("partnerEmoji", entity.partnerEmoji ?: "")
                 put("isSavedMessages", entity.isSavedMessages)
+                put("partnerVerified", entity.partnerVerified)
+                put("partnerVerificationType", entity.partnerVerificationType ?: "")
+                put("partnerVerifiedBy", entity.partnerVerifiedBy ?: "")
+                put("partnerRank", entity.partnerRank)
             }
         }
     }
@@ -609,11 +623,9 @@ fun ChatListScreen(
                                         .fillMaxWidth()
                                         .height(48.dp)
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(MayasTheme.GlowGreen.copy(alpha = 0.15f))
+                                        .background(installSource.accentColor.copy(alpha = 0.15f))
                                         .combinedClickable {
-                                            if (updateUrl.isNotEmpty()) {
-                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl)))
-                                            }
+                                            InstallSourceProvider.openUpdate(context, installSource, updateUrl)
                                         }
                                         .padding(horizontal = 14.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -622,7 +634,7 @@ fun ChatListScreen(
                                     Icon(
                                         imageVector = Icons.Default.Update,
                                         contentDescription = null,
-                                        tint = MayasTheme.GlowGreen,
+                                        tint = installSource.accentColor,
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Text(
@@ -637,56 +649,56 @@ fun ChatListScreen(
 
 
                             if (sidebarLayoutPrefs.showQuickActions) {
-                            DrawerActionRow(
-                                icon = Icons.Default.GroupAdd,
-                                iconTint = MayasTheme.GlowPurple,
-                                label = "Создать группу",
-                                onClick = {
-                                    coroutineScope.launch { drawerState.close() }
-                                    showCreateGroupScreen = true
-                                },
-                                iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
-                                compact = sidebarLayoutPrefs.compactMode
-                            )
-                            DrawerActionRow(
-                                icon = Icons.Default.Campaign,
-                                iconTint = MayasTheme.GlowPurple,
-                                label = "Создать канал",
-                                onClick = {
-                                    coroutineScope.launch { drawerState.close() }
-                                    showCreateChannelScreen = true
-                                },
-                                iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
-                                compact = sidebarLayoutPrefs.compactMode
-                            )
-                            DrawerActionRow(
-                                icon = Icons.Default.PersonAdd,
-                                iconTint = MayasTheme.GlowPurple,
-                                label = "Пригласить друга",
-                                onClick = {
-                                    coroutineScope.launch { drawerState.close() }
-                                    try {
-                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, "Заходи в Маяс , не похалеешь) - https://dan1eidt.github.io/mayas-site/")
-                                        }
-                                        context.startActivity(Intent.createChooser(shareIntent, "Пригласить друга"))
-                                    } catch (e: Exception) {}
-                                },
-                                iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
-                                compact = sidebarLayoutPrefs.compactMode
-                            )
-                            DrawerActionRow(
-                                icon = Icons.Default.Contacts,
-                                iconTint = MayasTheme.GlowPurple,
-                                label = "Найти контакты",
-                                onClick = {
-                                    coroutineScope.launch { drawerState.close() }
-                                    showContactsSyncScreen = true
-                                },
-                                iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
-                                compact = sidebarLayoutPrefs.compactMode
-                            )
+                                DrawerActionRow(
+                                    icon = Icons.Default.GroupAdd,
+                                    iconTint = MayasTheme.GlowPurple,
+                                    label = "Создать группу",
+                                    onClick = {
+                                        coroutineScope.launch { drawerState.close() }
+                                        showCreateGroupScreen = true
+                                    },
+                                    iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                    compact = sidebarLayoutPrefs.compactMode
+                                )
+                                DrawerActionRow(
+                                    icon = Icons.Default.Campaign,
+                                    iconTint = MayasTheme.GlowPurple,
+                                    label = "Создать канал",
+                                    onClick = {
+                                        coroutineScope.launch { drawerState.close() }
+                                        showCreateChannelScreen = true
+                                    },
+                                    iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                    compact = sidebarLayoutPrefs.compactMode
+                                )
+                                DrawerActionRow(
+                                    icon = Icons.Default.PersonAdd,
+                                    iconTint = MayasTheme.GlowPurple,
+                                    label = "Пригласить друга",
+                                    onClick = {
+                                        coroutineScope.launch { drawerState.close() }
+                                        try {
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_TEXT, "Заходи в Маяс , не похалеешь) - https://dan1eidt.github.io/mayas-site/")
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Пригласить друга"))
+                                        } catch (e: Exception) {}
+                                    },
+                                    iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                    compact = sidebarLayoutPrefs.compactMode
+                                )
+                                DrawerActionRow(
+                                    icon = Icons.Default.Contacts,
+                                    iconTint = MayasTheme.GlowPurple,
+                                    label = "Найти контакты",
+                                    onClick = {
+                                        coroutineScope.launch { drawerState.close() }
+                                        showContactsSyncScreen = true
+                                    },
+                                    iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                    compact = sidebarLayoutPrefs.compactMode
+                                )
                             }
 
                             if (!homeLayoutPrefs.showAddFriendButton) {
@@ -699,7 +711,7 @@ fun ChatListScreen(
                                         showUserSearchDialog = true; onOpenUserSearch()
                                     },
                                     iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
-                                compact = sidebarLayoutPrefs.compactMode
+                                    compact = sidebarLayoutPrefs.compactMode
                                 )
                             }
                             if (!homeLayoutPrefs.showSearchField) {
@@ -712,7 +724,7 @@ fun ChatListScreen(
                                         forceShowSearch = true
                                     },
                                     iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
-                                compact = sidebarLayoutPrefs.compactMode
+                                    compact = sidebarLayoutPrefs.compactMode
                                 )
                             }
 
@@ -736,7 +748,7 @@ fun ChatListScreen(
                                             }
                                         },
                                         iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
-                                compact = sidebarLayoutPrefs.compactMode
+                                        compact = sidebarLayoutPrefs.compactMode
                                     )
                                 }
                             }
@@ -837,125 +849,125 @@ fun ChatListScreen(
                             }
 
                             val foldersBlock: @Composable () -> Unit = {
-                            Text(
-                                text = "ПАПКИ",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
-                                letterSpacing = 1.sp
-                            )
+                                Text(
+                                    text = "ПАПКИ",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
+                                    letterSpacing = 1.sp
+                                )
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
 
-                            ChatFolder.values().forEach { folder ->
-                                val isSelected = selectedFolder == folder
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(if (sidebarLayoutPrefs.compactMode) 40.dp else 48.dp)
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(
-                                            if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.12f)
-                                            else Color.Transparent
-                                        )
-                                        .combinedClickable {
-                                            selectedFolder = folder
-                                            coroutineScope.launch { drawerState.close() }
-                                        }
-                                        .padding(horizontal = if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = folder.icon,
-                                        contentDescription = null,
-                                        tint = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
-                                        modifier = Modifier.size(if (sidebarLayoutPrefs.compactMode) 17.dp else 20.dp)
-                                    )
-                                    Text(
-                                        text = folder.displayName,
-                                        color = if (isSelected) MayasTheme.TextPrimary else MayasTheme.TextSecondary,
-                                        fontSize = if (sidebarLayoutPrefs.compactMode) 13.sp else 14.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        modifier = Modifier.weight(1f)
-                                    )
-
-                                    val count = when (folder) {
-                                        ChatFolder.ALL -> chats.size
-                                        ChatFolder.PINNED -> chats.count {
-                                            it["isPinned"] as? Boolean ?: false
-                                        }
-
-                                        ChatFolder.GROUPS -> chats.count {
-                                            (it["isGroup"] as? Boolean ?: false) &&
-                                                    it["chatType"] != "CHANNEL" &&
-                                                    !(it["isSavedMessages"] as? Boolean ?: false)
-                                        }
-
-                                        ChatFolder.CHANNELS -> chats.count {
-                                            it["chatType"] == "CHANNEL"
-                                        }
-
-                                        ChatFolder.CONTACTS -> chats.count {
-                                            !(it["isGroup"] as? Boolean ?: false)
-                                        }
-                                    }
-                                    if (count > 0) {
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(CircleShape)
-                                                .background(
-                                                    if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.2f)
-                                                    else MayasTheme.Surface.copy(alpha = 0.05f)
-                                                )
-                                                .padding(horizontal = 7.dp, vertical = 2.dp)
-                                        ) {
-                                            Text(
-                                                text = "$count",
-                                                color = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold
+                                ChatFolder.values().forEach { folder ->
+                                    val isSelected = selectedFolder == folder
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(if (sidebarLayoutPrefs.compactMode) 40.dp else 48.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(
+                                                if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.12f)
+                                                else Color.Transparent
                                             )
+                                            .combinedClickable {
+                                                selectedFolder = folder
+                                                coroutineScope.launch { drawerState.close() }
+                                            }
+                                            .padding(horizontal = if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = folder.icon,
+                                            contentDescription = null,
+                                            tint = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
+                                            modifier = Modifier.size(if (sidebarLayoutPrefs.compactMode) 17.dp else 20.dp)
+                                        )
+                                        Text(
+                                            text = folder.displayName,
+                                            color = if (isSelected) MayasTheme.TextPrimary else MayasTheme.TextSecondary,
+                                            fontSize = if (sidebarLayoutPrefs.compactMode) 13.sp else 14.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            modifier = Modifier.weight(1f)
+                                        )
+
+                                        val count = when (folder) {
+                                            ChatFolder.ALL -> chats.size
+                                            ChatFolder.PINNED -> chats.count {
+                                                it["isPinned"] as? Boolean ?: false
+                                            }
+
+                                            ChatFolder.GROUPS -> chats.count {
+                                                (it["isGroup"] as? Boolean ?: false) &&
+                                                        it["chatType"] != "CHANNEL" &&
+                                                        !(it["isSavedMessages"] as? Boolean ?: false)
+                                            }
+
+                                            ChatFolder.CHANNELS -> chats.count {
+                                                it["chatType"] == "CHANNEL"
+                                            }
+
+                                            ChatFolder.CONTACTS -> chats.count {
+                                                !(it["isGroup"] as? Boolean ?: false)
+                                            }
+                                        }
+                                        if (count > 0) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(CircleShape)
+                                                    .background(
+                                                        if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.2f)
+                                                        else MayasTheme.Surface.copy(alpha = 0.05f)
+                                                    )
+                                                    .padding(horizontal = 7.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = "$count",
+                                                    color = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
                                         }
                                     }
+                                    Spacer(modifier = Modifier.height(4.dp))
                                 }
-                                Spacer(modifier = Modifier.height(4.dp))
-                            }
                             }
 
                             val appBlock: @Composable () -> Unit = {
-                            Text(
-                                text = "ПРИЛОЖЕНИЕ",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
-                                letterSpacing = 1.sp
-                            )
+                                Text(
+                                    text = "ПРИЛОЖЕНИЕ",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
+                                    letterSpacing = 1.sp
+                                )
 
-                            Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
 
-                            DrawerActionRow(
-                                icon = Icons.Default.Settings,
-                                iconTint = MayasTheme.TextSecondary,
-                                label = "Настройки",
-                                onClick = {
-                                    coroutineScope.launch { drawerState.close() }
-                                    onOpenSettings()
-                                },
-                                iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
-                                compact = sidebarLayoutPrefs.compactMode
-                            )
-                            DrawerActionRow(
-                                icon = Icons.Default.Info,
-                                iconTint = MayasTheme.TextSecondary,
-                                label = "О приложении",
-                                onClick = {
-                                    coroutineScope.launch { drawerState.close() }
-                                    onOpenCredits()
-                                },
-                                iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
-                                compact = sidebarLayoutPrefs.compactMode
-                            )
+                                DrawerActionRow(
+                                    icon = Icons.Default.Settings,
+                                    iconTint = MayasTheme.TextSecondary,
+                                    label = "Настройки",
+                                    onClick = {
+                                        coroutineScope.launch { drawerState.close() }
+                                        onOpenSettings()
+                                    },
+                                    iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                    compact = sidebarLayoutPrefs.compactMode
+                                )
+                                DrawerActionRow(
+                                    icon = Icons.Default.Info,
+                                    iconTint = MayasTheme.TextSecondary,
+                                    label = "О приложении",
+                                    onClick = {
+                                        coroutineScope.launch { drawerState.close() }
+                                        onOpenCredits()
+                                    },
+                                    iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                    compact = sidebarLayoutPrefs.compactMode
+                                )
                             }
 
                             val foldersIdx = sidebarLayoutPrefs.itemsOrder.indexOf("Папки чатов")
@@ -1036,24 +1048,19 @@ fun ChatListScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(MayasTheme.GlowPurple.copy(alpha = 0.9f))
+                                .background(installSource.accentColor.copy(alpha = 0.9f))
                                 .clickable {
-                                    if (updateUrl.isNotEmpty()) {
-                                        try {
-                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl))
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) {}
-                                    }
+                                    InstallSourceProvider.openUpdate(context, installSource, updateUrl)
                                 }
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Default.Update, null, tint = Color.White, modifier = Modifier.size(18.dp))
+                                Icon(Icons.Default.Update, null, tint = installSource.onAccentColor, modifier = Modifier.size(18.dp))
                                 Text(
                                     text = "Доступно обновление Mayas!",
-                                    color = Color.White,
+                                    color = installSource.onAccentColor,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
                                 )
@@ -1065,7 +1072,7 @@ fun ChatListScreen(
                                 Icon(
                                     imageVector = Icons.Default.Close,
                                     contentDescription = "Закрыть",
-                                    tint = Color.White.copy(alpha = 0.7f),
+                                    tint = installSource.onAccentColor.copy(alpha = 0.7f),
                                     modifier = Modifier.size(16.dp)
                                 )
                             }
@@ -1086,7 +1093,7 @@ fun ChatListScreen(
                                 onMenuClick = { coroutineScope.launch { drawerState.open() } },
                                 fabAtStart = homeLayoutPrefs.fabPosition == HorizontalSlot.START,
                                 showSearchField = homeLayoutPrefs.showSearchField &&
-                                    (homeLayoutPrefs.searchPosition == VerticalSlot.TOP || forceShowSearch),
+                                        (homeLayoutPrefs.searchPosition == VerticalSlot.TOP || forceShowSearch),
                                 showAddFriendButton = homeLayoutPrefs.showAddFriendButton
                             )
                         } else {
@@ -1262,7 +1269,16 @@ fun ChatListScreen(
                                                         ),
                                                 "emoji" to chat["partnerEmoji"],
                                                 "nameColor" to (chat["partnerNameColor"] ?: "gold"),
-                                                "isGroup" to false
+                                                "isGroup" to false,
+                                                // Реконструкция из плоского Room-кэша — тот же
+                                                // VerificationInfo, что и в живом userCache.
+                                                "verification" to com.dan1eidtj.data.VerificationInfo(
+                                                    verified = chat["partnerVerified"] as? Boolean ?: false,
+                                                    type = com.dan1eidtj.data.VerificationType.fromId(
+                                                        (chat["partnerVerificationType"] as? String)?.ifBlank { null }
+                                                    ),
+                                                    verifiedBy = (chat["partnerVerifiedBy"] as? String)?.ifBlank { null }
+                                                )
                                             )
                                         val isOnline = isUserOnline(userData)
                                         val typingMap = userData["typing"] as? Map<*, *>
@@ -1367,46 +1383,46 @@ fun HeaderSection(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             val menuGroup: @Composable () -> Unit = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-
-                IconButton(
-                    onClick = onMenuClick,
-                    modifier = Modifier.size(40.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Menu,
-                        contentDescription = "Открыть меню",
-                        tint = MayasTheme.TextPrimary,
-                        modifier = Modifier.size(24.dp)
+
+                    IconButton(
+                        onClick = onMenuClick,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = "Открыть меню",
+                            tint = MayasTheme.TextPrimary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
+                    Text(
+                        text = "маяс.",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MayasTheme.TextPrimary,
+                        letterSpacing = (-0.5).sp
                     )
                 }
-
-                Text(
-                    text = "маяс.",
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MayasTheme.TextPrimary,
-                    letterSpacing = (-0.5).sp
-                )
-            }
             }
 
             val addFriendButton: @Composable () -> Unit = {
-            IconButton(
-                onClick = onAddFriendClick,
-                modifier = Modifier
-                    .size(40.dp)
-                    .background(MayasTheme.SurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PersonAdd,
-                    contentDescription = "Добавить друзей",
-                    tint = MayasTheme.GlowPurple
-                )
-            }
+                IconButton(
+                    onClick = onAddFriendClick,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(MayasTheme.SurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PersonAdd,
+                        contentDescription = "Добавить друзей",
+                        tint = MayasTheme.GlowPurple
+                    )
+                }
             }
 
             if (fabAtStart) {
@@ -1427,44 +1443,44 @@ fun HeaderSection(
 
 @Composable
 fun ChatSearchField(searchQuery: String, onSearchChange: (String) -> Unit) {
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = onSearchChange,
-            placeholder = { Text("Поиск по чатам...", color = MayasTheme.TextSecondary.copy(alpha = 0.6f), fontSize = 13.sp) },
-            singleLine = true,
-            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
-            leadingIcon = {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = null,
-                    tint = MayasTheme.TextSecondary.copy(alpha = 0.6f),
-                    modifier = Modifier.size(16.dp)
-                )
-            },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { onSearchChange("") }, modifier = Modifier.size(32.dp)) {
-                        Icon(
-                            imageVector = Icons.Default.Close,
-                            contentDescription = "Очистить",
-                            tint = MayasTheme.TextSecondary,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-                }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .height(40.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MayasTheme.SurfaceVariant.copy(alpha = 0.4f),
-                unfocusedContainerColor = MayasTheme.SurfaceVariant.copy(alpha = 0.2f),
-                focusedBorderColor = MayasTheme.GlowPurple.copy(alpha = 0.35f),
-                unfocusedBorderColor = MayasTheme.Outline
+    OutlinedTextField(
+        value = searchQuery,
+        onValueChange = onSearchChange,
+        placeholder = { Text("Поиск по чатам...", color = MayasTheme.TextSecondary.copy(alpha = 0.6f), fontSize = 13.sp) },
+        singleLine = true,
+        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Default.Search,
+                contentDescription = null,
+                tint = MayasTheme.TextSecondary.copy(alpha = 0.6f),
+                modifier = Modifier.size(16.dp)
             )
+        },
+        trailingIcon = {
+            if (searchQuery.isNotEmpty()) {
+                IconButton(onClick = { onSearchChange("") }, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Очистить",
+                        tint = MayasTheme.TextSecondary,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp)
+            .height(40.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = MayasTheme.SurfaceVariant.copy(alpha = 0.4f),
+            unfocusedContainerColor = MayasTheme.SurfaceVariant.copy(alpha = 0.2f),
+            focusedBorderColor = MayasTheme.GlowPurple.copy(alpha = 0.35f),
+            unfocusedBorderColor = MayasTheme.Outline
         )
+    )
 }
 
 @Composable
@@ -1600,161 +1616,153 @@ fun ChatItemNew(
         horizontalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         val avatarEl: @Composable () -> Unit = {
-        Box(contentAlignment = Alignment.Center) {
-            UserAvatarView(
-                avatarUrl = userData?.get("avatarUrl") as? String,
-                useCustomAvatar = userData?.get("useCustomAvatar") as? Boolean ?: false,
-                profileIcon = userData?.get("profileIcon") as? String ?: "ghost",
-                profileGlow = userData?.get("profileGlow") as? String ?: "purple",
-                isPremium = userData?.get("isPremium") as? Boolean
-                    ?: userData?.get("premium") as? Boolean
-                    ?: false,
-                frameType = userData?.get("avatarFrame") as? String ?: "none",
-                size = if (compact) 40.dp else 54.dp
-            )
-
-
-            if (isOnline) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .size(13.dp)
-                        .clip(CircleShape)
-                        .background(MayasTheme.GlowGreen)
-                        .border(1.5.dp, MayasTheme.Background, CircleShape)
-                        .offset(x = 2.dp, y = 2.dp)
+            Box(contentAlignment = Alignment.Center) {
+                UserAvatarView(
+                    avatarUrl = userData?.get("avatarUrl") as? String,
+                    useCustomAvatar = userData?.get("useCustomAvatar") as? Boolean ?: false,
+                    profileIcon = userData?.get("profileIcon") as? String ?: "ghost",
+                    profileGlow = userData?.get("profileGlow") as? String ?: "purple",
+                    isPremium = userData?.get("isPremium") as? Boolean
+                        ?: userData?.get("premium") as? Boolean
+                        ?: false,
+                    frameType = userData?.get("avatarFrame") as? String ?: "none",
+                    size = if (compact) 40.dp else 54.dp
                 )
+
+
+                if (isOnline) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .size(13.dp)
+                            .clip(CircleShape)
+                            .background(MayasTheme.GlowGreen)
+                            .border(1.5.dp, MayasTheme.Background, CircleShape)
+                            .offset(x = 2.dp, y = 2.dp)
+                    )
+                }
             }
-        }
         }
 
 
         val contentEl: @Composable () -> Unit = {
-        Column(modifier = Modifier.weight(1f)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Row(
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val name = userData?.get("name") ?: "..."
-                    val isPremium = userData?.get("isPremium") as? Boolean ?: false
-                    val isGroupChat =
-                        userData?.get("isGroup") as? Boolean ?: userData?.containsKey("groupName")
-                        ?: false
-
-
-
-
-                    val nameBrush = if (isPremium && !isGroupChat) {
-                        getNameColorBrush(userData?.get("nameColor") as? String ?: "gold")
-                    } else {
-                        null
-                    }
-
-                    Text(
-                        text = name as? String ?: "...",
-                        style = if (nameBrush != null) TextStyle(brush = nameBrush) else TextStyle(
-                            color = MayasTheme.TextPrimary
-                        ),
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-
-                    val partnerStatus = userData?.get("emoji") as? String
-                    if (!partnerStatus.isNullOrBlank()) {
-                        Spacer(Modifier.width(4.dp))
-                        StatusBadge(value = partnerStatus, fontSize = 15.sp)
-                    }
-
-                    if (isPremium && !isGroupChat) {
-                        Spacer(Modifier.width(4.dp))
-                        val verifiedIcon = userData?.get("verifiedIcon") as? String ?: "verified"
-                        val vIcon = when(verifiedIcon) {
-                            "star" -> Icons.Default.Star
-                            "diamond" -> Icons.Default.Diamond
-                            "auto_awesome" -> Icons.Default.AutoAwesome
-                            else -> Icons.Default.Verified
-                        }
-                        Icon(
-                            imageVector = vIcon,
-                            contentDescription = "Premium",
-                            tint = MayasTheme.GlowGold,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-
-                    if (isPinned) {
-                        Spacer(Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.PushPin,
-                            contentDescription = "Закреплен",
-                            tint = MayasTheme.GlowPurple,
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
-                }
-
-                if (updatedAt > 0L) {
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = formatTimestamp(updatedAt),
-                        color = MayasTheme.TextSecondary.copy(alpha = 0.6f),
-                        fontSize = 11.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(3.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (isTyping) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f, fill = false),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TypingIndicator(dotColor = MayasTheme.GlowPurple)
+                        val name = userData?.get("name") ?: "..."
+                        val isPremium = userData?.get("isPremium") as? Boolean ?: false
+                        val isGroupChat =
+                            userData?.get("isGroup") as? Boolean ?: userData?.containsKey("groupName")
+                            ?: false
+
+
+
+
+                        val nameBrush = if (isPremium && !isGroupChat) {
+                            getNameColorBrush(userData?.get("nameColor") as? String ?: "gold")
+                        } else {
+                            null
+                        }
+
                         Text(
-                            text = "печатает...",
-                            color = MayasTheme.GlowPurple,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Medium
+                            text = name as? String ?: "...",
+                            style = if (nameBrush != null) TextStyle(brush = nameBrush) else TextStyle(
+                                color = MayasTheme.TextPrimary
+                            ),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+
+                        val partnerStatus = userData?.get("emoji") as? String
+                        if (!partnerStatus.isNullOrBlank()) {
+                            Spacer(Modifier.width(4.dp))
+                            StatusBadge(value = partnerStatus, fontSize = 15.sp)
+                        }
+
+                        // Значок верификации в списке чатов — независим от Mayas+,
+                        // показывается только при verification.verified == true.
+                        val partnerVerification = userData?.get("verification")
+                                as? com.dan1eidtj.data.VerificationInfo
+                        if (partnerVerification?.verified == true) {
+                            Spacer(Modifier.width(4.dp))
+                            VerificationBadge(info = partnerVerification, size = 14.dp)
+                        }
+
+                        if (isPinned) {
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.PushPin,
+                                contentDescription = "Закреплен",
+                                tint = MayasTheme.GlowPurple,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+                    }
+
+                    if (updatedAt > 0L) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = formatTimestamp(updatedAt),
+                            color = MayasTheme.TextSecondary.copy(alpha = 0.6f),
+                            fontSize = 11.sp
                         )
                     }
-                } else {
-                    Text(
-                        text = lastMsg.ifEmpty { "Нет сообщений" },
-                        modifier = Modifier.weight(1f),
-                        color = MayasTheme.TextSecondary.copy(alpha = 0.8f),
-                        fontSize = 13.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
                 }
-                if (unreadCount > 0) {
-                    Box(
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(MayasTheme.Accent)
-                            .padding(horizontal = 4.dp, vertical = 1.dp)
-                    ) {
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isTyping) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            TypingIndicator(dotColor = MayasTheme.GlowPurple)
+                            Text(
+                                text = "печатает...",
+                                color = MayasTheme.GlowPurple,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    } else {
                         Text(
-                            text = "$unreadCount",
-                            color = Color.White,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold
+                            text = lastMsg.ifEmpty { "Нет сообщений" },
+                            modifier = Modifier.weight(1f),
+                            color = MayasTheme.TextSecondary.copy(alpha = 0.8f),
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
+                    }
+                    if (unreadCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .background(MayasTheme.Accent)
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        ) {
+                            Text(
+                                text = "$unreadCount",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
-        }
         }
 
         if (avatarAtEnd) {
@@ -1852,30 +1860,19 @@ fun BottomProfileBar(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (isPremium) {
+                    val myVerification = myProfileData["verification"]
+                            as? com.dan1eidtj.data.VerificationInfo
+                    if (myVerification?.verified == true) {
                         Spacer(modifier = Modifier.width(4.dp))
-                        val verifiedIcon = myProfileData["verifiedIcon"] as? String ?: "verified"
-                        val vIcon = when(verifiedIcon) {
-                            "star" -> Icons.Default.Star
-                            "diamond" -> Icons.Default.Diamond
-                            "auto_awesome" -> Icons.Default.AutoAwesome
-                            else -> Icons.Default.Verified
-                        }
-                        Icon(
-                            imageVector = vIcon,
-                            contentDescription = "Premium",
-                            tint = MayasTheme.GlowGold,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    } else {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Открыть профиль",
-                            tint = MayasTheme.TextSecondary,
-                            modifier = Modifier.size(14.dp)
-                        )
+                        VerificationBadge(info = myVerification, size = 14.dp)
                     }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = "Открыть профиль",
+                        tint = MayasTheme.TextSecondary,
+                        modifier = Modifier.size(14.dp)
+                    )
                 }
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
@@ -2026,8 +2023,8 @@ fun UserSearchDialog(
         // и хотя бы 6 цифр) — ищем по номеру, а не по юзернейму/каналу.
         val digitsOnly = searchInput.filter { it.isDigit() }
         val looksLikePhone = searchInput.isNotBlank() &&
-            searchInput.all { it.isDigit() || it in "+ ()-" } &&
-            digitsOnly.length >= 6
+                searchInput.all { it.isDigit() || it in "+ ()-" } &&
+                digitsOnly.length >= 6
 
         if (looksLikePhone) {
             isSearching = true

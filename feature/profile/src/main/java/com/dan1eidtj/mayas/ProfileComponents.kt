@@ -1,5 +1,8 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.animateFloatAsState
@@ -50,10 +53,14 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
+import com.dan1eidtj.mayas.feature.Message
+import com.dan1eidtj.mayas.storage.B2Image
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -62,11 +69,15 @@ import com.dan1eidtj.data.ShopConstants.DailyDeal
 import com.dan1eidtj.data.ItemRarity
 import com.dan1eidtj.data.ItemType
 import com.dan1eidtj.data.ShopConstants
+import com.dan1eidtj.data.gradientFor
 import com.dan1eidtj.data.ShopItem
 import com.dan1eidtj.data.ShopRepository
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.mayas.core_ui.ui.components.ChatBubble
 import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
+import com.dan1eidtj.mayas.core_ui.ui.components.VerificationBadge
+import com.dan1eidtj.mayas.core_ui.ui.components.AdminLevelBadge
+import com.dan1eidtj.mayas.core_ui.ui.components.VerificationInfoDialog
 import com.dan1eidtj.mayas.core_ui.ui.components.ProfileIcon
 import com.dan1eidtj.mayas.feature.formatCompactCount
 import kotlinx.coroutines.delay
@@ -405,13 +416,9 @@ fun ColorPicker(
 @Composable
 fun PremiumSectionCollapsible(
     isPremium: Boolean,
-    verifiedIcon: String,
     avatarFrame: String,
-    isInvisible: Boolean,
     nameColor: String = "gold",
     onNavigateToPremium: () -> Unit,
-    onInvisibleChange: (Boolean) -> Unit,
-    onIconSelect: (String) -> Unit,
     onFrameSelect: (String) -> Unit,
     onNameColorSelect: (String) -> Unit = {}
 ) {
@@ -437,7 +444,7 @@ fun PremiumSectionCollapsible(
                 )
                 .background(brush = headerGradient)
                 .clickable { expanded = !expanded }
-                .padding(horizontal = 16.dp, vertical = 14.dp)
+                .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -449,21 +456,21 @@ fun PremiumSectionCollapsible(
                         Icons.Default.AutoAwesome,
                         null,
                         tint = Color.White,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(10.dp))
                     Column {
                         Text(
                             "MAYAS+",
                             color = Color.White,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 15.sp,
-                            letterSpacing = 1.2.sp
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            letterSpacing = 1.sp
                         )
                         Text(
-                            if (isPremium) "Подписка активна ✓" else "Узнать о подписке",
+                            if (isPremium) "Активна ✓" else "Оформление и стиль",
                             color = Color.White.copy(alpha = 0.75f),
-                            fontSize = 11.sp
+                            fontSize = 10.sp
                         )
                     }
                 }
@@ -514,100 +521,6 @@ fun PremiumSectionCollapsible(
                     }
                 } else {
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MayasTheme.Background)
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFFE040FB).copy(0.12f)),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    if (isInvisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                    null,
-                                    tint = Color(0xFFE040FB),
-                                    modifier = Modifier.size(17.dp)
-                                )
-                            }
-                            Spacer(Modifier.width(12.dp))
-                            Column {
-                                Text("Режим невидимки", color = MayasTheme.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                                Text("Скрыть статус «в сети»", color = MayasTheme.TextSecondary, fontSize = 12.sp)
-                            }
-                        }
-                        Switch(
-                            checked = isInvisible,
-                            onCheckedChange = onInvisibleChange,
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = Color(0xFFE040FB),
-                                uncheckedThumbColor = MayasTheme.TextSecondary,
-                                uncheckedTrackColor = MayasTheme.Background
-                            )
-                        )
-                    }
-
-
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MayasTheme.Background)
-                            .padding(14.dp)
-                    ) {
-                        Text("Иконка верификации", color = MayasTheme.TextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                        Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            val iconOptions = listOf(
-                                "verified" to Icons.Default.Verified,
-                                "star" to Icons.Default.Star,
-                                "diamond" to Icons.Default.Diamond,
-                                "auto_awesome" to Icons.Default.AutoAwesome,
-                                "crown" to Icons.Default.WorkspacePremium,
-                                "bolt" to Icons.Default.Bolt,
-                                "fire" to Icons.Default.LocalFireDepartment,
-                                "trophy" to Icons.Default.EmojiEvents,
-                                "heart" to Icons.Default.Favorite,
-                                "shield" to Icons.Default.Shield
-                            )
-
-                            iconOptions.chunked(5).forEach { row ->
-                                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    row.forEach { (key, icon) ->
-                                        val isSelected = verifiedIcon == key
-                                        Box(
-                                            modifier = Modifier
-                                                .size(46.dp)
-                                                .clip(RoundedCornerShape(12.dp))
-                                                .background(if (isSelected) Color(0xFFFFAA00).copy(0.1f) else MayasTheme.Surface)
-                                                .then(
-                                                    if (isSelected) Modifier.border(2.dp, brush = PremiumGradient, shape = RoundedCornerShape(12.dp))
-                                                    else Modifier.border(0.5.dp, MayasTheme.Outline, RoundedCornerShape(12.dp))
-                                                )
-                                                .clickable { onIconSelect(key) },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                icon, null,
-                                                tint = if (isSelected) Color(0xFFFFAA00) else MayasTheme.TextSecondary,
-                                                modifier = Modifier.size(22.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                                Spacer(Modifier.height(10.dp))
-                            }
-                        }
-                    }
 
 
                     Column(
@@ -704,22 +617,14 @@ fun PremiumSectionCollapsible(
 @Composable
 fun PremiumCustomizationSection(
     isPremium: Boolean,
-    currentIcon: String,
     currentFrame: String,
-    isInvisible: Boolean,
-    onInvisibleChange: (Boolean) -> Unit,
-    onIconSelect: (String) -> Unit,
     onFrameSelect: (String) -> Unit
 ) {
     PremiumSectionCollapsible(
         isPremium = isPremium,
-        verifiedIcon = currentIcon,
         avatarFrame = currentFrame,
-        isInvisible = isInvisible,
         nameColor = "gold",
         onNavigateToPremium = {},
-        onInvisibleChange = onInvisibleChange,
-        onIconSelect = onIconSelect,
         onFrameSelect = onFrameSelect,
         onNameColorSelect = {}
     )
@@ -731,8 +636,7 @@ fun PremiumCustomizationSection(
 fun EarnAndShopSection(
     adsWatched: Int,
     isAdLoading: Boolean = false,
-    onWatchAd: () -> Unit,
-    onOpenShop: () -> Unit
+    onWatchAd: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -784,36 +688,6 @@ fun EarnAndShopSection(
                     Text("Смотреть", fontSize = 13.sp)
                 }
             }
-        }
-
-        HorizontalDivider(color = MayasTheme.Divider, thickness = 0.5.dp)
-
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { onOpenShop() }
-                .padding(horizontal = 16.dp, vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(MayasTheme.GlowGold.copy(0.12f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Default.ShoppingBag, null, tint = MayasTheme.GlowGold, modifier = Modifier.size(18.dp))
-                }
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text("Магазин Маяса", color = MayasTheme.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                    Text("Уникальные стили и фишки", color = MayasTheme.TextSecondary, fontSize = 12.sp)
-                }
-            }
-            Icon(Icons.Default.ChevronRight, null, tint = MayasTheme.TextSecondary.copy(0.4f), modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -994,6 +868,7 @@ private fun bubbleTailShape(): RoundedCornerShape = RoundedCornerShape(
     topStart = 9.dp, topEnd = 9.dp, bottomStart = 9.dp, bottomEnd = 3.dp
 )
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 private fun DailyDealsSection(
     dailyDeals: List<DailyDeal>,
@@ -1072,7 +947,7 @@ private fun DailyDealsSection(
             val isOwned = ownedItems.contains(item.id)
             val isBubble = item.type == ItemType.BUBBLE
             val previewGradient = when {
-                isBubble -> ShopConstants.getStyleGradient(item.id)
+                isBubble -> ShopConstants.gradientFor(item)
                 else -> listOf(MayasTheme.Surface, MayasTheme.Surface)
             }
             Surface(
@@ -1140,6 +1015,7 @@ private fun DailyDealsSection(
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 private fun EmojiSection(
     emojis: List<ShopItem>,
@@ -1275,6 +1151,7 @@ private fun EmojiSection(
     }
 }
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 private fun BubbleStylesSection(
     styles: List<ShopItem>,
@@ -1370,7 +1247,7 @@ private fun BubbleStylesSection(
                     modifier = Modifier
                         .size(width = 34.dp, height = 22.dp)
                         .clip(bubbleTailShape())
-                        .background(Brush.linearGradient(ShopConstants.getStyleGradient(id))),
+                        .background(Brush.linearGradient(ShopConstants.gradientFor(item))),
                     contentAlignment = Alignment.Center
                 ) {
                     if (isEquipped) {
@@ -1395,7 +1272,7 @@ private fun BubbleStylesSection(
         }
     }
 }
-
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 private fun FontSection(
     fonts: List<ShopItem>,
@@ -1504,7 +1381,7 @@ private fun FontSection(
         }
     }
 }
-
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 private fun EffectSection(
     effects: List<ShopItem>,
@@ -1641,7 +1518,7 @@ private fun EffectSection(
         }
     }
 }
-
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun ShopDialog(
     balance: Int,
@@ -1974,4 +1851,187 @@ fun ProfileTopBar(
 @Composable
 fun StatusBadge(value: String, fontSize: androidx.compose.ui.unit.TextUnit = 20.sp) {
     EmojiStatusView(status = value, size = fontSize)
+}
+
+@Composable
+fun ProfileActionsRow(
+    isBlocked: Boolean,
+    isLoading: Boolean,
+    onWriteClick: () -> Unit,
+    onBlockClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Button(
+            onClick = onWriteClick,
+            enabled = !isLoading,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.Accent)
+        ) {
+            Icon(Icons.AutoMirrored.Filled.Chat, null, modifier = Modifier.size(18.dp), tint = Color.White)
+            Spacer(Modifier.width(8.dp))
+            Text("Написать", color = Color.White, fontWeight = FontWeight.Medium)
+        }
+        Button(
+            onClick = onBlockClick,
+            enabled = !isLoading,
+            modifier = Modifier.weight(1f),
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (isBlocked) MayasTheme.Surface else MayasTheme.ErrorRed.copy(0.1f)
+            )
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                    color = MayasTheme.ErrorRed
+                )
+            } else {
+                Text(
+                    if (isBlocked) "Разблокировать" else "Заблокировать",
+                    color = MayasTheme.ErrorRed,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+// ==== Вкладки профиля: Медиа / Ссылки / Закреплённые (реальные данные Firestore) ====
+
+// Тот же паттерн, что подсвечивает ссылки прямо в тексте сообщения
+// (см. MESSAGE_URL_REGEX / ChatScreen.rememberParsedMessageText) — единый источник,
+// чтобы вкладка "Ссылки" в профиле находила ровно те же ссылки, что подсвечены в чате.
+private val ProfileUrlRegex = Regex(com.dan1eidtj.mayas.feature.MESSAGE_URL_REGEX)
+
+fun extractUrls(text: String?): List<String> {
+    if (text.isNullOrBlank()) return emptyList()
+    return ProfileUrlRegex.findAll(text).map { it.groupValues[1] }.toList()
+}
+
+@Composable
+fun ProfileTabEmptyState(text: String) {
+    Box(
+        modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp).padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(text, color = MayasTheme.TextSecondary, fontSize = 14.sp, textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
+fun ProfileTabLoading() {
+    Box(
+        modifier = Modifier.fillMaxWidth().height(140.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        CircularProgressIndicator(color = MayasTheme.Accent, modifier = Modifier.size(28.dp))
+    }
+}
+
+@Composable
+fun ProfileMediaGrid(messages: List<Message>, onMediaClick: (String) -> Unit) {
+    if (messages.isEmpty()) {
+        ProfileTabEmptyState("Здесь появятся фото из этого чата")
+        return
+    }
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(3),
+        modifier = Modifier.fillMaxWidth().heightIn(max = 600.dp).padding(2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        userScrollEnabled = false
+    ) {
+        items(messages, key = { it.id }) { msg ->
+            val key = msg.mediaUrl
+            if (key != null) {
+                B2Image(
+                    key = key,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { onMediaClick(key) },
+                    contentScale = ContentScale.Crop
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ProfileLinksList(messages: List<Message>) {
+    val links = remember(messages) {
+        messages.flatMap { msg -> extractUrls(msg.text).map { it to msg } }
+    }
+    if (links.isEmpty()) {
+        ProfileTabEmptyState("Здесь появятся ссылки из этого чата")
+        return
+    }
+    val uriHandler = LocalUriHandler.current
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        links.forEach { (url, msg) ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val normalized = if (url.startsWith("http")) url else "https://$url"
+                        runCatching { uriHandler.openUri(normalized) }
+                    }
+                    .padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Link, null, modifier = Modifier.size(18.dp), tint = MayasTheme.Accent)
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(url, color = MayasTheme.TextPrimary, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (msg.senderName.isNotBlank()) {
+                        Text(msg.senderName, color = MayasTheme.TextSecondary, fontSize = 12.sp, maxLines = 1)
+                    }
+                }
+            }
+            HorizontalDivider(color = MayasTheme.TextPrimary.copy(0.06f))
+        }
+    }
+}
+
+@Composable
+fun ProfilePinnedList(messages: List<Message>, onMessageClick: (Message) -> Unit) {
+    if (messages.isEmpty()) {
+        ProfileTabEmptyState("В этом чате пока нет закреплённых сообщений")
+        return
+    }
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+        messages.forEach { msg ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onMessageClick(msg) }
+                    .padding(vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.PushPin, null, modifier = Modifier.size(16.dp), tint = MayasTheme.GlowBlue)
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    if (msg.senderName.isNotBlank()) {
+                        Text(msg.senderName, color = MayasTheme.GlowBlue, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
+                    Text(
+                        msg.text ?: if (msg.mediaUrl != null) "📷 Фотография" else "Сообщение",
+                        color = MayasTheme.TextPrimary,
+                        fontSize = 14.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            HorizontalDivider(color = MayasTheme.TextPrimary.copy(0.06f))
+        }
+    }
 }

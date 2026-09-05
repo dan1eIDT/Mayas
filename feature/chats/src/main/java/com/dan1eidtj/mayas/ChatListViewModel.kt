@@ -7,10 +7,12 @@ import androidx.lifecycle.viewModelScope
 import com.dan1eidtj.data.FirestoreListenerCoordinator
 import com.dan1eidtj.mayas.db.ChatEntity
 import com.dan1eidtj.mayas.db.ChatRepository
+import com.dan1eidtj.mayas.core_ui.Screen
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -20,7 +22,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 class ChatListViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = ChatRepository(application)
     private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
 
@@ -28,13 +29,11 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
 
     val syncState = MutableStateFlow(SyncState.IDLE)
 
-    val chats: StateFlow<List<ChatEntity>> = repository
-        .getChats()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000),
-            initialValue = emptyList()
-        )
+    private val _chats = MutableStateFlow<List<ChatEntity>>(emptyList())
+    val chats: StateFlow<List<ChatEntity>> = _chats.asStateFlow()
+
+    private val chatDocuments = mutableMapOf<String, com.google.firebase.firestore.DocumentSnapshot>()
+    private val chatDocListeners = mutableMapOf<String, ListenerRegistration>()
 
 
 
@@ -109,7 +108,8 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                         "isPremium" to (doc.getBoolean("isPremium") ?: false),
                         "avatarFrame" to (doc.getString("avatarFrame") ?: "none"),
                         "nameColor" to (doc.getString("nameColor") ?: "gold"),
-                        "isGroup" to false
+                        "isGroup" to false,
+                        "verification" to runCatching { com.dan1eidtj.data.VerificationInfo.fromMap(doc.data) }.getOrDefault(com.dan1eidtj.data.VerificationInfo())
                     )
                 }
             }
@@ -128,102 +128,242 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                 _unreadNotificationsCount.value = snapshot?.size() ?: 0
             }
 
-        chatsListener = db.collection("chats")
-            .whereArrayContains("participants", uid)
-            .addSnapshotListener { snapshot, error ->
+        chatsListener = db.collection("userChats")
+            .document(uid)
+            .collection("chats")
+            .addSnapshotListener { indexSnapshot, error ->
                 if (error != null) {
-                    Log.e("ChatListVM", "Ошибка снапшота чатов", error)
+                    Log.e("ChatListVM", "Ошибка снапшота userChats", error)
                     syncState.value = SyncState.OFFLINE
                     return@addSnapshotListener
                 }
 
-                if (snapshot == null) return@addSnapshotListener
+                if (indexSnapshot == null) return@addSnapshotListener
 
                 syncState.value = SyncState.ONLINE
 
-                viewModelScope.launch {
-                    try {
-                        repository.syncChatsFromSnapshot(snapshot, uid)
-                    } catch (e: Exception) {
-                        Log.e("ChatListVM", "Ошибка синхронизации чатов", e)
-                    }
-                }
-
-                val partnerUids = snapshot.documents
-                    .filter { doc ->
-                        val type = doc.getString("type") ?: "DIRECT"
-                        val isGroup = type == "GROUP" || (doc.getBoolean("isGroup") ?: false)
-                        !isGroup
-                    }
-                    .flatMap { doc ->
-                        (doc.get("participants") as? List<*>)
-                            ?.filterIsInstance<String>()
-                            ?.filter { it != uid }
-                            ?: emptyList()
-                    }
+                val currentChatIds = indexSnapshot.documents
+                    .map { it.id }
                     .toSet()
 
-                val toRemove = partnerListeners.keys - partnerUids
-                toRemove.forEach { partnerUid ->
-                    partnerListeners[partnerUid]?.remove()
-                    partnerListeners.remove(partnerUid)
-                    _partnerPresence.value = _partnerPresence.value - partnerUid
+                val removedChatIds = chatDocListeners.keys - currentChatIds
+
+                removedChatIds.forEach { chatId ->
+                    chatDocListeners[chatId]?.remove()
+                    chatDocListeners.remove(chatId)
+                    chatDocuments.remove(chatId)
                 }
 
-                partnerUids.forEach { partnerUid ->
-                    if (!partnerListeners.containsKey(partnerUid)) {
-                        partnerListeners[partnerUid] = db.collection("users")
-                            .document(partnerUid)
-                            .addSnapshotListener { userDoc, error ->
-                                if (error != null) {
-                                    Log.e("ChatListVM", "Ошибка снапшота партнёра $partnerUid", error)
+                if (removedChatIds.isNotEmpty()) {
+                    rebuildChatEntities(uid)
+                }
+
+                currentChatIds.forEach { chatId ->
+                    if (!chatDocListeners.containsKey(chatId)) {
+                        chatDocListeners[chatId] = db.collection("chats")
+                            .document(chatId)
+                            .addSnapshotListener { chatDoc, chatError ->
+                                if (chatError != null) {
+                                    Log.e(
+                                        "ChatListVM",
+                                        "Ошибка снапшота чата $chatId",
+                                        chatError
+                                    )
                                     return@addSnapshotListener
                                 }
-                                if (userDoc == null || !userDoc.exists()) return@addSnapshotListener
 
-                                _partnerPresence.value = _partnerPresence.value + (partnerUid to mapOf(
-                                    "lastSeen" to userDoc.getTimestamp("lastSeen"),
-                                    "isInvisible" to (userDoc.getBoolean("isInvisible") ?: false),
-                                    "typing" to userDoc.get("typing"),
-                                    "activity" to (userDoc.getString("activity") ?: ""),
-                                    "name" to (userDoc.getString("name") ?: userDoc.getString("username") ?: "Аноним"),
-                                    "avatarUrl" to (userDoc.getString("avatarUrl") ?: ""),
-                                    "profileIcon" to (userDoc.getString("profileIcon") ?: "ghost"),
-                                    "useCustomAvatar" to (userDoc.getBoolean("useCustomAvatar") ?: false),
-                                    "profileGlow" to (userDoc.getString("profileGlow") ?: "purple"),
-                                    "isPremium" to (userDoc.getBoolean("isPremium") ?: false),
-                                    "avatarFrame" to (userDoc.getString("avatarFrame") ?: "none"),
-                                    "nameColor" to (userDoc.getString("nameColor") ?: "gold"),
-                                    "isGroup" to false,
-                                    "emoji" to (userDoc.getString("emojiStatus") ?: "")
-                                ))
+                                if (chatDoc == null || !chatDoc.exists()) {
+                                    chatDocuments.remove(chatId)
+                                    rebuildChatEntities(uid)
+                                    return@addSnapshotListener
+                                }
 
-                                val chatId = snapshot.documents
-                                    .firstOrNull { doc ->
-                                        val participants = doc.get("participants") as? List<*>
-                                        participants?.contains(partnerUid) == true &&
-                                                participants.contains(uid)
-                                    }?.id ?: return@addSnapshotListener
+                                val participants =
+                                    (chatDoc.get("participants") as? List<*>)
+                                        ?.filterIsInstance<String>()
+                                        ?: emptyList()
 
-                                viewModelScope.launch {
-                                    try {
-                                        repository.updatePartnerInfoFromSnapshot(
-                                            chatId = chatId,
-                                            userDoc = userDoc
-                                        )
-                                    } catch (e: Exception) {
-                                        Log.e("ChatListVM", "Ошибка обновления партнёра $partnerUid", e)
+                                if (!participants.contains(uid)) {
+                                    chatDocuments.remove(chatId)
+                                    rebuildChatEntities(uid)
+                                    return@addSnapshotListener
+                                }
+
+                                chatDocuments[chatId] = chatDoc
+
+                                val partnerUids = chatDocuments.values
+                                    .mapNotNull { doc ->
+                                        val type = doc.getString("type") ?: "DIRECT"
+                                        val isGroup =
+                                            type == "GROUP" ||
+                                                    (doc.getBoolean("isGroup") ?: false) ||
+                                                    type == "CHANNEL" ||
+                                                    type == "SAVED"
+
+                                        if (isGroup) {
+                                            null
+                                        } else {
+                                            (doc.get("participants") as? List<*>)
+                                                ?.filterIsInstance<String>()
+                                                ?.firstOrNull { it != uid }
+                                        }
+                                    }
+                                    .toSet()
+
+                                val toRemove = partnerListeners.keys - partnerUids
+                                toRemove.forEach { partnerUid ->
+                                    partnerListeners[partnerUid]?.remove()
+                                    partnerListeners.remove(partnerUid)
+                                    _partnerPresence.value =
+                                        _partnerPresence.value - partnerUid
+                                }
+
+                                partnerUids.forEach { partnerUid ->
+                                    if (!partnerListeners.containsKey(partnerUid)) {
+                                        partnerListeners[partnerUid] =
+                                            db.collection("users")
+                                                .document(partnerUid)
+                                                .addSnapshotListener { userDoc, userError ->
+                                                    if (userError != null) {
+                                                        Log.e(
+                                                            "ChatListVM",
+                                                            "Ошибка снапшота партнёра $partnerUid",
+                                                            userError
+                                                        )
+                                                        return@addSnapshotListener
+                                                    }
+
+                                                    if (userDoc == null || !userDoc.exists()) {
+                                                        return@addSnapshotListener
+                                                    }
+
+                                                    // Настройки приватности этого пользователя.
+                                                    // Гейтим прямо тут, в единственной точке
+                                                    // сборки presence-кэша — дальше это уходит
+                                                    // и в живой список чатов, и в Room (ChatEntity),
+                                                    // так что фикс здесь закрывает обе утечки разом.
+                                                    val lastSeenAllowed =
+                                                        (userDoc.getString("privacy_last_seen") ?: "all") == "all"
+                                                    val photoAllowed =
+                                                        (userDoc.getString("privacy_photo") ?: "all") == "all"
+
+                                                    val presence = mapOf(
+                                                        "lastSeen" to if (lastSeenAllowed) userDoc.getTimestamp("lastSeen") else null,
+                                                        "isInvisible" to (userDoc.getBoolean("isInvisible") ?: false),
+                                                        "typing" to userDoc.get("typing"),
+                                                        "activity" to (userDoc.getString("activity") ?: ""),
+                                                        "name" to (
+                                                                userDoc.getString("name")
+                                                                    ?: userDoc.getString("username")
+                                                                    ?: "Аноним"
+                                                                ),
+                                                        "avatarUrl" to if (photoAllowed) userDoc.getString("avatarUrl") else null,
+                                                        "profileIcon" to (userDoc.getString("profileIcon") ?: "ghost"),
+                                                        "useCustomAvatar" to if (photoAllowed) (userDoc.getBoolean("useCustomAvatar") ?: false) else false,
+                                                        "profileGlow" to (userDoc.getString("profileGlow") ?: "purple"),
+                                                        "isPremium" to (userDoc.getBoolean("isPremium") ?: false),
+                                                        "avatarFrame" to (userDoc.getString("avatarFrame") ?: "none"),
+                                                        "nameColor" to (userDoc.getString("nameColor") ?: "gold"),
+                                                        "isGroup" to false,
+                                                        "emoji" to userDoc.getString("emojiStatus"),
+                                                        "verification" to runCatching { com.dan1eidtj.data.VerificationInfo.fromMap(userDoc.data) }.getOrDefault(com.dan1eidtj.data.VerificationInfo())
+                                                    )
+
+                                                    _partnerPresence.value =
+                                                        _partnerPresence.value + (partnerUid to presence)
+
+                                                    rebuildChatEntities(uid)
+                                                }
                                     }
                                 }
+
+                                rebuildChatEntities(uid)
                             }
                     }
                 }
             }
     }
 
+    private fun rebuildChatEntities(uid: String) {
+        val entities = chatDocuments.values.mapNotNull { doc ->
+            try {
+                val type = doc.getString("type") ?: "DIRECT"
+                val isSavedMessages = type == "SAVED"
+                val isGroup = isSavedMessages ||
+                        type == "GROUP" ||
+                        type == "CHANNEL" ||
+                        (doc.getBoolean("isGroup") ?: false)
+
+                val participants = (doc.get("participants") as? List<*>)
+                    ?.filterIsInstance<String>()
+                    ?: emptyList()
+
+                val partnerUid = if (!isGroup) {
+                    participants.firstOrNull { it != uid }
+                } else {
+                    null
+                }
+
+                val partner = partnerUid?.let { _partnerPresence.value[it] }
+
+                val resolvedGroupAvatar =
+                    doc.getString("groupAvatarUrl")
+                        ?: doc.getString("groupAvatar")
+
+                ChatEntity(
+                    chatId = doc.id,
+                    isGroup = isGroup,
+                    chatType = type,
+                    groupName = doc.getString("groupName") ?: doc.getString("title"),
+                    groupAvatarUrl = resolvedGroupAvatar,
+                    groupIcon = doc.getString("profileIcon") ?: doc.getString("groupIcon"),
+                    groupProfileGlow = doc.getString("profileGlow") ?: "purple",
+                    useCustomAvatar = if (isGroup) {
+                        !resolvedGroupAvatar.isNullOrBlank()
+                    } else {
+                        doc.getBoolean("useCustomAvatar") ?: false
+                    },
+                    lastMessage = doc.getString("lastMessage"),
+                    unreadCount = (doc.getLong("unreadCount_$uid") ?: 0L).toInt(),
+                    updatedAt = doc.getTimestamp("updatedAt")?.toDate()?.time ?: 0L,
+                    description = doc.getString("description"),
+                    ownerId = doc.getString("ownerId"),
+                    adminsList = (doc.get("admins") as? List<*>)
+                        ?.filterIsInstance<String>()
+                        ?: emptyList(),
+                    isPublic = doc.getBoolean("isPublic") ?: false,
+                    isPinned = doc.getBoolean("pinned_$uid") ?: false,
+                    partnerUid = partnerUid,
+                    partnerName = partner?.get("name") as? String,
+                    partnerAvatarUrl = partner?.get("avatarUrl") as? String,
+                    partnerProfileIcon = partner?.get("profileIcon") as? String ?: "ghost",
+                    partnerProfileGlow = partner?.get("profileGlow") as? String ?: "purple",
+                    partnerUseCustomAvatar = partner?.get("useCustomAvatar") as? Boolean ?: false,
+                    partnerIsPremium = partner?.get("isPremium") as? Boolean ?: false,
+                    partnerAvatarFrame = partner?.get("avatarFrame") as? String ?: "none",
+                    partnerNameColor = partner?.get("nameColor") as? String ?: "gold",
+                    partnerEmoji = partner?.get("emoji") as? String,
+                    typingText = null,
+                    isSavedMessages = isSavedMessages
+                )
+            } catch (e: Exception) {
+                Log.e("ChatListVM", "Ошибка конвертации чата ${doc.id}", e)
+                null
+            }
+        }
+
+        _chats.value = entities.sortedByDescending { it.updatedAt }
+    }
+
     fun stopListening() {
         chatsListener?.remove()
         chatsListener = null
+
+        chatDocListeners.values.forEach { it.remove() }
+        chatDocListeners.clear()
+        chatDocuments.clear()
+        _chats.value = emptyList()
+
         myProfileListener?.remove()
         myProfileListener = null
         notificationsListener?.remove()
@@ -245,7 +385,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun openOrCreateDirectChat(myUid: String, partnerUid: String, onReady: (String) -> Unit) {
-        val chatId = listOf(myUid, partnerUid).sorted().joinToString("_")
+        val chatId = Screen.getChatId(myUid, partnerUid)
         val chatRef = db.collection("chats").document(chatId)
         viewModelScope.launch {
             try {
@@ -264,6 +404,21 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                         )
                     ).await()
                 }
+
+                db.collection("userChats")
+                    .document(myUid)
+                    .collection("chats")
+                    .document(chatId)
+                    .set(mapOf("chatId" to chatId), SetOptions.merge())
+                    .await()
+
+                db.collection("userChats")
+                    .document(partnerUid)
+                    .collection("chats")
+                    .document(chatId)
+                    .set(mapOf("chatId" to chatId), SetOptions.merge())
+                    .await()
+
                 onReady(chatId)
             } catch (e: Exception) {
                 Log.e("ChatListVM", "Ошибка создания чата", e)

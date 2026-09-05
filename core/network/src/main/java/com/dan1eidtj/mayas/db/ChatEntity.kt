@@ -31,6 +31,12 @@ data class ChatEntity(
     val partnerAvatarFrame: String? = "none",
     val partnerNameColor: String? = "gold",
     val partnerEmoji: String? = null,
+    // Кэш верификации/ранга партнёра для офлайн-показа в списке чатов.
+    // Плоские поля вместо VerificationInfo/Rank — без лишнего TypeConverter'а.
+    val partnerVerified: Boolean = false,
+    val partnerVerificationType: String? = null,
+    val partnerVerifiedBy: String? = null,
+    val partnerRank: Int = 0,
     val typingText: String? = null,
     val isSavedMessages: Boolean = false
 )
