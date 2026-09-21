@@ -19,14 +19,23 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateValue
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -38,6 +47,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -55,6 +65,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.ChatBubble
@@ -65,6 +76,7 @@ import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Info
@@ -79,6 +91,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Update
 import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -93,6 +106,7 @@ import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -145,6 +159,8 @@ import com.dan1eidtj.mayas.feature.auth.AuthVM
 import com.dan1eidtj.mayas.feature.chat.CreateChannelScreen
 import com.dan1eidtj.mayas.feature.chat.CreateGroupScreen
 import com.dan1eidtj.mayas.feature.formatCompactCount
+import com.dan1eidtj.chats.R
+import androidx.compose.ui.res.stringResource
 import com.google.firebase.auth.FirebaseAuth
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -218,12 +234,12 @@ fun DrawerActionRow(
 
 enum class ConnectionState { ONLINE, OFFLINE }
 
-enum class ChatFolder(val displayName: String, val icon: ImageVector) {
-    ALL("Все чаты", Icons.Default.ChatBubble),
-    PINNED("Закрепленные", Icons.Default.PushPin),
-    GROUPS("Группы", Icons.Default.Groups),
-    CHANNELS("Каналы", Icons.Default.Campaign),
-    CONTACTS("Контакты", Icons.Default.People)
+enum class ChatFolder(val labelRes: Int, val icon: ImageVector) {
+    ALL(com.dan1eidtj.chat.R.string.all_chats, Icons.Default.ChatBubble),
+    PINNED(com.dan1eidtj.chat.R.string.pinned_chats, Icons.Default.PushPin),
+    GROUPS(com.dan1eidtj.chat.R.string.groups, Icons.Default.Groups),
+    CHANNELS(R.string.channels, Icons.Default.Campaign),
+    CONTACTS(R.string.contacts, Icons.Default.People)
 }
 
 fun getChatId(uid1: String, uid2: String): String {
@@ -244,6 +260,7 @@ fun ChatListScreen(
     onOpenCredits: () -> Unit,
     onOpenUserSearch: () -> Unit,
     onDismissUserSearch: () -> Unit,
+    onOpenGlobalSearch: () -> Unit = {},
     homeLayoutPrefs: HomeScreenLayoutPrefs = HomeScreenLayoutPrefs(),
     sidebarLayoutPrefs: SidebarLayoutPrefs = SidebarLayoutPrefs(),
     onUpdateSidebarPrefs: (SidebarLayoutPrefs) -> Unit = {}
@@ -338,6 +355,7 @@ fun ChatListScreen(
                 put("groupProfileGlow", entity.groupProfileGlow ?: "purple")
                 put("useCustomAvatar", entity.useCustomAvatar)
                 put("lastMessage", entity.lastMessage ?: "")
+                put("draftText", entity.draftText ?: "")
                 put("unreadCount", entity.unreadCount)
                 put("updatedAt", entity.updatedAt)
                 put("description", entity.description ?: "")
@@ -383,6 +401,11 @@ fun ChatListScreen(
     var searchInput by remember { mutableStateOf("") }
     var searchError by remember { mutableStateOf<String?>(null) }
     var selectedFolder by remember { mutableStateOf(ChatFolder.ALL) }
+    var selectedCustomFolderId by remember { mutableStateOf<String?>(null) }
+    var folderBeingEdited by remember { mutableStateOf<ChatFolderData?>(null) }
+    var showCreateFolderDialog by remember { mutableStateOf(false) }
+    val customFolders by chatListVm.customFolders.collectAsState()
+    val folderLimitText = stringResource(R.string.folder_limit_reached)
 
     val userCache by chatListVm.partnerPresence.collectAsState()
     val myProfileData by chatListVm.myProfile.collectAsState()
@@ -427,6 +450,9 @@ fun ChatListScreen(
             label = "dots"
         )
         val dots = ".".repeat(dotCount)
+        val waitingForNetworkTemplate = stringResource(R.string.waiting_for_network_dots)
+        val noConnectionTemplate = stringResource(R.string.no_connection_dots)
+        val onlineText = stringResource(R.string.online)
 
         val pulseScale by infiniteTransition.animateFloat(
             initialValue = 0.85f,
@@ -456,11 +482,11 @@ fun ChatListScreen(
                 when {
                     !internetOk -> {
                         connectionState = ConnectionState.OFFLINE
-                        connectionText = "Жди инет$dots"
+                        connectionText = String.format(waitingForNetworkTemplate, dots)
                     }
                     else -> {
                         connectionState = ConnectionState.ONLINE
-                        connectionText = "в сети"
+                        connectionText = onlineText
                     }
                 }
                 delay(4000)
@@ -471,11 +497,11 @@ fun ChatListScreen(
             when (syncState) {
                 SyncState.OFFLINE -> {
                     connectionState = ConnectionState.OFFLINE
-                    connectionText = "Нет связи$dots"
+                    connectionText = String.format(noConnectionTemplate, dots)
                 }
                 SyncState.ONLINE -> {
                     connectionState = ConnectionState.ONLINE
-                    connectionText = "в сети"
+                    connectionText = onlineText
                 }
                 else -> {}
             }
@@ -505,7 +531,8 @@ fun ChatListScreen(
 
 
 
-        val filteredChats = remember(chats, searchQuery, userCache, selectedFolder) {
+        val filteredChats = remember(chats, searchQuery, userCache, selectedFolder, selectedCustomFolderId, customFolders) {
+            val activeCustomFolder = selectedCustomFolderId?.let { id -> customFolders.find { it.id == id } }
             chats.filter { chat ->
                 val isGroup = chat["isGroup"] as? Boolean ?: false
 
@@ -527,12 +554,16 @@ fun ChatListScreen(
 
                 val isPinned = chat["isPinned"] as? Boolean ?: false
 
-                when (selectedFolder) {
-                    ChatFolder.ALL -> true
-                    ChatFolder.PINNED -> isPinned
-                    ChatFolder.GROUPS -> isGroup && chat["chatType"] != "CHANNEL" && !(chat["isSavedMessages"] as? Boolean ?: false)
-                    ChatFolder.CHANNELS -> chat["chatType"] == "CHANNEL"
-                    ChatFolder.CONTACTS -> !isGroup
+                if (activeCustomFolder != null) {
+                    activeCustomFolder.chatIds.contains(chat["chatId"] as? String)
+                } else {
+                    when (selectedFolder) {
+                        ChatFolder.ALL -> true
+                        ChatFolder.PINNED -> isPinned
+                        ChatFolder.GROUPS -> isGroup && chat["chatType"] != "CHANNEL" && !(chat["isSavedMessages"] as? Boolean ?: false)
+                        ChatFolder.CHANNELS -> chat["chatType"] == "CHANNEL"
+                        ChatFolder.CONTACTS -> !isGroup
+                    }
                 }
             }.sortedWith(
                 compareByDescending<Map<String, Any>> { it["isPinned"] as? Boolean ?: false }
@@ -586,7 +617,7 @@ fun ChatListScreen(
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = myProfileData["name"] as? String ?: "Я",
+                                        text = myProfileData["name"] as? String ?: stringResource(R.string.me),
                                         color = MayasTheme.TextPrimary,
                                         fontSize = 17.sp,
                                         fontWeight = FontWeight.Bold,
@@ -594,7 +625,7 @@ fun ChatListScreen(
                                         overflow = TextOverflow.Ellipsis
                                     )
                                     Text(
-                                        text = "Открыть профиль",
+                                        text = stringResource(R.string.open_profile),
                                         color = MayasTheme.TextSecondary,
                                         fontSize = 12.sp
                                     )
@@ -638,7 +669,7 @@ fun ChatListScreen(
                                         modifier = Modifier.size(20.dp)
                                     )
                                     Text(
-                                        text = "Обновить Mayas",
+                                        text = stringResource(R.string.update_mayas),
                                         color = MayasTheme.TextPrimary,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold
@@ -652,7 +683,7 @@ fun ChatListScreen(
                                 DrawerActionRow(
                                     icon = Icons.Default.GroupAdd,
                                     iconTint = MayasTheme.GlowPurple,
-                                    label = "Создать группу",
+                                    label = stringResource(R.string.create_group),
                                     onClick = {
                                         coroutineScope.launch { drawerState.close() }
                                         showCreateGroupScreen = true
@@ -663,7 +694,7 @@ fun ChatListScreen(
                                 DrawerActionRow(
                                     icon = Icons.Default.Campaign,
                                     iconTint = MayasTheme.GlowPurple,
-                                    label = "Создать канал",
+                                    label = stringResource(R.string.create_channel),
                                     onClick = {
                                         coroutineScope.launch { drawerState.close() }
                                         showCreateChannelScreen = true
@@ -671,18 +702,20 @@ fun ChatListScreen(
                                     iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
                                     compact = sidebarLayoutPrefs.compactMode
                                 )
+                                val inviteFriendLabel = stringResource(R.string.invite_friend_action)
+                                val inviteFriendShareText = stringResource(R.string.invite_friend_share_text)
                                 DrawerActionRow(
                                     icon = Icons.Default.PersonAdd,
                                     iconTint = MayasTheme.GlowPurple,
-                                    label = "Пригласить друга",
+                                    label = inviteFriendLabel,
                                     onClick = {
                                         coroutineScope.launch { drawerState.close() }
                                         try {
                                             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                                 type = "text/plain"
-                                                putExtra(Intent.EXTRA_TEXT, "Заходи в Маяс , не похалеешь) - https://dan1eidt.github.io/mayas-site/")
+                                                putExtra(Intent.EXTRA_TEXT, inviteFriendShareText)
                                             }
-                                            context.startActivity(Intent.createChooser(shareIntent, "Пригласить друга"))
+                                            context.startActivity(Intent.createChooser(shareIntent, inviteFriendLabel))
                                         } catch (e: Exception) {}
                                     },
                                     iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
@@ -691,7 +724,7 @@ fun ChatListScreen(
                                 DrawerActionRow(
                                     icon = Icons.Default.Contacts,
                                     iconTint = MayasTheme.GlowPurple,
-                                    label = "Найти контакты",
+                                    label = stringResource(R.string.find_contacts_action),
                                     onClick = {
                                         coroutineScope.launch { drawerState.close() }
                                         showContactsSyncScreen = true
@@ -705,7 +738,7 @@ fun ChatListScreen(
                                 DrawerActionRow(
                                     icon = Icons.Default.PersonAdd,
                                     iconTint = MayasTheme.GlowPurple,
-                                    label = "Новый чат",
+                                    label = stringResource(R.string.new_chat),
                                     onClick = {
                                         coroutineScope.launch { drawerState.close() }
                                         showUserSearchDialog = true; onOpenUserSearch()
@@ -718,7 +751,7 @@ fun ChatListScreen(
                                 DrawerActionRow(
                                     icon = Icons.Default.Search,
                                     iconTint = MayasTheme.TextSecondary,
-                                    label = "Поиск чатов",
+                                    label = stringResource(R.string.search_chats_action),
                                     onClick = {
                                         coroutineScope.launch { drawerState.close() }
                                         forceShowSearch = true
@@ -729,6 +762,7 @@ fun ChatListScreen(
                             }
 
                             if (sidebarLayoutPrefs.customLinks.isNotEmpty()) {
+                                val openLinkFailedTemplate = stringResource(R.string.error_open_link_failed)
                                 sidebarLayoutPrefs.customLinks.forEach { link ->
                                     DrawerActionRow(
                                         icon = Icons.Default.Link,
@@ -744,7 +778,7 @@ fun ChatListScreen(
                                             try {
                                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(safeUrl)))
                                             } catch (e: Exception) {
-                                                Toast.makeText(context, "Не удалось открыть ссылку: ${link.url}", Toast.LENGTH_SHORT).show()
+                                                Toast.makeText(context, String.format(openLinkFailedTemplate, link.url), Toast.LENGTH_SHORT).show()
                                             }
                                         },
                                         iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
@@ -761,7 +795,7 @@ fun ChatListScreen(
                                 }
                                 if (pinnedChats.isNotEmpty()) {
                                     Text(
-                                        text = "ЗАКРЕПЛЁННЫЕ ЧАТЫ",
+                                        text = stringResource(R.string.pinned_chats_section_label),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
@@ -769,13 +803,14 @@ fun ChatListScreen(
                                     )
                                     Spacer(modifier = Modifier.height(12.dp))
 
+                                    val unpinnedFromPanelText = stringResource(R.string.unpinned_from_panel)
                                     pinnedChats.forEach { pinnedChat ->
                                         val pinnedChatId = pinnedChat["chatId"] as? String ?: return@forEach
                                         val isGroupChat = pinnedChat["isGroup"] as? Boolean ?: false
                                         val displayName = if (isGroupChat) {
-                                            pinnedChat["groupName"] as? String ?: "Группа"
+                                            pinnedChat["groupName"] as? String ?: stringResource(R.string.group_fallback_name)
                                         } else {
-                                            pinnedChat["partnerName"] as? String ?: "Чат"
+                                            pinnedChat["partnerName"] as? String ?: stringResource(R.string.chat_generic)
                                         }
                                         val avatarUrl = if (isGroupChat) {
                                             pinnedChat["groupAvatarUrl"] as? String
@@ -810,7 +845,7 @@ fun ChatListScreen(
                                                                 pinnedChatIds = sidebarLayoutPrefs.pinnedChatIds - pinnedChatId
                                                             )
                                                         )
-                                                        Toast.makeText(context, "Откреплено из панели", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(context, unpinnedFromPanelText, Toast.LENGTH_SHORT).show()
                                                     }
                                                 )
                                                 .padding(horizontal = if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp),
@@ -850,7 +885,7 @@ fun ChatListScreen(
 
                             val foldersBlock: @Composable () -> Unit = {
                                 Text(
-                                    text = "ПАПКИ",
+                                    text = stringResource(R.string.folders_label),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
@@ -872,6 +907,7 @@ fun ChatListScreen(
                                             )
                                             .combinedClickable {
                                                 selectedFolder = folder
+                                                selectedCustomFolderId = null
                                                 coroutineScope.launch { drawerState.close() }
                                             }
                                             .padding(horizontal = if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp),
@@ -885,7 +921,7 @@ fun ChatListScreen(
                                             modifier = Modifier.size(if (sidebarLayoutPrefs.compactMode) 17.dp else 20.dp)
                                         )
                                         Text(
-                                            text = folder.displayName,
+                                            text = stringResource(folder.labelRes),
                                             color = if (isSelected) MayasTheme.TextPrimary else MayasTheme.TextSecondary,
                                             fontSize = if (sidebarLayoutPrefs.compactMode) 13.sp else 14.sp,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
@@ -933,11 +969,109 @@ fun ChatListScreen(
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
                                 }
+
+                                customFolders.sortedBy { it.order }.forEach { folder ->
+                                    val isSelected = selectedCustomFolderId == folder.id
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(if (sidebarLayoutPrefs.compactMode) 40.dp else 48.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(
+                                                if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.12f)
+                                                else Color.Transparent
+                                            )
+                                            .combinedClickable(
+                                                onClick = {
+                                                    selectedFolder = ChatFolder.ALL
+                                                    selectedCustomFolderId = folder.id
+                                                    coroutineScope.launch { drawerState.close() }
+                                                },
+                                                onLongClick = { folderBeingEdited = folder }
+                                            )
+                                            .padding(horizontal = if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Folder,
+                                            contentDescription = null,
+                                            tint = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
+                                            modifier = Modifier.size(if (sidebarLayoutPrefs.compactMode) 17.dp else 20.dp)
+                                        )
+                                        Text(
+                                            text = folder.name,
+                                            color = if (isSelected) MayasTheme.TextPrimary else MayasTheme.TextSecondary,
+                                            fontSize = if (sidebarLayoutPrefs.compactMode) 13.sp else 14.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        val count = chats.count { folder.chatIds.contains(it["chatId"]) }
+                                        if (count > 0) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(CircleShape)
+                                                    .background(
+                                                        if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.2f)
+                                                        else MayasTheme.Surface.copy(alpha = 0.05f)
+                                                    )
+                                                    .padding(horizontal = 7.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = "$count",
+                                                    color = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = { folderBeingEdited = folder },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Outlined.Edit,
+                                                null,
+                                                tint = MayasTheme.TextSecondary.copy(alpha = 0.6f),
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                }
+
+                                if (customFolders.size < ChatListViewModel.MAX_CUSTOM_FOLDERS) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(if (sidebarLayoutPrefs.compactMode) 40.dp else 48.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .clickable { showCreateFolderDialog = true }
+                                            .padding(horizontal = if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = null,
+                                            tint = MayasTheme.GlowPurple,
+                                            modifier = Modifier.size(if (sidebarLayoutPrefs.compactMode) 17.dp else 20.dp)
+                                        )
+                                        Text(
+                                            text = stringResource(R.string.create_folder),
+                                            color = MayasTheme.GlowPurple,
+                                            fontSize = if (sidebarLayoutPrefs.compactMode) 13.sp else 14.sp,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+                                }
                             }
 
                             val appBlock: @Composable () -> Unit = {
                                 Text(
-                                    text = "ПРИЛОЖЕНИЕ",
+                                    text = stringResource(R.string.app_section_label),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
@@ -949,7 +1083,7 @@ fun ChatListScreen(
                                 DrawerActionRow(
                                     icon = Icons.Default.Settings,
                                     iconTint = MayasTheme.TextSecondary,
-                                    label = "Настройки",
+                                    label = stringResource(R.string.settings_menu_label),
                                     onClick = {
                                         coroutineScope.launch { drawerState.close() }
                                         onOpenSettings()
@@ -960,7 +1094,7 @@ fun ChatListScreen(
                                 DrawerActionRow(
                                     icon = Icons.Default.Info,
                                     iconTint = MayasTheme.TextSecondary,
-                                    label = "О приложении",
+                                    label = stringResource(R.string.about_app_menu_label),
                                     onClick = {
                                         coroutineScope.launch { drawerState.close() }
                                         onOpenCredits()
@@ -1013,12 +1147,12 @@ fun ChatListScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ExitToApp,
-                                contentDescription = "Выход",
+                                contentDescription = stringResource(R.string.logout_content_description),
                                 tint = MayasTheme.ErrorRed,
                                 modifier = Modifier.size(20.dp)
                             )
                             Text(
-                                text = "Выйти из аккаунта",
+                                text = stringResource(com.dan1eidtj.auth.R.string.logout_from_account_button),
                                 color = MayasTheme.ErrorRed,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -1059,7 +1193,7 @@ fun ChatListScreen(
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Icon(Icons.Default.Update, null, tint = installSource.onAccentColor, modifier = Modifier.size(18.dp))
                                 Text(
-                                    text = "Доступно обновление Mayas!",
+                                    text = stringResource(R.string.update_available),
                                     color = installSource.onAccentColor,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold
@@ -1071,7 +1205,7 @@ fun ChatListScreen(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
-                                    contentDescription = "Закрыть",
+                                    contentDescription = stringResource(R.string.close_action),
                                     tint = installSource.onAccentColor.copy(alpha = 0.7f),
                                     modifier = Modifier.size(16.dp)
                                 )
@@ -1091,12 +1225,14 @@ fun ChatListScreen(
                                     showUserSearchDialog = true; onOpenUserSearch()
                                 },
                                 onMenuClick = { coroutineScope.launch { drawerState.open() } },
+                                onGlobalSearchClick = onOpenGlobalSearch,
                                 fabAtStart = homeLayoutPrefs.fabPosition == HorizontalSlot.START,
                                 showSearchField = homeLayoutPrefs.showSearchField &&
                                         (homeLayoutPrefs.searchPosition == VerticalSlot.TOP || forceShowSearch),
                                 showAddFriendButton = homeLayoutPrefs.showAddFriendButton
                             )
                         } else {
+                            val pinnedToPanelText = stringResource(R.string.pinned_to_panel)
                             HeaderSelection(
                                 selectedCount = selectedChats.size,
                                 onClearSelection = { selectedChats = emptySet() },
@@ -1131,7 +1267,7 @@ fun ChatListScreen(
                                 onPinToSidebar = {
                                     val newPinned = (sidebarLayoutPrefs.pinnedChatIds + selectedChats).distinct()
                                     onUpdateSidebarPrefs(sidebarLayoutPrefs.copy(pinnedChatIds = newPinned))
-                                    Toast.makeText(context, "Закреплено в панели", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, pinnedToPanelText, Toast.LENGTH_SHORT).show()
                                     selectedChats = emptySet()
                                 }
                             )
@@ -1146,18 +1282,22 @@ fun ChatListScreen(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            text = selectedFolder.displayName,
+                            text = customFolders.find { it.id == selectedCustomFolderId }?.name
+                                ?: stringResource(selectedFolder.labelRes),
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
                             color = MayasTheme.GlowPurple,
                             letterSpacing = 0.5.sp
                         )
-                        if (selectedFolder != ChatFolder.ALL) {
+                        if (selectedFolder != ChatFolder.ALL || selectedCustomFolderId != null) {
                             TextButton(
-                                onClick = { selectedFolder = ChatFolder.ALL },
+                                onClick = {
+                                    selectedFolder = ChatFolder.ALL
+                                    selectedCustomFolderId = null
+                                },
                                 contentPadding = PaddingValues(0.dp)
                             ) {
-                                Text("Сбросить", color = MayasTheme.TextSecondary, fontSize = 11.sp)
+                                Text(stringResource(R.string.reset), color = MayasTheme.TextSecondary, fontSize = 11.sp)
                             }
                         }
                     }
@@ -1174,7 +1314,7 @@ fun ChatListScreen(
                         } else if (filteredChats.isEmpty()) {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 Text(
-                                    text = if (searchQuery.isNotEmpty()) "Ничего не найдено" else "В этой папке нет чатов",
+                                    text = if (searchQuery.isNotEmpty()) stringResource(R.string.nothing_found) else stringResource(R.string.no_chats_in_folder),
                                     color = MayasTheme.TextSecondary.copy(alpha = 0.6f),
                                     fontSize = 14.sp,
                                     fontWeight = FontWeight.Medium
@@ -1199,7 +1339,7 @@ fun ChatListScreen(
                                         val isChannel = chat["chatType"] == "CHANNEL"
                                         val groupData = mapOf(
                                             "name" to (
-                                                    chat["groupName"] as? String ?: "Группа без названия"
+                                                    chat["groupName"] as? String ?: stringResource(R.string.unnamed_group)
                                                     ),
                                             "avatarUrl" to (
                                                     chat["groupAvatarUrl"] as? String ?: ""
@@ -1222,6 +1362,7 @@ fun ChatListScreen(
                                         ChatItemNew(
                                             userData = groupData,
                                             lastMsg = chat["lastMessage"] as? String ?: "",
+                                            draftText = chat["draftText"] as? String ?: "",
 
                                             unreadCount = chat["unreadCount"] as? Int ?: 0,
 
@@ -1287,6 +1428,7 @@ fun ChatListScreen(
                                         ChatItemNew(
                                             userData = userData,
                                             lastMsg = chat["lastMessage"] as? String ?: "",
+                                            draftText = chat["draftText"] as? String ?: "",
                                             unreadCount = chat["unreadCount"] as? Int ?: 0,
                                             updatedAt = chat["updatedAt"] as? Long ?: 0L,
                                             isSelected = selectedChats.contains(chatId),
@@ -1358,6 +1500,151 @@ fun ChatListScreen(
             }
         )
     }
+
+    if (showCreateFolderDialog) {
+        FolderEditorDialog(
+            initialName = "",
+            allChats = chats,
+            userCache = userCache,
+            initiallySelectedChatIds = emptySet(),
+            onDismiss = { showCreateFolderDialog = false },
+            onSave = { name, chatIds ->
+                chatListVm.createFolder(
+                    name,
+                    chatIds.toList(),
+                    onError = { reason ->
+                        if (reason == "limit") {
+                            Toast.makeText(context, folderLimitText, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+                showCreateFolderDialog = false
+            },
+            onDelete = null
+        )
+    }
+
+    folderBeingEdited?.let { folder ->
+        FolderEditorDialog(
+            initialName = folder.name,
+            allChats = chats,
+            userCache = userCache,
+            initiallySelectedChatIds = folder.chatIds.toSet(),
+            onDismiss = { folderBeingEdited = null },
+            onSave = { name, chatIds ->
+                chatListVm.renameFolder(folder.id, name)
+                chatListVm.updateFolderChats(folder.id, chatIds.toList())
+                folderBeingEdited = null
+            },
+            onDelete = {
+                chatListVm.deleteFolder(folder.id)
+                if (selectedCustomFolderId == folder.id) selectedCustomFolderId = null
+                folderBeingEdited = null
+            }
+        )
+    }
+}
+
+
+
+@Composable
+fun FolderEditorDialog(
+    initialName: String,
+    allChats: List<Map<String, Any>>,
+    userCache: Map<String, Map<String, Any?>>,
+    initiallySelectedChatIds: Set<String>,
+    onDismiss: () -> Unit,
+    onSave: (String, Set<String>) -> Unit,
+    onDelete: (() -> Unit)?
+) {
+    var name by remember { mutableStateOf(initialName) }
+    var selectedChatIds by remember { mutableStateOf(initiallySelectedChatIds) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = if (onDelete == null) stringResource(R.string.create_folder) else stringResource(R.string.edit_folder),
+                color = MayasTheme.TextPrimary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { if (it.length <= 30) name = it },
+                    placeholder = { Text(stringResource(R.string.folder_name_hint)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = stringResource(R.string.select_chats_for_folder),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = MayasTheme.TextSecondary
+                )
+                Spacer(Modifier.height(8.dp))
+                LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
+                    items(allChats, key = { it["chatId"] ?: it.hashCode() }) { chat ->
+                        val chatId = chat["chatId"] as? String ?: return@items
+                        val isGroup = chat["isGroup"] as? Boolean ?: false
+                        val partnerUid = chat["partnerUid"] as? String ?: ""
+                        val title = if (isGroup) {
+                            chat["groupName"] as? String ?: ""
+                        } else {
+                            userCache[partnerUid]?.get("name") as? String
+                                ?: chat["partnerName"] as? String
+                                ?: ""
+                        }
+                        val isChecked = selectedChatIds.contains(chatId)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selectedChatIds = if (isChecked) selectedChatIds - chatId else selectedChatIds + chatId
+                                }
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(checked = isChecked, onCheckedChange = {
+                                selectedChatIds = if (isChecked) selectedChatIds - chatId else selectedChatIds + chatId
+                            })
+                            Text(
+                                text = title,
+                                color = MayasTheme.TextPrimary,
+                                fontSize = 14.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+                if (onDelete != null) {
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = onDelete) {
+                        Text(stringResource(R.string.delete_folder), color = MayasTheme.ErrorRed)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (name.isNotBlank()) onSave(name.trim(), selectedChatIds) },
+                enabled = name.isNotBlank()
+            ) {
+                Text(stringResource(R.string.save), color = MayasTheme.GlowPurple, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel), color = MayasTheme.TextSecondary)
+            }
+        },
+        containerColor = MayasTheme.Surface
+    )
 }
 
 
@@ -1368,6 +1655,7 @@ fun HeaderSection(
     onSearchChange: (String) -> Unit,
     onAddFriendClick: () -> Unit,
     onMenuClick: () -> Unit,
+    onGlobalSearchClick: () -> Unit = {},
     fabAtStart: Boolean = false,
     showSearchField: Boolean = true,
     showAddFriendButton: Boolean = true
@@ -1394,14 +1682,14 @@ fun HeaderSection(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Menu,
-                            contentDescription = "Открыть меню",
+                            contentDescription = stringResource(R.string.open_menu),
                             tint = MayasTheme.TextPrimary,
                             modifier = Modifier.size(24.dp)
                         )
                     }
 
                     Text(
-                        text = "маяс.",
+                        text = stringResource(R.string.brand_lowercase_mark),
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Bold,
                         color = MayasTheme.TextPrimary,
@@ -1411,17 +1699,31 @@ fun HeaderSection(
             }
 
             val addFriendButton: @Composable () -> Unit = {
-                IconButton(
-                    onClick = onAddFriendClick,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(MayasTheme.SurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PersonAdd,
-                        contentDescription = "Добавить друзей",
-                        tint = MayasTheme.GlowPurple
-                    )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(
+                        onClick = onGlobalSearchClick,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(MayasTheme.SurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = stringResource(R.string.global_search),
+                            tint = MayasTheme.TextPrimary
+                        )
+                    }
+                    IconButton(
+                        onClick = onAddFriendClick,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(MayasTheme.SurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PersonAdd,
+                            contentDescription = stringResource(R.string.add_friends),
+                            tint = MayasTheme.GlowPurple
+                        )
+                    }
                 }
             }
 
@@ -1446,7 +1748,7 @@ fun ChatSearchField(searchQuery: String, onSearchChange: (String) -> Unit) {
     OutlinedTextField(
         value = searchQuery,
         onValueChange = onSearchChange,
-        placeholder = { Text("Поиск по чатам...", color = MayasTheme.TextSecondary.copy(alpha = 0.6f), fontSize = 13.sp) },
+        placeholder = { Text(stringResource(R.string.search_chats_hint), color = MayasTheme.TextSecondary.copy(alpha = 0.6f), fontSize = 13.sp) },
         singleLine = true,
         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
         leadingIcon = {
@@ -1462,7 +1764,7 @@ fun ChatSearchField(searchQuery: String, onSearchChange: (String) -> Unit) {
                 IconButton(onClick = { onSearchChange("") }, modifier = Modifier.size(32.dp)) {
                     Icon(
                         imageVector = Icons.Default.Close,
-                        contentDescription = "Очистить",
+                        contentDescription = stringResource(R.string.clear_search_action),
                         tint = MayasTheme.TextSecondary,
                         modifier = Modifier.size(14.dp)
                     )
@@ -1503,7 +1805,7 @@ fun HeaderSelection(
             Icon(Icons.Default.Close, null, tint = MayasTheme.TextPrimary)
         }
         Text(
-            text = "Выбрано: $selectedCount",
+            text = stringResource(R.string.selected_count, selectedCount),
             modifier = Modifier.weight(1f),
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
@@ -1544,7 +1846,7 @@ private fun StatusBadge(
             )
         }
     } else {
-        Text(text = value, fontSize = fontSize, modifier = modifier)
+        com.dan1eidtj.mayas.core_ui.emoji.EmojiGlyph(emoji = value, fontSize = fontSize, modifier = modifier)
     }
 }
 
@@ -1559,6 +1861,7 @@ fun ChatItemNew(
     unreadGlowAlpha: Float,
     isOnline: Boolean = false,
     isTyping: Boolean = false,
+    draftText: String = "",
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     avatarAtEnd: Boolean = false,
@@ -1702,7 +2005,7 @@ fun ChatItemNew(
                             Spacer(Modifier.width(4.dp))
                             Icon(
                                 imageVector = Icons.Default.PushPin,
-                                contentDescription = "Закреплен",
+                                contentDescription = stringResource(R.string.pinned_indicator),
                                 tint = MayasTheme.GlowPurple,
                                 modifier = Modifier.size(12.dp)
                             )
@@ -1712,7 +2015,7 @@ fun ChatItemNew(
                     if (updatedAt > 0L) {
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = formatTimestamp(updatedAt),
+                            text = formatTimestamp(updatedAt, stringResource(R.string.yesterday)),
                             color = MayasTheme.TextSecondary.copy(alpha = 0.6f),
                             fontSize = 11.sp
                         )
@@ -1730,15 +2033,34 @@ fun ChatItemNew(
                         ) {
                             TypingIndicator(dotColor = MayasTheme.GlowPurple)
                             Text(
-                                text = "печатает...",
+                                text = stringResource(R.string.typing),
                                 color = MayasTheme.GlowPurple,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.Medium
                             )
                         }
+                    } else if (draftText.isNotBlank()) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = stringResource(R.string.draft_prefix),
+                                color = MayasTheme.ErrorRed,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = draftText,
+                                color = MayasTheme.TextSecondary.copy(alpha = 0.8f),
+                                fontSize = 13.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     } else {
-                        Text(
-                            text = lastMsg.ifEmpty { "Нет сообщений" },
+                        com.dan1eidtj.mayas.core_ui.emoji.MayasText(
+                            text = lastMsg.ifEmpty { stringResource(R.string.no_messages) },
                             modifier = Modifier.weight(1f),
                             color = MayasTheme.TextSecondary.copy(alpha = 0.8f),
                             fontSize = 13.sp,
@@ -1746,19 +2068,32 @@ fun ChatItemNew(
                             overflow = TextOverflow.Ellipsis
                         )
                     }
-                    if (unreadCount > 0) {
+                    AnimatedVisibility(
+                        visible = unreadCount > 0,
+                        enter = scaleIn(initialScale = 0.4f, animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)) + fadeIn(),
+                        exit = scaleOut(targetScale = 0.4f) + fadeOut()
+                    ) {
                         Box(
                             modifier = Modifier
                                 .clip(CircleShape)
                                 .background(MayasTheme.Accent)
                                 .padding(horizontal = 4.dp, vertical = 1.dp)
                         ) {
-                            Text(
-                                text = "$unreadCount",
-                                color = Color.White,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                            AnimatedContent(
+                                targetState = unreadCount,
+                                transitionSpec = {
+                                    (slideInVertically { h -> h } + fadeIn())
+                                        .togetherWith(slideOutVertically { h -> -h } + fadeOut())
+                                },
+                                label = "unreadCountBadge"
+                            ) { count ->
+                                Text(
+                                    text = "$count",
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
@@ -1852,7 +2187,7 @@ fun BottomProfileBar(
                     }
 
                     Text(
-                        text = myProfileData["name"] as? String ?: "Загрузка...",
+                        text = myProfileData["name"] as? String ?: stringResource(com.dan1eidtj.mayas.ui.R.string.loading),
                         style = if (nameBrush != null) TextStyle(brush = nameBrush) else TextStyle(color = MayasTheme.TextPrimary),
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
@@ -1869,7 +2204,7 @@ fun BottomProfileBar(
                     Spacer(modifier = Modifier.width(4.dp))
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Открыть профиль",
+                        contentDescription = stringResource(R.string.open_profile),
                         tint = MayasTheme.TextSecondary,
                         modifier = Modifier.size(14.dp)
                     )
@@ -1896,7 +2231,7 @@ fun BottomProfileBar(
                 IconButton(onClick = onOpenNotifications) {
                     Icon(
                         imageVector = Icons.Outlined.Notifications,
-                        contentDescription = "Уведомления",
+                        contentDescription = stringResource(R.string.notifications),
                         tint = MayasTheme.TextPrimary,
                         modifier = Modifier.size(18.dp)
                     )
@@ -2058,7 +2393,7 @@ fun UserSearchDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = "Новый чат",
+                text = stringResource(R.string.new_chat),
                 color = MayasTheme.TextPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp
@@ -2080,7 +2415,7 @@ fun UserSearchDialog(
                     ) {
                         Icon(Icons.Default.Groups, null, tint = MayasTheme.GlowPurple)
                         Spacer(Modifier.width(8.dp))
-                        Text("Создать группу", color = MayasTheme.GlowPurple, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.create_group), color = MayasTheme.GlowPurple, fontWeight = FontWeight.Bold)
                     }
                 }
 
@@ -2098,12 +2433,12 @@ fun UserSearchDialog(
                     ) {
                         Icon(Icons.Default.Campaign, null, tint = MayasTheme.GlowPurple)
                         Spacer(Modifier.width(8.dp))
-                        Text("Создать канал", color = MayasTheme.GlowPurple, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.create_channel), color = MayasTheme.GlowPurple, fontWeight = FontWeight.Bold)
                     }
                 }
 
                 Text(
-                    text = "Поиск по юзернейму или номеру телефона",
+                    text = stringResource(R.string.search_by_username_or_phone),
                     color = MayasTheme.TextSecondary.copy(alpha = 0.8f),
                     fontSize = 13.sp,
                     modifier = Modifier.padding(bottom = 12.dp)
@@ -2112,7 +2447,7 @@ fun UserSearchDialog(
                 OutlinedTextField(
                     value = searchInput,
                     onValueChange = onInputChange,
-                    placeholder = { Text("@username или +7 999 123-45-67", color = MayasTheme.TextSecondary.copy(alpha = 0.5f)) },
+                    placeholder = { Text(stringResource(R.string.username_or_phone_placeholder), color = MayasTheme.TextSecondary.copy(alpha = 0.5f)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -2172,7 +2507,7 @@ fun UserSearchDialog(
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.GlowPurple)
                             ) {
-                                Text(if (userUid == myUid) "Это вы" else "Написать")
+                                Text(if (userUid == myUid) stringResource(R.string.it_is_you) else stringResource(R.string.write_message))
                             }
                         }
                     }
@@ -2207,7 +2542,7 @@ fun UserSearchDialog(
                             Spacer(Modifier.height(8.dp))
                             Text(channel["groupName"] as? String ?: "", color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold)
                             Text(
-                                "@${channel["username"]} · ${formatCompactCount(subsCount)} подписчиков",
+                                stringResource(R.string.channel_username_subscribers, channel["username"].toString(), formatCompactCount(subsCount)),
                                 color = MayasTheme.TextSecondary,
                                 fontSize = 12.sp
                             )
@@ -2240,14 +2575,14 @@ fun UserSearchDialog(
                                 if (isJoiningChannel) {
                                     CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
                                 } else {
-                                    Text(if (alreadyIn) "Открыть" else "Подписаться")
+                                    Text(if (alreadyIn) stringResource(R.string.open) else stringResource(R.string.subscribe))
                                 }
                             }
                         }
                     }
 
                     if (foundUser == null && foundChannel == null && searchInput.length >= 3) {
-                        Text("Никого не нашли :(", color = MayasTheme.TextSecondary, modifier = Modifier.align(Alignment.CenterHorizontally))
+                        Text(stringResource(R.string.no_one_found), color = MayasTheme.TextSecondary, modifier = Modifier.align(Alignment.CenterHorizontally))
                     }
                 }
             }
@@ -2255,7 +2590,7 @@ fun UserSearchDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Закрыть", color = MayasTheme.TextSecondary)
+                Text(stringResource(R.string.close_action), color = MayasTheme.TextSecondary)
             }
         },
         containerColor = MayasTheme.Surface,
@@ -2266,7 +2601,7 @@ fun UserSearchDialog(
 
 
 
-fun formatTimestamp(millis: Long): String {
+fun formatTimestamp(millis: Long, yesterdayLabel: String): String {
     if (millis <= 0L) return ""
     val date = Date(millis)
     val now = Calendar.getInstance()
@@ -2278,7 +2613,7 @@ fun formatTimestamp(millis: Long): String {
             SimpleDateFormat("HH:mm", Locale.getDefault()).format(date)
         }
         now.get(Calendar.DATE) - then.get(Calendar.DATE) == 1 &&
-                now.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> "вчера"
+                now.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> yesterdayLabel
         now.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> {
             SimpleDateFormat("d MMM", Locale("ru")).format(date)
         }

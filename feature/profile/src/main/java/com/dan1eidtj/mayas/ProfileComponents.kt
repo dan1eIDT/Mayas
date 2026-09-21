@@ -135,7 +135,7 @@ fun EmojiStatusView(status: String, size: androidx.compose.ui.unit.TextUnit = 24
             Text("🙂", fontSize = size)
         }
     } else {
-        Text(status, fontSize = size)
+        com.dan1eidtj.mayas.core_ui.emoji.EmojiGlyph(status, fontSize = size)
     }
 }
 

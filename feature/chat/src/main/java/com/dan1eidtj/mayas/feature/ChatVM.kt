@@ -6,14 +6,21 @@ import android.media.AudioAttributes
 import android.media.SoundPool
 import android.util.Log
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.dan1eidtj.data.BackendApi
+import com.dan1eidtj.mayas.storage.B2MediaClient
+import com.dan1eidtj.mayas.storage.MediaFileCache
+import java.io.File
 import com.dan1eidtj.data.FirestoreListenerCoordinator
 import com.dan1eidtj.mayas.core_ui.utils.formatLastSeen
+import com.dan1eidtj.mayas.core_ui.ui.components.MessageEffects
 import com.dan1eidtj.mayas.db.ChatRepository
+import com.dan1eidtj.mayas.db.OutboxEntity
+import com.dan1eidtj.mayas.db.OutboxStore
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.Exclude
 import com.google.firebase.firestore.FieldValue
@@ -28,6 +35,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.util.Date
 import java.util.Locale
 
@@ -38,6 +46,8 @@ data class Message(
     val text: String? = null,
     val mediaUrl: String? = null,
     val mediaKey: String? = null,
+    val mediaUrls: List<String> = emptyList(),
+    val mediaTypes: List<String> = emptyList(),
     @ServerTimestamp val timestamp: Date? = null,
     val readBy: List<String> = emptyList(),
     val replyToText: String? = null,
@@ -45,11 +55,14 @@ data class Message(
     @get:PropertyName("isPremium")
     val isPremium: Boolean = false,
     val messageStyle: String? = null,
+    val messageEffect: String? = null,
     val status: Int = 1,
     val reactions: Map<String, String> = emptyMap(),
     val voiceUrl: String? = null,
     val voiceKey: String? = null,
     val voiceDuration: Int = 0,
+    val circleVideoUrl: String? = null,
+    val circleVideoDuration: Int = 0,
 
     val type: String = MessageType.TEXT,
 
@@ -79,6 +92,10 @@ data class Message(
 
     val scheduledFor: Date? = null,
     val messageState: String = MessageState.SENT,
+
+    @get:PropertyName("isEdited")
+    val isEdited: Boolean = false,
+    val editedAt: Date? = null,
 )
 
 // Единый паттерн распознавания ссылок в тексте сообщений. Используется и для подсветки
@@ -91,6 +108,13 @@ object MessageType {
     const val TEXT = "TEXT"
     const val SYSTEM = "SYSTEM"
     const val CALL = "CALL"
+    const val ALBUM = "ALBUM"
+    const val VIDEO_CIRCLE = "VIDEO_CIRCLE"
+}
+
+object MediaKind {
+    const val IMAGE = "IMAGE"
+    const val VIDEO = "VIDEO"
 }
 
 object MessageState {
@@ -220,6 +244,49 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     var chatAdmins by mutableStateOf<List<String>>(emptyList())
     var chatOwnerId by mutableStateOf<String?>(null)
     var chatAdminPermissions by mutableStateOf<Map<String, Map<String, Boolean>>>(emptyMap())
+
+    var draftText by mutableStateOf<String?>(null)
+        private set
+    private var draftAppliedForChatId: String? = null
+    private var draftSaveJob: Job? = null
+
+    fun consumeDraft() {
+        draftText = null
+    }
+
+    fun onComposingTextChanged(chatId: String, text: String) {
+        val uid = myUid ?: return
+        draftSaveJob?.cancel()
+        draftSaveJob = viewModelScope.launch {
+            delay(600)
+            persistDraft(chatId, uid, text)
+        }
+    }
+
+    fun clearDraftNow(chatId: String) {
+        val uid = myUid ?: return
+        draftSaveJob?.cancel()
+        draftSaveJob = null
+        persistDraft(chatId, uid, "")
+    }
+
+    private fun persistDraft(chatId: String, uid: String, text: String) {
+        val trimmed = text.trim()
+        val chatRef = db.collection("chats").document(chatId)
+        val update: Map<String, Any> = if (trimmed.isBlank()) {
+            mapOf(
+                "draft_$uid" to FieldValue.delete(),
+                "draftUpdatedAt_$uid" to FieldValue.delete()
+            )
+        } else {
+            mapOf(
+                "draft_$uid" to trimmed,
+                "draftUpdatedAt_$uid" to FieldValue.serverTimestamp()
+            )
+        }
+        chatRef.set(update, SetOptions.merge())
+            .addOnFailureListener { e -> Log.e("ChatVM", "Не удалось сохранить черновик", e) }
+    }
 
     private fun hasChatPermission(perm: String): Boolean {
         val uid = myUid ?: return false
@@ -364,25 +431,42 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     var isSearching by mutableStateOf(false)
         private set
 
+    private var searchJob: Job? = null
+
     fun searchMessages(chatId: String, query: String) {
-        if (query.isBlank()) {
+        searchJob?.cancel()
+        val needle = query.trim()
+        if (needle.isEmpty()) {
             searchResults = emptyList()
             isSearching = false
             return
         }
         isSearching = true
 
-        db.collection("chats/$chatId/messages")
-            .whereGreaterThanOrEqualTo("text", query)
-            .whereLessThanOrEqualTo("text", query + "\uf8ff")
-            .get()
-            .addOnSuccessListener { snap ->
-                searchResults = snap.documents.mapNotNull { it.toObject(Message::class.java)?.copy(id = it.id) }
-                isSearching = false
+        searchJob = viewModelScope.launch {
+            val local = withContext(Dispatchers.Default) {
+                messages.filter { it.text?.contains(needle, ignoreCase = true) == true }
             }
-            .addOnFailureListener {
-                isSearching = false
-            }
+            searchResults = local.sortedByDescending { it.timestamp?.time ?: 0L }
+            isSearching = false
+
+            db.collection("chats/$chatId/messages")
+                .whereGreaterThanOrEqualTo("text", needle)
+                .whereLessThanOrEqualTo("text", needle + "\uf8ff")
+                .get()
+                .addOnSuccessListener { snap ->
+                    val remote = snap.documents.mapNotNull {
+                        it.toObject(Message::class.java)?.copy(id = it.id)
+                    }
+                    searchResults = (searchResults + remote)
+                        .distinctBy { it.id }
+                        .sortedByDescending { it.timestamp?.time ?: 0L }
+                    isSearching = false
+                }
+                .addOnFailureListener {
+                    isSearching = false
+                }
+        }
     }
 
     fun clearSearch() {
@@ -412,25 +496,19 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
 
 
-            val playableUrl = if (rawUrlOrKey.startsWith("http")) {
-                rawUrlOrKey
-            } else {
-                runCatching { com.dan1eidtj.mayas.storage.B2MediaClient.resolveDownloadUrl(rawUrlOrKey) }
-                    .getOrNull()
-            }
+            val localFile = runCatching { MediaFileCache.obtain(getApplication(), rawUrlOrKey) }.getOrNull()
 
-            if (playableUrl == null) {
-                Log.e("ChatVM", "Не удалось получить ссылку на голосовое: $rawUrlOrKey")
+            if (localFile == null) {
+                Log.e("ChatVM", "Не удалось получить голосовое: $rawUrlOrKey")
                 playingUrl = null
+                mediaLoadFailures++
                 return@launch
             }
-
 
             if (playingUrl != rawUrlOrKey) return@launch
 
             mediaPlayer = android.media.MediaPlayer().apply {
-                setDataSource(playableUrl)
-                prepareAsync()
+                setDataSource(localFile.absolutePath)
                 setOnPreparedListener {
                     start()
                     isVoicePlaying = true
@@ -439,6 +517,11 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 setOnCompletionListener {
                     stopVoice()
                 }
+                setOnErrorListener { _, _, _ ->
+                    stopVoice()
+                    true
+                }
+                prepareAsync()
             }
         }
     }
@@ -494,26 +577,77 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
 
 
-    private val downloadUrlCache = mutableMapOf<String, Pair<String, Long>>()
-    private val DOWNLOAD_URL_TTL_MS = 14 * 60_000L
+    var mediaSendFailures by mutableStateOf(0)
+        private set
 
-    suspend fun resolveDownloadUrl(key: String): String? {
-        val now = System.currentTimeMillis()
-        downloadUrlCache[key]?.let { (url, expiresAt) ->
-            if (expiresAt > now) return url
-        }
+    var mediaLoadFailures by mutableStateOf(0)
+        private set
 
-        val idToken = auth.currentUser?.getIdToken(false)?.await()?.token ?: return null
+    var outbox by mutableStateOf<List<OutboxEntity>>(emptyList())
+        private set
 
-        return try {
-            val url = BackendApi.presignDownload(idToken, key)
-            downloadUrlCache[key] = url to (now + DOWNLOAD_URL_TTL_MS)
-            url
-        } catch (e: Exception) {
-            Log.e("ChatVM", "Не удалось получить ссылку на файл: $key", e)
-            null
+    val activeUploads: Int
+        get() = outbox.count { it.state != OutboxEntity.STATE_FAILED }
+
+    private var outboxJob: Job? = null
+
+    private fun observeOutbox(chatId: String) {
+        OutboxManager.start(getApplication())
+        outboxJob?.cancel()
+        outboxJob = viewModelScope.launch {
+            OutboxStore(getApplication()).observe(chatId).collect { outbox = it }
         }
     }
+
+    fun retryOutbox(chatId: String) {
+        viewModelScope.launch(Dispatchers.IO) { OutboxManager.retryFailed(getApplication(), chatId) }
+    }
+
+    fun cancelOutbox(id: String) {
+        viewModelScope.launch(Dispatchers.IO) { OutboxManager.cancel(getApplication(), id) }
+    }
+
+    private fun baseMessageFields(replyText: String?, replyName: String?): MutableMap<String, Any?> {
+        val fields = mutableMapOf<String, Any?>(
+            "senderName" to myName,
+            "isPremium" to myIsPremium,
+            "messageStyle" to myMessageStyle
+        )
+        if (replyText != null && replyName != null) {
+            fields["replyToText"] = replyText
+            fields["replyToName"] = replyName
+        }
+        return fields
+    }
+
+    private suspend fun enqueueOutbox(
+        chatId: String,
+        kind: String,
+        files: List<OutboxManager.SourceFile>,
+        target: String,
+        fields: Map<String, Any?>,
+        preview: String,
+        caption: String?,
+        durationSec: Int
+    ) {
+        val partner = partnerUid
+        val group = isGroupChat
+        try {
+            OutboxManager.enqueue(
+                getApplication(),
+                OutboxManager.Spec(chatId, kind, files, target, fields, preview, caption, durationSec, partner, group)
+            )
+            withContext(Dispatchers.Main) { playSound(messageSentSoundId) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("ChatVM", "Не удалось поставить сообщение в очередь", e)
+            files.forEach { it.file.delete() }
+            mediaSendFailures++
+        }
+    }
+
+    suspend fun resolveDownloadUrl(key: String): String? = B2MediaClient.resolveDownloadUrl(key)
 
 
 
@@ -587,9 +721,105 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    class EffectReplayEvent(
+        val id: String,
+        val messageId: String,
+        val effect: String,
+        val byUid: String
+    )
+
+    var effectReplayEvent by mutableStateOf<EffectReplayEvent?>(null)
+        private set
+
+    var messagesLoaded by mutableStateOf(false)
+        private set
+
+    private var effectReplayBaselineSet = false
+    private var lastHandledReplayId: String? = null
+    private var lastReplaySentAt = 0L
+
+    private fun handleEffectReplay(doc: com.google.firebase.firestore.DocumentSnapshot) {
+        val map = doc.get("effectReplay") as? Map<*, *>
+        val id = map?.get("id") as? String
+        if (!effectReplayBaselineSet) {
+            effectReplayBaselineSet = true
+            lastHandledReplayId = id
+            return
+        }
+        if (map == null || id == null || id == lastHandledReplayId) return
+        lastHandledReplayId = id
+
+        val by = map["by"] as? String ?: return
+        if (by == myUid) return
+        val effect = map["effect"] as? String ?: return
+        if (!MessageEffects.isValid(effect)) return
+        val messageId = map["messageId"] as? String ?: ""
+        val atMs = (map["at"] as? com.google.firebase.Timestamp)?.toDate()?.time
+        if (atMs != null && System.currentTimeMillis() - atMs > EFFECT_REPLAY_FRESH_MS) return
+
+        effectReplayEvent = EffectReplayEvent(id, messageId, effect, by)
+    }
+
+    fun consumeEffectReplay(id: String) {
+        if (effectReplayEvent?.id == id) effectReplayEvent = null
+    }
+
+    fun replayMessageEffect(chatId: String, message: Message) {
+        val uid = myUid ?: return
+        val effect = message.messageEffect
+        if (!MessageEffects.isValid(effect)) return
+        val now = System.currentTimeMillis()
+        if (now - lastReplaySentAt < EFFECT_REPLAY_MIN_INTERVAL_MS) return
+        lastReplaySentAt = now
+
+        val eventId = java.util.UUID.randomUUID().toString()
+        lastHandledReplayId = eventId
+        db.collection("chats").document(chatId).update(
+            "effectReplay",
+            mapOf(
+                "id" to eventId,
+                "messageId" to message.id,
+                "effect" to effect,
+                "by" to uid,
+                "at" to FieldValue.serverTimestamp()
+            )
+        ).addOnFailureListener { e -> Log.e("ChatVM", "Не удалось отправить повтор эффекта", e) }
+    }
+
+    private var persistMessagesJob: Job? = null
+
+    private fun persistMessages(chatId: String, list: List<Message>) {
+        persistMessagesJob?.cancel()
+        persistMessagesJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(500)
+            val entities = list.takeLast(MESSAGE_CACHE_LIMIT).map { MessageCache.toEntity(chatId, it) }
+            repository.persistMessages(chatId, entities)
+        }
+    }
+
     fun observeChat(chatId: String) {
         val uid = myUid ?: return
+        if (currentChatId != chatId) {
+            draftAppliedForChatId = null
+            draftSaveJob?.cancel()
+        }
+        if (currentChatId != chatId) {
+            effectReplayBaselineSet = false
+            lastHandledReplayId = null
+            effectReplayEvent = null
+            messagesLoaded = false
+            messages = emptyList()
+        }
         currentChatId = chatId
+        observeOutbox(chatId)
+
+        viewModelScope.launch {
+            val cached = withContext(Dispatchers.IO) { repository.loadCachedMessages(chatId, MESSAGE_CACHE_LIMIT) }
+                .mapNotNull { MessageCache.fromEntity(it) }
+            if (cached.isNotEmpty() && !messagesLoaded && messages.isEmpty() && currentChatId == chatId) {
+                messages = cached
+            }
+        }
 
         messagesListener?.remove()
         messagesListener = db.collection("chats/$chatId/messages")
@@ -614,6 +844,8 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     messages = list
+                    messagesLoaded = true
+                    persistMessages(chatId, list)
                     if (chatType == "CHANNEL") {
                         markAsViewed(chatId, list, uid)
                     } else {
@@ -640,6 +872,9 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                         senderName = doc.getString("senderName") ?: "",
                         text = doc.getString("text"),
                         mediaUrl = doc.getString("mediaUrl"),
+                        mediaUrls = (doc.get("mediaUrls") as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+                        circleVideoUrl = doc.getString("circleVideoUrl"),
+                        circleVideoDuration = (doc.getLong("circleVideoDuration") ?: 0L).toInt(),
                         type = doc.getString("type") ?: MessageType.TEXT
                     )
                 } ?: emptyList()
@@ -654,11 +889,17 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                     return@addSnapshotListener
                 }
                 if (doc != null && doc.exists()) {
+                    handleEffectReplay(doc)
                     legacyPinnedId = doc.getString("pinnedMessageId")
                     legacyPinnedText = doc.getString("pinnedMessage")
                     recomputePinnedMessages()
                     chatTheme = doc.getString("theme")
                     chatDisappearingTimerSec = doc.getLong("disappearingTimerSec") ?: 0L
+
+                    if (draftAppliedForChatId != chatId) {
+                        draftText = doc.getString("draft_$uid")
+                        draftAppliedForChatId = chatId
+                    }
 
                     val type = doc.getString("type") ?: "DIRECT"
                     val isGroupField = doc.getBoolean("isGroup") ?: false
@@ -768,6 +1009,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
         silent: Boolean = false,
 
+        effect: String? = null,
 
         scheduledFor: Date? = null
     ) {
@@ -787,6 +1029,10 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             "messageStyle" to myMessageStyle,
             "isSilent" to silent
         )
+
+        if (effect != null && MessageEffects.registry.containsKey(effect)) {
+            messageData["messageEffect"] = effect
+        }
 
         if (isScheduled) {
 
@@ -895,75 +1141,73 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         replyText: String?,
         replyName: String?
     ) {
-        val uid = myUid ?: return
-        if (!canPostInChat) return
-        val currentUser = auth.currentUser ?: return
+        if (myUid == null || !canPostInChat || auth.currentUser == null) return
+        val fields = baseMessageFields(replyText, replyName)
+        fields["text"] = text.ifBlank { null }
+        val preview = if (text.isNotBlank()) text else getApplication<Application>().getString(com.dan1eidtj.chat.R.string.photo_message)
 
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val idToken = currentUser.getIdToken(false).await().token
-                    ?: throw Exception("Не удалось получить idToken")
-
-                val fileName = "media_${uid}_${System.currentTimeMillis()}.jpg"
-                val key = "media/$uid/$fileName"
-                val contentType = "image/jpeg"
-
-                val presign = BackendApi.presignUpload(idToken, key, contentType)
-                BackendApi.uploadBytes(presign.uploadUrl, fileBytes, contentType)
-                val messageData = mutableMapOf<String, Any?>(
-                    "text" to text.ifBlank { null },
-                    "senderId" to uid,
-                    "senderName" to myName,
-                    "mediaUrl" to presign.key,
-                    "timestamp" to FieldValue.serverTimestamp(),
-                    "readBy" to listOf(uid),
-                    "isPremium" to myIsPremium,
-                    "messageStyle" to myMessageStyle
-                )
-
-                if (replyText != null && replyName != null) {
-                    messageData["replyToText"] = replyText
-                    messageData["replyToName"] = replyName
-                }
-
-
-                val batch = db.batch()
-                val chatRef = db.collection("chats").document(chatId)
-                val msgRef = chatRef.collection("messages").document()
-
-                batch.set(msgRef, messageData)
-
-                val previewText = if (text.isNotBlank()) text else "📷 Фотография"
-                batch.update(chatRef, mapOf(
-                    "lastMessage" to previewText,
-                    "lastSenderId" to uid,
-                    "updatedAt" to FieldValue.serverTimestamp()
-                ))
-
-                batch.update(
-                    db.collection("users").document(uid),
-                    "messagesSent", FieldValue.increment(1)
-                )
-
-                if (!isGroupChat && partnerUid.isNotBlank()) {
-                    batch.update(chatRef, "unreadCount_$partnerUid", FieldValue.increment(1))
-                }
-
-                batch.commit()
-                    .addOnSuccessListener {
-                        playSound(messageSentSoundId)
-
-                        if (!isGroupChat && partnerUid.isNotBlank()) {
-                            sendPushNotification(chatId, uid, partnerUid, previewText)
-                        }
-                    }
-                    .addOnFailureListener { e -> Log.e("ChatVM", "Failed to send media batch", e) }
-
-            } catch (e: Exception) {
-                Log.e("ChatVM", "Ошибка загрузки медиа", e)
-            }
+            val file = File(getApplication<Application>().cacheDir, "upload_${System.currentTimeMillis()}.jpg")
+            file.writeBytes(fileBytes)
+            enqueueOutbox(
+                chatId = chatId,
+                kind = OutboxEntity.KIND_IMAGE,
+                files = listOf(OutboxManager.SourceFile(file, "image/jpeg", "jpg", com.dan1eidtj.mayas.storage.MediaKind.MEDIA, null)),
+                target = "mediaUrl",
+                fields = fields,
+                preview = preview,
+                caption = text.ifBlank { null },
+                durationSec = 0
+            )
         }
     }
+    data class AlbumItem(val bytes: ByteArray, val contentType: String, val kind: String)
+
+    fun sendAlbumMessage(
+        chatId: String,
+        text: String,
+        items: List<AlbumItem>,
+        replyText: String?,
+        replyName: String?
+    ) {
+        if (myUid == null || !canPostInChat || items.isEmpty() || auth.currentUser == null) return
+        val fields = baseMessageFields(replyText, replyName)
+        fields["text"] = text.ifBlank { null }
+        fields["type"] = MessageType.ALBUM
+        fields["mediaTypes"] = items.map { it.kind }
+
+        val photoCount = items.count { it.kind == MediaKind.IMAGE }
+        val videoCount = items.count { it.kind == MediaKind.VIDEO }
+        val resources = getApplication<Application>()
+        val preview = text.ifBlank {
+            when {
+                videoCount == 0 -> resources.getString(com.dan1eidtj.chat.R.string.album_preview_photos, photoCount)
+                photoCount == 0 -> resources.getString(com.dan1eidtj.chat.R.string.album_preview_videos, videoCount)
+                else -> resources.getString(com.dan1eidtj.chat.R.string.album_preview_mixed, photoCount, videoCount)
+            }
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val stamp = System.currentTimeMillis()
+            val files = items.mapIndexed { index, item ->
+                val extension = if (item.kind == MediaKind.VIDEO) "mp4" else "jpg"
+                val file = File(getApplication<Application>().cacheDir, "upload_${stamp}_$index.$extension")
+                file.writeBytes(item.bytes)
+                OutboxManager.SourceFile(file, item.contentType, extension, com.dan1eidtj.mayas.storage.MediaKind.MEDIA, null)
+            }
+            enqueueOutbox(
+                chatId = chatId,
+                kind = OutboxEntity.KIND_ALBUM,
+                files = files,
+                target = "mediaUrls",
+                fields = fields,
+                preview = preview,
+                caption = text.ifBlank { null },
+                durationSec = 0
+            )
+        }
+    }
+
     suspend fun createDirectChat(myUid: String, partnerUid: String): String {
         val chatId = listOf(myUid, partnerUid)
             .sorted()
@@ -1045,13 +1289,25 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
 
         if (message.mediaUrl != null) messageData["mediaUrl"] = message.mediaUrl
+        if (message.mediaUrls.isNotEmpty()) {
+            messageData["mediaUrls"] = message.mediaUrls
+            messageData["mediaTypes"] = message.mediaTypes
+            messageData["type"] = MessageType.ALBUM
+        }
         if (message.voiceUrl != null) {
             messageData["voiceUrl"] = message.voiceUrl
             messageData["voiceDuration"] = message.voiceDuration
         }
+        if (message.circleVideoUrl != null) {
+            messageData["circleVideoUrl"] = message.circleVideoUrl
+            messageData["circleVideoDuration"] = message.circleVideoDuration
+            messageData["type"] = MessageType.VIDEO_CIRCLE
+        }
 
         val previewText = message.text?.takeIf { it.isNotBlank() }
-            ?: if (message.mediaUrl != null) "📷 Фотография"
+            ?: if (message.mediaUrls.isNotEmpty()) "🖼 Альбом"
+            else if (message.mediaUrl != null) "📷 Фотография"
+            else if (message.circleVideoUrl != null) "⭕ Видеосообщение"
             else if (message.voiceUrl != null) "🎤 Голосовое сообщение"
             else "Сообщение"
 
@@ -1475,10 +1731,69 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun editMessage(chatId: String, messageId: String, newText: String) {
-        if (newText.isBlank()) return
-        db.collection("chats/$chatId/messages").document(messageId)
-            .update("text", newText)
+    fun editMessage(
+        chatId: String,
+        messageId: String,
+        newText: String,
+        onError: (String) -> Unit = {},
+        onSuccess: () -> Unit = {},
+    ) {
+        val trimmed = newText.trim()
+        if (trimmed.isBlank()) return
+
+        val target = messages.find { it.id == messageId }
+        if (target == null) {
+            onError("not_found")
+            return
+        }
+        if (target.senderId != myUid) {
+            onError("forbidden")
+            return
+        }
+        if (target.type != MessageType.TEXT) {
+            onError("unsupported_type")
+            return
+        }
+        if (trimmed == target.text) {
+            onSuccess()
+            return
+        }
+
+        val chatRef = db.collection("chats").document(chatId)
+        val msgRef = chatRef.collection("messages").document(messageId)
+
+        db.runTransaction { tx ->
+            val snapshot = tx.get(msgRef)
+            if (!snapshot.exists()) throw IllegalStateException("not_found")
+            if (snapshot.getString("senderId") != myUid) throw IllegalStateException("forbidden")
+
+            tx.update(
+                msgRef,
+                mapOf(
+                    "text" to trimmed,
+                    "isEdited" to true,
+                    "editedAt" to FieldValue.serverTimestamp()
+                )
+            )
+            true
+        }
+            .addOnSuccessListener {
+                viewModelScope.launch {
+                    try {
+                        val chatDoc = chatRef.get().await()
+                        if (chatDoc.getString("lastMessage") == target.text) {
+                            chatRef.update("lastMessage", trimmed).await()
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ChatVM", "Не удалось обновить lastMessage после редактирования", e)
+                    }
+                }
+                onSuccess()
+            }
+            .addOnFailureListener { e ->
+                Log.e("ChatVM", "Ошибка редактирования сообщения", e)
+                onError(e.message ?: "unknown")
+            }
     }
 
 
@@ -1494,46 +1809,106 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             }
     }
 
-    fun toggleReaction(chatId: String, messageId: String, emoji: String) {
-        val uid = myUid ?: return
-        val msg = messages.find { it.id == messageId } ?: return
-        val currentReaction = msg.reactions[uid]
+    val reactorProfiles = mutableStateMapOf<String, ReactorProfile>()
+    private val requestedReactorProfiles = mutableSetOf<String>()
 
-        if (currentReaction == emoji) {
-            db.collection("chats/$chatId/messages").document(messageId)
-                .update("reactions.$uid", FieldValue.delete())
-        } else {
-            db.collection("chats/$chatId/messages").document(messageId)
-                .update("reactions.$uid", emoji)
-                .addOnSuccessListener {
-                    // Пишем событие в отдельную коллекцию — Cloud Function
-                    // на onDocumentCreated отправит письмо на mayassupp@gmail.com.
-                    // Слать почту прямо с клиента нельзя (пришлось бы хранить
-                    // SMTP-креды в апк), поэтому триггерим через Firestore.
-                    db.collection("reactionEvents").add(
-                        mapOf(
-                            "chatId" to chatId,
-                            "messageId" to messageId,
-                            "messageText" to (msg.text?.take(200) ?: ""),
-                            "emoji" to emoji,
-                            "reactorUid" to uid,
-                            "reactorName" to myName,
-                            "messageSenderId" to msg.senderId,
-                            "timestamp" to FieldValue.serverTimestamp()
-                        )
-                    ).addOnFailureListener { e ->
-                        Log.e("ChatVM", "Не удалось залогировать реакцию", e)
-                    }
-                }
+    fun reactorProfile(uid: String): ReactorProfile? {
+        if (uid == partnerUid && !isGroupChat) {
+            return ReactorProfile(partnerAvatarUrl, partnerUseCustomAvatar, partnerName)
         }
+        val cached = reactorProfiles[uid]
+        if (cached == null && requestedReactorProfiles.add(uid)) {
+            db.collection("users").document(uid).get()
+                .addOnSuccessListener { doc ->
+                    reactorProfiles[uid] = ReactorProfile(
+                        avatarUrl = doc.getString("avatarUrl"),
+                        useCustomAvatar = doc.getBoolean("useCustomAvatar") ?: true,
+                        name = doc.getString("name") ?: doc.getString("username")
+                    )
+                }
+                .addOnFailureListener { requestedReactorProfiles.remove(uid) }
+        }
+        return cached
+    }
+
+    private fun notifyReaction(chatId: String, msg: Message, emoji: String) {
+        val me = myUid ?: return
+        val receiver = msg.senderId
+        if (receiver.isBlank() || receiver == me) return
+
+        db.collection("users").document(receiver).get().addOnSuccessListener { doc ->
+            if (doc.get("pushEnabled")?.toString() == "false" || doc.get("notifReactions")?.toString() == "false") {
+                return@addOnSuccessListener
+            }
+            val token = doc.getString("fcmToken") ?: return@addOnSuccessListener
+            val text = getApplication<Application>().getString(com.dan1eidtj.chat.R.string.reaction_push_text, emoji)
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    BackendApi.notify(
+                        chatId = chatId,
+                        senderId = me,
+                        token = token,
+                        senderName = myName,
+                        text = text,
+                        silent = false
+                    )
+                } catch (e: Exception) {
+                    Log.e("ChatVM", "Не удалось отправить пуш о реакции", e)
+                }
+            }
+        }
+    }
+
+    fun toggleReaction(chatId: String, messageId: String, emoji: String): ReactionResult {
+        val uid = myUid ?: return ReactionResult.FAILED
+        val msg = messages.find { it.id == messageId } ?: return ReactionResult.FAILED
+        val current = Reactions.parse(msg.reactions[uid])
+        val ref = db.collection("chats/$chatId/messages").document(messageId)
+
+        if (current.contains(emoji)) {
+            val remaining = current - emoji
+            ref.update(
+                "reactions.$uid",
+                if (remaining.isEmpty()) FieldValue.delete() else Reactions.encode(remaining)
+            ).addOnFailureListener { e -> Log.e("ChatVM", "Не удалось снять реакцию", e) }
+            return ReactionResult.REMOVED
+        }
+
+        if (current.size >= Reactions.limitFor(myIsPremium)) {
+            return ReactionResult.LIMIT_REACHED
+        }
+
+        ref.update("reactions.$uid", Reactions.encode(current + emoji))
+            .addOnSuccessListener {
+                notifyReaction(chatId, msg, emoji)
+                db.collection("reactionEvents").add(
+                    mapOf(
+                        "chatId" to chatId,
+                        "messageId" to messageId,
+                        "messageText" to (msg.text?.take(200) ?: ""),
+                        "emoji" to emoji,
+                        "reactorUid" to uid,
+                        "reactorName" to myName,
+                        "messageSenderId" to msg.senderId,
+                        "timestamp" to FieldValue.serverTimestamp()
+                    )
+                ).addOnFailureListener { e ->
+                    Log.e("ChatVM", "Не удалось залогировать реакцию", e)
+                }
+            }
+            .addOnFailureListener { e -> Log.e("ChatVM", "Не удалось поставить реакцию", e) }
+        return ReactionResult.ADDED
     }
 
     fun pinMessage(chatId: String, message: Message) {
         val uid = myUid ?: return
         val data = mutableMapOf<String, Any?>(
             "messageId" to message.id,
-            "text" to (message.text ?: if (message.mediaUrl != null) "📷 Фотография" else "Голосовое сообщение"),
+            "text" to (message.text ?: if (message.mediaUrls.isNotEmpty()) "🖼 Альбом" else if (message.circleVideoUrl != null) "⭕ Видеосообщение" else if (message.mediaUrl != null) "📷 Фотография" else "Голосовое сообщение"),
             "mediaUrl" to message.mediaUrl,
+            "mediaUrls" to message.mediaUrls,
+            "circleVideoUrl" to message.circleVideoUrl,
+            "circleVideoDuration" to message.circleVideoDuration,
             "senderName" to message.senderName,
             "type" to message.type,
             "pinnedAt" to FieldValue.serverTimestamp(),
@@ -1615,6 +1990,9 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                         senderName = doc.getString("senderName") ?: "",
                         text = doc.getString("text"),
                         mediaUrl = doc.getString("mediaUrl"),
+                        mediaUrls = (doc.get("mediaUrls") as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+                        circleVideoUrl = doc.getString("circleVideoUrl"),
+                        circleVideoDuration = (doc.getLong("circleVideoDuration") ?: 0L).toInt(),
                         type = doc.getString("type") ?: MessageType.TEXT
                     )
                 }
@@ -1855,6 +2233,37 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun sendCircleVideoMessage(
+        chatId: String,
+        videoFile: File,
+        durationSec: Int,
+        replyText: String?,
+        replyName: String?
+    ) {
+        if (durationSec < 1 || !canPostInChat || !videoFile.exists() || myUid == null || auth.currentUser == null) {
+            videoFile.delete()
+            return
+        }
+        val fields = baseMessageFields(replyText, replyName)
+        fields["type"] = MessageType.VIDEO_CIRCLE
+        fields["circleVideoDuration"] = durationSec
+        val preview = getApplication<Application>()
+            .getString(com.dan1eidtj.chat.R.string.circle_video_preview_format, durationSec)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            enqueueOutbox(
+                chatId = chatId,
+                kind = OutboxEntity.KIND_CIRCLE,
+                files = listOf(OutboxManager.SourceFile(videoFile, "video/mp4", "mp4", com.dan1eidtj.mayas.storage.MediaKind.MEDIA, "circle")),
+                target = "circleVideoUrl",
+                fields = fields,
+                preview = preview,
+                caption = null,
+                durationSec = durationSec
+            )
+        }
+    }
+
     fun startRecording() {
         isRecording = true
         recordingDuration = 0
@@ -1866,78 +2275,38 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun stopRecording(chatId: String, audioBytes: ByteArray?, replyText: String?, replyName: String?) {
+    fun cancelRecording() {
+        isRecording = false
+        recordingJob?.cancel()
+        recordingDuration = 0
+    }
+
+    fun stopRecording(chatId: String, audioFile: File?, replyText: String?, replyName: String?) {
         isRecording = false
         recordingJob?.cancel()
         val duration = recordingDuration
         recordingDuration = 0
 
-        if (audioBytes == null || duration < 1) return
+        if (audioFile == null || duration < 1 || !audioFile.exists() || myUid == null || auth.currentUser == null) {
+            audioFile?.delete()
+            return
+        }
+        val fields = baseMessageFields(replyText, replyName)
+        fields["voiceDuration"] = duration
+        val preview = getApplication<Application>()
+            .getString(com.dan1eidtj.chat.R.string.voice_message_duration, duration)
 
-        val uid = myUid ?: return
-        val currentUser = auth.currentUser ?: return
         viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val idToken = currentUser.getIdToken(false).await().token
-                    ?: throw Exception("Не удалось получить idToken")
-
-                val fileName = "voice_${uid}_${System.currentTimeMillis()}.m4a"
-                val key = "voice/$uid/$fileName"
-                val contentType = "audio/mp4"
-
-                val presign = BackendApi.presignUpload(idToken, key, contentType)
-                BackendApi.uploadBytes(presign.uploadUrl, audioBytes, contentType)
-
-
-                val messageData = mutableMapOf<String, Any?>(
-                    "senderId" to uid,
-                    "senderName" to myName,
-                    "voiceUrl" to presign.key,
-                    "voiceDuration" to duration,
-                    "timestamp" to FieldValue.serverTimestamp(),
-                    "readBy" to listOf(uid),
-                    "isPremium" to myIsPremium,
-                    "messageStyle" to myMessageStyle
-                )
-
-                if (replyText != null && replyName != null) {
-                    messageData["replyToText"] = replyText
-                    messageData["replyToName"] = replyName
-                }
-
-                val batch = db.batch()
-                val chatRef = db.collection("chats").document(chatId)
-                val msgRef = chatRef.collection("messages").document()
-
-                batch.set(msgRef, messageData)
-                batch.update(chatRef, mapOf(
-                    "lastMessage" to "🎤 Голосовое сообщение ($duration сек.)",
-                    "lastSenderId" to uid,
-                    "updatedAt" to FieldValue.serverTimestamp()
-                ))
-
-                batch.update(
-                    db.collection("users").document(uid),
-                    "messagesSent", FieldValue.increment(1)
-                )
-
-                if (!isGroupChat && partnerUid.isNotBlank()) {
-                    batch.update(chatRef, "unreadCount_$partnerUid", FieldValue.increment(1))
-                }
-
-                batch.commit()
-                    .addOnSuccessListener {
-                        playSound(messageSentSoundId)
-
-                        if (!isGroupChat && partnerUid.isNotBlank()) {
-                            sendPushNotification(chatId, uid, partnerUid, "🎤 Голосовое сообщение ($duration сек.)")
-                        }
-                    }
-                    .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка batch ГС", e) }
-
-            } catch (e: Exception) {
-                Log.e("ChatVM", "Ошибка загрузки ГС", e)
-            }
+            enqueueOutbox(
+                chatId = chatId,
+                kind = OutboxEntity.KIND_VOICE,
+                files = listOf(OutboxManager.SourceFile(audioFile, "audio/mp4", "m4a", com.dan1eidtj.mayas.storage.MediaKind.VOICE, null)),
+                target = "voiceUrl",
+                fields = fields,
+                preview = preview,
+                caption = null,
+                durationSec = duration
+            )
         }
     }
 
@@ -2231,3 +2600,7 @@ class GroupMembersVM(application: Application) : AndroidViewModel(application) {
         chatListener?.remove()
     }
 }
+
+private const val EFFECT_REPLAY_FRESH_MS = 30_000L
+private const val EFFECT_REPLAY_MIN_INTERVAL_MS = 1_500L
+private const val MESSAGE_CACHE_LIMIT = 300

@@ -9,6 +9,10 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.multidex.MultiDexApplication
 import com.dan1eidtj.data.ShopRepository
+import com.dan1eidtj.mayas.core_ui.emoji.EmojiStyleState
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FirebaseFirestoreSettings
+import com.google.firebase.firestore.PersistentCacheSettings
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CoroutineScope
@@ -46,11 +50,36 @@ class MayasApplication : MultiDexApplication(), CallManagerProvider {
     override fun onCreate() {
         installFirestorePermissionDeniedSafetyNet()
         super.onCreate()
+        EmojiStyleState.ensureInit(this)
+        configureOfflineCache()
+        com.dan1eidtj.mayas.feature.OutboxManager.start(this)
+        Thread {
+            try {
+                com.dan1eidtj.mayas.storage.MediaFileCache.cleanStale(this)
+                kotlinx.coroutines.runBlocking { com.dan1eidtj.mayas.storage.MediaFileCache.applyPolicy(this@MayasApplication) }
+            } catch (e: Exception) {
+                Log.w("MayasApplication", "Не удалось очистить устаревшие временные файлы", e)
+            }
+        }.start()
         ShopRepository.startListening()
         observeAppForegroundState()
         observeOutgoingCallsToStartService()
     }
 
+
+    private fun configureOfflineCache() {
+        try {
+            FirebaseFirestore.getInstance().firestoreSettings = FirebaseFirestoreSettings.Builder()
+                .setLocalCacheSettings(
+                    PersistentCacheSettings.newBuilder()
+                        .setSizeBytes(FIRESTORE_CACHE_BYTES)
+                        .build()
+                )
+                .build()
+        } catch (e: Exception) {
+            Log.w("MayasApplication", "Не удалось настроить офлайн-кэш Firestore", e)
+        }
+    }
 
     private fun installFirestorePermissionDeniedSafetyNet() {
         val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -101,3 +130,5 @@ class MayasApplication : MultiDexApplication(), CallManagerProvider {
         }
     }
 }
+
+private const val FIRESTORE_CACHE_BYTES = 200L * 1024L * 1024L

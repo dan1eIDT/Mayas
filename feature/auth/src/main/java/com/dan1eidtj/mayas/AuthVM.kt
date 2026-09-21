@@ -3,6 +3,8 @@ package com.dan1eidtj.mayas.feature.auth
 import android.app.Application
 import android.net.Uri
 import android.util.Log
+import com.dan1eidtj.auth.R
+import com.google.firebase.FirebaseApp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -29,7 +31,7 @@ import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.storage.FirebaseStorage
 import com.dan1eidtj.mayas.core_ui.Screen
 import kotlinx.coroutines.launch
-import com.dan1eidtj.mayas.db.ChatRepository
+import com.dan1eidtj.mayas.db.OfflineDataStore
 import kotlinx.coroutines.tasks.await
 import com.dan1eidtj.data.buyShopItemViaBackend
 import com.dan1eidtj.data.BuyItemResult
@@ -54,6 +56,12 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
 
     var remoteSessions by mutableStateOf<List<RemoteSession>>(emptyList())
         private set
+
+    var isAddingAccount by mutableStateOf(false)
+        private set
+
+    val returnAccountName: String
+        get() = userData["name"] ?: user?.displayName ?: user?.email.orEmpty()
 
     private var myDeviceId: String? = null
     private var selfSessionListener: ListenerRegistration? = null
@@ -259,6 +267,23 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось завершить сессию", e) }
     }
 
+    fun endAllOtherSessions() {
+        val uid = auth.currentUser?.uid ?: return
+        val myId = myDeviceId ?: return
+        db.collection("users").document(uid)
+            .collection("sessions")
+            .get()
+            .addOnSuccessListener { snap ->
+                val batch = db.batch()
+                snap.documents.forEach { doc ->
+                    if (doc.id != myId) batch.delete(doc.reference)
+                }
+                batch.commit()
+                    .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось завершить остальные сессии", e) }
+            }
+            .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось получить список сессий", e) }
+    }
+
     private fun loadUserData(uid: String) {
         userDataListener?.remove()
         userDataListener = db.collection("users").document(uid)
@@ -410,6 +435,113 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
     }
 
     fun login(email: String, pass: String, onSuccess: () -> Unit = {}, onError: (String) -> Unit) {
+        if (isAddingAccount) {
+            loginAdditionalAccount(email, pass, onSuccess, onError)
+            return
+        }
+        performLogin(email, pass, onSuccess, onError)
+    }
+
+    private fun secondaryAuth(): FirebaseAuth {
+        val appName = "mayas_add_account"
+        val app = runCatching { FirebaseApp.getInstance(appName) }.getOrNull()
+            ?: FirebaseApp.initializeApp(getApplication(), FirebaseApp.getInstance().options, appName)
+        return FirebaseAuth.getInstance(app)
+    }
+
+    private suspend fun validateOnSecondary(email: String, pass: String, create: Boolean): Exception? {
+        val secondary = secondaryAuth()
+        return try {
+            if (create) {
+                secondary.createUserWithEmailAndPassword(email, pass).await()
+            } else {
+                secondary.signInWithEmailAndPassword(email, pass).await()
+            }
+            null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            e
+        } finally {
+            secondary.signOut()
+        }
+    }
+
+    private fun leaveCurrentAccount(then: () -> Unit) {
+        unbindSessionTracking()
+        logoutSilently {
+            auth.signOut()
+            user = null
+            userData = emptyMap()
+            then()
+        }
+    }
+
+    private fun isCurrentAccount(email: String): Boolean =
+        email.trim().equals(auth.currentUser?.email, ignoreCase = true)
+
+    private fun loginAdditionalAccount(
+        email: String,
+        pass: String,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        if (isCurrentAccount(email)) {
+            onError(getApplication<Application>().getString(R.string.auth_same_account))
+            return
+        }
+        isLoading = true
+        viewModelScope.launch {
+            val failure = validateOnSecondary(email, pass, create = false)
+            if (failure != null) {
+                isLoading = false
+                onError(mapAuthError(failure))
+                return@launch
+            }
+            isAddingAccount = false
+            leaveCurrentAccount {
+                performLogin(email, pass, onSuccess) { message ->
+                    isLoading = false
+                    onError(message)
+                }
+            }
+        }
+    }
+
+    private fun registerAdditionalAccount(
+        email: String,
+        pass: String,
+        name: String,
+        username: String,
+        onError: (String) -> Unit
+    ) {
+        if (isCurrentAccount(email)) {
+            onError(getApplication<Application>().getString(R.string.auth_same_account))
+            return
+        }
+        isLoading = true
+        viewModelScope.launch {
+            val failure = validateOnSecondary(email, pass, create = true)
+            if (failure != null) {
+                isLoading = false
+                onError(mapAuthError(failure))
+                return@launch
+            }
+            isAddingAccount = false
+            leaveCurrentAccount {
+                auth.signInWithEmailAndPassword(email, pass)
+                    .addOnSuccessListener { result ->
+                        completeRegistration(result.user, email, name, username, onError)
+                    }
+                    .addOnFailureListener { e ->
+                        isLoading = false
+                        onError(mapAuthError(e))
+                    }
+            }
+        }
+    }
+
+    private fun performLogin(email: String, pass: String, onSuccess: () -> Unit = {}, onError: (String) -> Unit) {
         isLoading = true
         auth.signInWithEmailAndPassword(email, pass)
             .addOnSuccessListener { result ->
@@ -424,7 +556,9 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                             uid = uid,
                             email = email,
                             name = userData["name"] ?: loggedUser.displayName ?: "User",
-                            avatarUrl = userData["avatarUrl"] ?: ""
+                            avatarUrl = userData["avatarUrl"] ?: "",
+                            username = userData["username"],
+                            createdAt = loggedUser.metadata?.creationTimestamp ?: 0L
                         ))
                     }
                 }
@@ -463,72 +597,14 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         onSuccess: () -> Unit = {},
         onError: (String) -> Unit
     ) {
+        if (isAddingAccount) {
+            registerAdditionalAccount(email, pass, name, username, onError)
+            return
+        }
         isLoading = true
         auth.createUserWithEmailAndPassword(email, pass)
             .addOnSuccessListener { result ->
-                val u = result.user
-                if (u == null) {
-                    isLoading = false
-                    onError("Пользователь не создан")
-                    return@addOnSuccessListener
-                }
-
-                val profileUpdates = UserProfileChangeRequest.Builder()
-                    .setDisplayName(name)
-                    .build()
-
-                u.updateProfile(profileUpdates).addOnCompleteListener { task ->
-                    if (task.isSuccessful) {
-                        val userMap = mapOf(
-                            "username" to username.lowercase().trim(),
-                            "email" to email,
-                            "name" to name,
-                            "isOnline" to true,
-                            "theme" to "dark",
-                            "description" to "",
-                            "avatarUrl" to "",
-                            "emojiStatus" to " ",
-                            "emailVerified" to false,
-                            // Верификация и роль — явные дефолты для новых юзеров.
-                            // Firestore rules всё равно требуют rank=0 и verification=false
-                            // на create, это просто делает документ сразу читаемым без
-                            // дополнительных .get(..., default) на клиенте.
-                            "rank" to 0,
-                            "verification" to false
-                        )
-
-                        db.collection("users").document(u.uid).set(userMap)
-                            .addOnSuccessListener {
-                                user = auth.currentUser
-                                loadUserData(u.uid)
-                                bindSessionTracking(u.uid)
-                                viewModelScope.launch {
-                                    sessionManager.saveSession(UserSession(
-                                        uid = u.uid,
-                                        email = email,
-                                        name = name,
-                                        avatarUrl = ""
-                                    ))
-                                }
-
-
-                                u.sendEmailVerification()
-                                    .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось отправить письмо верификации", e) }
-
-                                isLoading = false
-                                showVerifyScreen = true
-
-
-                            }
-                            .addOnFailureListener { e ->
-                                isLoading = false
-                                onError(e.localizedMessage ?: "Ошибка сохранения профиля")
-                            }
-                    } else {
-                        isLoading = false
-                        onError(task.exception?.localizedMessage ?: "Ошибка обновления профиля")
-                    }
-                }
+                completeRegistration(result.user, email, name, username, onError)
             }
             .addOnFailureListener { e ->
                 isLoading = false
@@ -536,7 +612,81 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             }
     }
 
+    private fun completeRegistration(
+        u: FirebaseUser?,
+        email: String,
+        name: String,
+        username: String,
+        onError: (String) -> Unit
+    ) {
+        if (u == null) {
+            isLoading = false
+            onError("Пользователь не создан")
+            return
+        }
+
+        val profileUpdates = UserProfileChangeRequest.Builder()
+            .setDisplayName(name)
+            .build()
+
+        u.updateProfile(profileUpdates).addOnCompleteListener { task ->
+            if (task.isSuccessful) {
+                val userMap = mapOf(
+                    "username" to username.lowercase().trim(),
+                    "email" to email,
+                    "name" to name,
+                    "isOnline" to true,
+                    "theme" to "dark",
+                    "description" to "",
+                    "avatarUrl" to "",
+                    "emojiStatus" to " ",
+                    "emailVerified" to false,
+                    // Верификация и роль — явные дефолты для новых юзеров.
+                    // Firestore rules всё равно требуют rank=0 и verification=false
+                    // на create, это просто делает документ сразу читаемым без
+                    // дополнительных .get(..., default) на клиенте.
+                    "rank" to 0,
+                    "verification" to false
+                )
+
+                db.collection("users").document(u.uid).set(userMap)
+                    .addOnSuccessListener {
+                        user = auth.currentUser
+                        loadUserData(u.uid)
+                        bindSessionTracking(u.uid)
+                        viewModelScope.launch {
+                            sessionManager.saveSession(UserSession(
+                                uid = u.uid,
+                                email = email,
+                                name = name,
+                                avatarUrl = "",
+                                username = username.lowercase().trim(),
+                                createdAt = u.metadata?.creationTimestamp ?: System.currentTimeMillis()
+                            ))
+                        }
+
+
+                        u.sendEmailVerification()
+                            .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось отправить письмо верификации", e) }
+
+                        isLoading = false
+                        showVerifyScreen = true
+
+
+                    }
+                    .addOnFailureListener { e ->
+                        isLoading = false
+                        onError(e.localizedMessage ?: "Ошибка сохранения профиля")
+                    }
+            } else {
+                isLoading = false
+                onError(task.exception?.localizedMessage ?: "Ошибка обновления профиля")
+            }
+        }
+    }
+
     fun logout() {
+        isAddingAccount = false
         // Снимаем self-listener ДО удаления документа сессии — иначе поймаем
         // своё же удаление как "сессию завершили с другого устройства" и
         // рекурсивно ещё раз вызовем logout().
@@ -549,9 +699,12 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                 .delete()
                 .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось удалить сессию при выходе", e) }
         }
+        val appContext = getApplication<Application>()
         logoutSilently {
-            viewModelScope.launch {
-                ChatRepository(getApplication()).clearAll()
+            if (uid != null) {
+                viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    OfflineDataStore.deleteAccountData(appContext, uid)
+                }
             }
             auth.signOut()
             user = null
@@ -579,7 +732,9 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                     uid = uid,
                     email = auth.currentUser?.email ?: "",
                     name = userData["name"] ?: auth.currentUser?.displayName ?: "User",
-                    avatarUrl = userData["avatarUrl"] ?: ""
+                    avatarUrl = userData["avatarUrl"] ?: "",
+                    username = userData["username"],
+                    createdAt = auth.currentUser?.metadata?.creationTimestamp ?: 0L
                 ))
 
                 db.collection("users").document(uid).update(mapOf(
@@ -594,35 +749,65 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun switchAccount(targetEmail: String, targetPass: String, onSuccess: () -> Unit) {
+    fun switchAccount(
+        targetEmail: String,
+        targetPass: String,
+        onError: (String) -> Unit = {},
+        onSuccess: () -> Unit
+    ) {
+        if (isCurrentAccount(targetEmail)) {
+            onSuccess()
+            return
+        }
         isLoading = true
-        // Как и в logout() — снимаем слушателей сессии старого аккаунта ДО signOut().
-        // Без этого selfSessionListener/remoteSessionsListener остаются висеть на
-        // users/{oldUid}/sessions, и как только меняется auth-состояние, правило
-        // request.auth.uid == userId перестаёт совпадать -> PERMISSION_DENIED.
-        unbindSessionTracking()
-        logoutSilently {
-            auth.signOut()
-            login(targetEmail, targetPass, onSuccess = {
+        viewModelScope.launch {
+            val failure = validateOnSecondary(targetEmail, targetPass, create = false)
+            if (failure != null) {
                 isLoading = false
-                onSuccess()
-            }, onError = {
-                isLoading = false
-                authError = it
-            })
+                val message = mapAuthError(failure)
+                authError = message
+                onError(message)
+                return@launch
+            }
+            leaveCurrentAccount {
+                performLogin(targetEmail, targetPass, onSuccess = {
+                    isLoading = false
+                    onSuccess()
+                }, onError = { message ->
+                    isLoading = false
+                    authError = message
+                    onError(message)
+                })
+            }
         }
     }
 
-    fun addNewAccount(onNavigateToAuth: () -> Unit) {
-        // Та же причина, что и в switchAccount() — иначе слушатели старого uid
-        // переживают signOut() и ловят PERMISSION_DENIED.
-        unbindSessionTracking()
-        logoutSilently {
-            auth.signOut()
-            user = null
-            userData = emptyMap()
+    fun addNewAccount(onNavigateToAuth: () -> Unit, onLimitReached: () -> Unit = {}) {
+        viewModelScope.launch {
+            if (!sessionManager.canAddSession()) {
+                onLimitReached()
+                return@launch
+            }
+            resetAuthForm()
+            isAddingAccount = true
             onNavigateToAuth()
         }
+    }
+
+    fun cancelAddAccount() {
+        isAddingAccount = false
+        isLoading = false
+        resetAuthForm()
+    }
+
+    private fun resetAuthForm() {
+        emailInput = ""
+        passInput = ""
+        nameInput = ""
+        usernameInput = ""
+        authError = null
+        resetMessage = null
+        isLoginMode = true
     }
 
     fun removeSession(uid: String) {

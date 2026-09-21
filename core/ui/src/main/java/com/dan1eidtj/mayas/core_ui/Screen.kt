@@ -4,6 +4,7 @@ package com.dan1eidtj.mayas.core_ui
 sealed class Screen(val route: String) {
     object Auth : Screen("auth")
     object Chats : Screen("chats")
+    object GlobalSearch : Screen("global_search")
     object Credits : Screen("credits")
     object Chat : Screen("chat/{chatId}?messageId={messageId}") {
         fun create(chatId: String, messageId: String? = null) =

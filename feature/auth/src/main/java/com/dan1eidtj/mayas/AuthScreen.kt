@@ -19,6 +19,10 @@ import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import com.dan1eidtj.auth.R
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AlternateEmail
 import androidx.compose.material.icons.filled.Chat
@@ -58,10 +62,15 @@ import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 private const val MAYAS_TOS_URL = "https://dan1eidt.github.io/mayas-site/tos.html"
 
 @Composable
-fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}) {
+fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: () -> Unit = {}) {
     if (vm.showVerifyScreen) {
         VerifyEmailScreen(vm, onAuthSuccess)
         return
+    }
+
+    androidx.activity.compose.BackHandler(enabled = vm.isAddingAccount) {
+        vm.cancelAddAccount()
+        onReturnToAccount()
     }
 
     val focusManager = LocalFocusManager.current
@@ -89,313 +98,346 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}) {
         unfocusedTrailingIconColor = MayasTheme.TextGrey
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(24.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-
-        Box(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
             modifier = Modifier
-                .size(72.dp)
-                .background(MayasTheme.RedAccent.copy(alpha = 0.15f), CircleShape),
-            contentAlignment = Alignment.Center
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(24.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                imageVector = Icons.Filled.Chat,
-                contentDescription = null,
-                tint = MayasTheme.RedAccent,
-                modifier = Modifier.size(34.dp)
-            )
-        }
 
-        Spacer(Modifier.height(16.dp))
-
-        Text("Маяс", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-
-        Spacer(Modifier.height(4.dp))
-
-
-        AnimatedContent(
-            targetState = vm.isLoginMode,
-            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
-            label = "subtitle"
-        ) { isLogin ->
-            Text(
-                text = if (isLogin) "С возвращением!" else "Создайте новый аккаунт",
-                fontSize = 14.sp,
-                color = MayasTheme.TextGrey
-            )
-        }
-
-        Spacer(Modifier.height(28.dp))
-
-
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 2.dp
-        ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-
-
-                AnimatedVisibility(
-                    visible = !vm.isLoginMode,
-                    enter = fadeIn(tween(200)) + expandVertically(tween(250)),
-                    exit = fadeOut(tween(150)) + shrinkVertically(tween(200))
-                ) {
-                    Column {
-                        OutlinedTextField(
-                            value = vm.nameInput,
-                            onValueChange = vm::onNameChange,
-                            label = { Text("Имя", color = MayasTheme.TextGrey) },
-                            leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(nameFocus),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = fieldColors,
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                capitalization = KeyboardCapitalization.Words,
-                                imeAction = ImeAction.Next
-                            ),
-                            keyboardActions = KeyboardActions(onNext = { usernameFocus.requestFocus() })
-                        )
-                        Spacer(Modifier.height(12.dp))
-
-                        OutlinedTextField(
-                            value = vm.usernameInput,
-                            onValueChange = vm::onUsernameChange,
-                            label = { Text("Юзернейм (без @)", color = MayasTheme.TextGrey) },
-                            leadingIcon = { Icon(Icons.Filled.AlternateEmail, contentDescription = null) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(usernameFocus),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = fieldColors,
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                capitalization = KeyboardCapitalization.None,
-                                autoCorrect = false,
-                                imeAction = ImeAction.Next
-                            ),
-                            keyboardActions = KeyboardActions(onNext = { emailFocus.requestFocus() })
-                        )
-                        Spacer(Modifier.height(12.dp))
-                    }
-                }
-
-
-                OutlinedTextField(
-                    value = vm.emailInput,
-                    onValueChange = vm::onEmailChange,
-                    label = { Text("Email", color = MayasTheme.TextGrey) },
-                    leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(emailFocus),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = fieldColors,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Email,
-                        imeAction = ImeAction.Next
-                    ),
-                    keyboardActions = KeyboardActions(onNext = { passFocus.requestFocus() })
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .background(MayasTheme.RedAccent.copy(alpha = 0.15f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Chat,
+                    contentDescription = null,
+                    tint = MayasTheme.RedAccent,
+                    modifier = Modifier.size(34.dp)
                 )
+            }
 
-                Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
+
+            Text("Маяс", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+
+            Spacer(Modifier.height(4.dp))
 
 
-                OutlinedTextField(
-                    value = vm.passInput,
-                    onValueChange = vm::onPassChange,
-                    label = { Text("Пароль", color = MayasTheme.TextGrey) },
-                    leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
-                    trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(
-                                imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                                contentDescription = if (passwordVisible) "Скрыть пароль" else "Показать пароль"
-                            )
-                        }
-                    },
-                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(passFocus),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = fieldColors,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Password,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(onDone = {
-                        focusManager.clearFocus()
-                        vm.handleAuthAction(onAuthSuccess)
-                    })
+            AnimatedContent(
+                targetState = vm.isLoginMode,
+                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                label = "subtitle"
+            ) { isLogin ->
+                Text(
+                    text = if (isLogin) "С возвращением!" else "Создайте новый аккаунт",
+                    fontSize = 14.sp,
+                    color = MayasTheme.TextGrey
                 )
+            }
+
+            Spacer(Modifier.height(28.dp))
 
 
-                AnimatedVisibility(
-                    visible = vm.isLoginMode,
-                    enter = fadeIn(tween(200)),
-                    exit = fadeOut(tween(150))
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 2.dp
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+
+
+                    AnimatedVisibility(
+                        visible = !vm.isLoginMode,
+                        enter = fadeIn(tween(200)) + expandVertically(tween(250)),
+                        exit = fadeOut(tween(150)) + shrinkVertically(tween(200))
                     ) {
-                        TextButton(onClick = {
-                            resetEmailInput = vm.emailInput
-                            showResetDialog = true
-                        }) {
-                            Text(
-                                text = "Забыли пароль?",
-                                color = MayasTheme.TextGrey,
-                                fontSize = 13.sp
+                        Column {
+                            OutlinedTextField(
+                                value = vm.nameInput,
+                                onValueChange = vm::onNameChange,
+                                label = { Text("Имя", color = MayasTheme.TextGrey) },
+                                leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(nameFocus),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = fieldColors,
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    capitalization = KeyboardCapitalization.Words,
+                                    imeAction = ImeAction.Next
+                                ),
+                                keyboardActions = KeyboardActions(onNext = { usernameFocus.requestFocus() })
                             )
+                            Spacer(Modifier.height(12.dp))
+
+                            OutlinedTextField(
+                                value = vm.usernameInput,
+                                onValueChange = vm::onUsernameChange,
+                                label = { Text("Юзернейм (без @)", color = MayasTheme.TextGrey) },
+                                leadingIcon = { Icon(Icons.Filled.AlternateEmail, contentDescription = null) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(usernameFocus),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = fieldColors,
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    capitalization = KeyboardCapitalization.None,
+                                    autoCorrect = false,
+                                    imeAction = ImeAction.Next
+                                ),
+                                keyboardActions = KeyboardActions(onNext = { emailFocus.requestFocus() })
+                            )
+                            Spacer(Modifier.height(12.dp))
                         }
                     }
-                }
 
-                AnimatedVisibility(
-                    visible = vm.authError != null,
-                    enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { -it / 2 },
-                    exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { -it / 2 }
-                ) {
-                    Text(
-                        text = vm.authError ?: "",
-                        color = MayasTheme.ErrorRed,
-                        modifier = Modifier.padding(top = 12.dp),
-                        fontSize = 14.sp
+
+                    OutlinedTextField(
+                        value = vm.emailInput,
+                        onValueChange = vm::onEmailChange,
+                        label = { Text("Email", color = MayasTheme.TextGrey) },
+                        leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(emailFocus),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = fieldColors,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(onNext = { passFocus.requestFocus() })
                     )
-                }
 
-                AnimatedVisibility(
-                    visible = vm.resetMessage != null,
-                    enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { -it / 2 },
-                    exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { -it / 2 }
-                ) {
-                    Text(
-                        text = vm.resetMessage ?: "",
-                        color = MayasTheme.RedAccent,
-                        modifier = Modifier.padding(top = 12.dp),
-                        fontSize = 14.sp
+                    Spacer(Modifier.height(12.dp))
+
+
+                    OutlinedTextField(
+                        value = vm.passInput,
+                        onValueChange = vm::onPassChange,
+                        label = { Text("Пароль", color = MayasTheme.TextGrey) },
+                        leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = if (passwordVisible) "Скрыть пароль" else "Показать пароль"
+                                )
+                            }
+                        },
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(passFocus),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = fieldColors,
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(onDone = {
+                            focusManager.clearFocus()
+                            vm.handleAuthAction(onAuthSuccess)
+                        })
                     )
-                }
 
-                AnimatedVisibility(
-                    visible = !vm.isLoginMode,
-                    enter = fadeIn(tween(200)) + expandVertically(tween(250)),
-                    exit = fadeOut(tween(150)) + shrinkVertically(tween(200))
-                ) {
-                    Column(modifier = Modifier.padding(top = 16.dp)) {
+
+                    AnimatedVisibility(
+                        visible = vm.isLoginMode,
+                        enter = fadeIn(tween(200)),
+                        exit = fadeOut(tween(150))
+                    ) {
                         Row(
-                            verticalAlignment = Alignment.Top,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
                         ) {
-                            Checkbox(
-                                checked = tosAccepted,
-                                onCheckedChange = { tosAccepted = it },
-                                colors = CheckboxDefaults.colors(checkedColor = MayasTheme.RedAccent)
-                            )
+                            TextButton(onClick = {
+                                resetEmailInput = vm.emailInput
+                                showResetDialog = true
+                            }) {
+                                Text(
+                                    text = "Забыли пароль?",
+                                    color = MayasTheme.TextGrey,
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    }
 
-                            val tosText = buildAnnotatedString {
-                                append("Я прочёл(а) ")
-                                pushStringAnnotation(tag = "TOS", annotation = MAYAS_TOS_URL)
-                                withStyle(
-                                    SpanStyle(
-                                        color = MayasTheme.RedAccent,
-                                        textDecoration = TextDecoration.Underline
-                                    )
-                                ) {
-                                    append("Пользовательское соглашение Маяс")
+                    AnimatedVisibility(
+                        visible = vm.authError != null,
+                        enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { -it / 2 },
+                        exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { -it / 2 }
+                    ) {
+                        Text(
+                            text = vm.authError ?: "",
+                            color = MayasTheme.ErrorRed,
+                            modifier = Modifier.padding(top = 12.dp),
+                            fontSize = 14.sp
+                        )
+                    }
+
+                    AnimatedVisibility(
+                        visible = vm.resetMessage != null,
+                        enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { -it / 2 },
+                        exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { -it / 2 }
+                    ) {
+                        Text(
+                            text = vm.resetMessage ?: "",
+                            color = MayasTheme.RedAccent,
+                            modifier = Modifier.padding(top = 12.dp),
+                            fontSize = 14.sp
+                        )
+                    }
+
+                    AnimatedVisibility(
+                        visible = !vm.isLoginMode,
+                        enter = fadeIn(tween(200)) + expandVertically(tween(250)),
+                        exit = fadeOut(tween(150)) + shrinkVertically(tween(200))
+                    ) {
+                        Column(modifier = Modifier.padding(top = 16.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.Top,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Checkbox(
+                                    checked = tosAccepted,
+                                    onCheckedChange = { tosAccepted = it },
+                                    colors = CheckboxDefaults.colors(checkedColor = MayasTheme.RedAccent)
+                                )
+
+                                val tosText = buildAnnotatedString {
+                                    append("Я прочёл(а) ")
+                                    pushStringAnnotation(tag = "TOS", annotation = MAYAS_TOS_URL)
+                                    withStyle(
+                                        SpanStyle(
+                                            color = MayasTheme.RedAccent,
+                                            textDecoration = TextDecoration.Underline
+                                        )
+                                    ) {
+                                        append("Пользовательское соглашение Маяс")
+                                    }
+                                    pop()
                                 }
-                                pop()
+
+                                ClickableText(
+                                    text = tosText,
+                                    style = TextStyle(fontSize = 13.sp, color = MayasTheme.TextGrey, lineHeight = 18.sp),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .padding(top = 14.dp),
+                                    onClick = { offset ->
+                                        tosText.getStringAnnotations(tag = "TOS", start = offset, end = offset)
+                                            .firstOrNull()
+                                            ?.let { uriHandler.openUri(it.item) }
+                                    }
+                                )
                             }
 
-                            ClickableText(
-                                text = tosText,
-                                style = TextStyle(fontSize = 13.sp, color = MayasTheme.TextGrey, lineHeight = 18.sp),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .padding(top = 14.dp),
-                                onClick = { offset ->
-                                    tosText.getStringAnnotations(tag = "TOS", start = offset, end = offset)
-                                        .firstOrNull()
-                                        ?.let { uriHandler.openUri(it.item) }
-                                }
+                            Text(
+                                text = "Продолжая, вы подтверждаете, что у вас есть согласие законного представителя на использование приложения, либо что вам уже исполнилось 14 лет.",
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp,
+                                color = MayasTheme.TextGrey,
+                                modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp)
                             )
                         }
-
-                        Text(
-                            text = "Продолжая, вы подтверждаете, что у вас есть согласие законного представителя на использование приложения, либо что вам уже исполнилось 14 лет.",
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            color = MayasTheme.TextGrey,
-                            modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 4.dp)
-                        )
                     }
-                }
 
-                Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(20.dp))
 
 
-                Button(
-                    onClick = {
-                        focusManager.clearFocus()
-                        vm.handleAuthAction(onAuthSuccess)
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.RedAccent),
-                    enabled = !vm.isLoading && (vm.isLoginMode || tosAccepted)
-                ) {
-                    if (vm.isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = Color.White,
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        AnimatedContent(
-                            targetState = vm.isLoginMode,
-                            transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
-                            label = "buttonText"
-                        ) { isLogin ->
-                            Text(
-                                text = if (isLogin) "Войти" else "Зарегистрироваться",
+                    Button(
+                        onClick = {
+                            focusManager.clearFocus()
+                            vm.handleAuthAction(onAuthSuccess)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.RedAccent),
+                        enabled = !vm.isLoading && (vm.isLoginMode || tosAccepted)
+                    ) {
+                        if (vm.isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
                                 color = Color.White,
-                                fontWeight = FontWeight.SemiBold
+                                strokeWidth = 2.dp
                             )
+                        } else {
+                            AnimatedContent(
+                                targetState = vm.isLoginMode,
+                                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                                label = "buttonText"
+                            ) { isLogin ->
+                                Text(
+                                    text = if (isLogin) "Войти" else "Зарегистрироваться",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
                         }
                     }
                 }
             }
+
+            Spacer(Modifier.height(16.dp))
+
+
+            TextButton(onClick = { vm.toggleAuthMode() }) {
+                AnimatedContent(
+                    targetState = vm.isLoginMode,
+                    transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                    label = "toggleText"
+                ) { isLogin ->
+                    Text(
+                        text = if (isLogin) "Нет аккаунта? Создать" else "Уже есть? Войти",
+                        color = MayasTheme.TextGrey
+                    )
+                }
+            }
         }
 
-        Spacer(Modifier.height(16.dp))
-
-
-        TextButton(onClick = { vm.toggleAuthMode() }) {
-            AnimatedContent(
-                targetState = vm.isLoginMode,
-                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
-                label = "toggleText"
-            ) { isLogin ->
+        androidx.compose.animation.AnimatedVisibility(
+            visible = vm.isAddingAccount,
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(150)),
+            modifier = Modifier.align(Alignment.TopStart)
+        ) {
+            TextButton(
+                onClick = {
+                    vm.cancelAddAccount()
+                    onReturnToAccount()
+                },
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = null,
+                    tint = MayasTheme.RedAccent,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = if (isLogin) "Нет аккаунта? Создать" else "Уже есть? Войти",
-                    color = MayasTheme.TextGrey
+                    text = stringResource(R.string.auth_return_to_account, vm.returnAccountName),
+                    color = MayasTheme.RedAccent,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

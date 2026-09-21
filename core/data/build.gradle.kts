@@ -67,6 +67,7 @@ dependencies {
 
     // Нормализация и валидация номеров телефона (общая для всех модулей)
     implementation(libs.libphonenumber)
+    implementation(libs.okhttp)
 
     // тесты
     testImplementation(libs.junit)

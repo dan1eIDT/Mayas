@@ -1,6 +1,9 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas.settings
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.ui.res.stringResource
+import com.dan1eidtj.mayas.settings.R
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -40,11 +43,11 @@ import com.dan1eidtj.mayas.EmojiStatusView
 import com.dan1eidtj.mayas.SectionTitle
 
 
-private enum class CustomizationCategory(val label: String) {
-    EMOJI("Эмодзи"),
-    BUBBLE("Стили"),
-    FONT("Шрифт"),
-    EFFECT("Эффект")
+private enum class CustomizationCategory(val labelRes: Int) {
+    EMOJI(R.string.emoji_label),
+    BUBBLE(com.dan1eidtj.profile.R.string.styles_label),
+    FONT(R.string.font_label),
+    EFFECT(R.string.effect_label)
 }
 
 @Composable
@@ -68,7 +71,7 @@ private fun CustomizationCategoryTabs(
                 modifier = Modifier.clickable { onSelect(category) }
             ) {
                 Text(
-                    category.label,
+                    stringResource(category.labelRes),
                     color = if (isSelected) Color.White else MayasTheme.TextSecondary,
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.Medium,
@@ -95,7 +98,7 @@ private fun EmojiCategoryContent(
             shape = RoundedCornerShape(16.dp)
         ) {
             Text(
-                "У вас нет купленных статусов.\nИх можно найти в магазине.",
+                stringResource(R.string.no_purchased_statuses),
                 modifier = Modifier.padding(20.dp),
                 color = MayasTheme.TextSecondary,
                 fontSize = 13.sp,
@@ -161,7 +164,7 @@ private fun EmojiCategoryContent(
             onClick = { onUse("") },
             modifier = Modifier.align(Alignment.CenterHorizontally)
         ) {
-            Text("Убрать статус", color = MayasTheme.ErrorRed, fontSize = 12.sp)
+            Text(stringResource(R.string.remove_status), color = MayasTheme.ErrorRed, fontSize = 12.sp)
         }
     }
 }
@@ -210,7 +213,7 @@ private fun BubbleCategoryContent(
                 )
                 if (isOwned) {
                     if (isUsing) {
-                        Text("Используется", color = MayasTheme.Accent, fontSize = 12.sp)
+                        Text(stringResource(com.dan1eidtj.profile.R.string.in_use_label), color = MayasTheme.Accent, fontSize = 12.sp)
                     }
                 } else {
                     Icon(
@@ -225,7 +228,7 @@ private fun BubbleCategoryContent(
     }
     Spacer(Modifier.height(4.dp))
     Text(
-        "Больше стилей можно купить в магазине",
+        stringResource(R.string.more_styles_in_shop),
         color = MayasTheme.TextSecondary,
         fontSize = 11.sp,
         modifier = Modifier.fillMaxWidth(),
@@ -263,7 +266,7 @@ private fun FontCategoryContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Аа",
+                    stringResource(com.dan1eidtj.profile.R.string.sample_text_aa),
                     color = MayasTheme.TextPrimary,
                     fontSize = 16.sp,
                     fontFamily = ShopConstants.getFontFamily(font.id),
@@ -278,13 +281,13 @@ private fun FontCategoryContent(
                     modifier = Modifier.weight(1f)
                 )
                 if (isUsing) {
-                    Text("Используется", color = MayasTheme.Accent, fontSize = 12.sp)
+                    Text(stringResource(com.dan1eidtj.profile.R.string.in_use_label), color = MayasTheme.Accent, fontSize = 12.sp)
                 }
             }
         }
     }
     Text(
-        "Больше шрифтов можно купить в магазине",
+        stringResource(R.string.more_fonts_in_shop),
         color = MayasTheme.TextSecondary,
         fontSize = 11.sp,
         modifier = Modifier.fillMaxWidth(),
@@ -357,7 +360,7 @@ private fun EffectCategoryContent(
     }
     Spacer(Modifier.height(4.dp))
     Text(
-        "Ну ты и так знаешь",
+        stringResource(R.string.easter_egg_line_1),
         color = MayasTheme.TextSecondary,
         fontSize = 11.sp,
         modifier = Modifier.fillMaxWidth(),
@@ -378,7 +381,7 @@ private fun CustomizationTabsAndContent(
     val currentEffect = vm.userData["sendEffect"] ?: "none"
 
     val styles = listOf(
-        Triple("default", "Стандартный", listOf(MayasTheme.Accent, MayasTheme.Accent))
+        Triple("default", stringResource(com.dan1eidtj.profile.R.string.standard_label), listOf(MayasTheme.Accent, MayasTheme.Accent))
     ) + ShopConstants.BUBBLE_STYLES.map { item ->
         Triple(item.id, item.name, ShopConstants.getStyleGradient(item.id))
     }
@@ -453,7 +456,7 @@ fun CustomizationScreen(
         containerColor = MayasTheme.Background,
         topBar = {
             TopAppBar(
-                title = { Text("Внешний вид", color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.appearance_title), color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = MayasTheme.TextPrimary)
@@ -470,7 +473,7 @@ fun CustomizationScreen(
         ) {
 
             Column(modifier = Modifier.padding(16.dp)) {
-                SectionTitle("ПРЕВЬЮ")
+                SectionTitle(stringResource(R.string.preview_section))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -480,7 +483,7 @@ fun CustomizationScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     ChatBubble(
-                        text = "Простись с прошлым и начни сначала.",
+                        text = stringResource(R.string.easter_egg_line_2),
                         isMe = true,
                         isRead = true,
                         time = "0:05",
@@ -513,7 +516,7 @@ fun QuickCustomizeSheet(
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Text(
-                "Оформление сообщений",
+                stringResource(R.string.message_appearance_label),
                 color = MayasTheme.TextPrimary,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,

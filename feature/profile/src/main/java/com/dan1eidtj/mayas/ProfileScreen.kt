@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @file:Suppress("DEPRECATION")
 
@@ -11,6 +12,8 @@ import android.os.Build
 import android.util.Log
 import android.widget.Toast
 import com.dan1eidtj.mayas.ads.AdsManager
+import androidx.compose.ui.res.stringResource
+import com.dan1eidtj.profile.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
@@ -65,6 +68,7 @@ import com.dan1eidtj.mayas.feature.auth.AuthVM
 import com.dan1eidtj.mayas.feature.GroupMembersVM
 import com.dan1eidtj.mayas.feature.BlockUserConfirmDialog
 import com.dan1eidtj.mayas.storage.B2MediaClient
+import com.dan1eidtj.mayas.storage.MediaFileCache
 import com.dan1eidtj.mayas.storage.ImageCompressor
 import com.dan1eidtj.mayas.storage.MediaKind
 import com.google.firebase.auth.FirebaseAuth
@@ -99,7 +103,28 @@ fun ProfileScreen(
 
     val coroutineScope = rememberCoroutineScope()
 
-    var name by remember { mutableStateOf("Загрузка...") }
+    val loadingLabel = stringResource(com.dan1eidtj.mayas.ui.R.string.loading)
+    val recentlyLabel = stringResource(com.dan1eidtj.chat.R.string.last_seen_recently)
+    val channelFallbackName = stringResource(com.dan1eidtj.chat.R.string.channel_label)
+    val groupFallbackName = stringResource(com.dan1eidtj.chat.R.string.group_fallback_name)
+    val noNameLabel = stringResource(com.dan1eidtj.chats.R.string.no_name)
+    val onlineLabel = stringResource(com.dan1eidtj.chats.R.string.online)
+    val avatarUploadFailedText = stringResource(com.dan1eidtj.chat.R.string.error_avatar_upload_failed)
+    val usernameTakenShortText = stringResource(R.string.username_taken_short)
+    val usernameTooShortText = stringResource(R.string.username_too_short)
+    val savedStatusText = stringResource(R.string.saved_status)
+    val saveErrorGenericText = stringResource(com.dan1eidtj.chat.R.string.error_save_failed)
+    val linkCopiedText = stringResource(R.string.link_copied)
+    val mentionedUserNotFoundTemplate = stringResource(R.string.mentioned_user_not_found)
+    val openProfileFailedText = stringResource(R.string.error_open_profile_failed)
+    val userUnblockedText = stringResource(R.string.user_unblocked)
+    val adLimitReachedText = stringResource(R.string.ad_limit_reached)
+    val adStillLoadingText = stringResource(R.string.ad_still_loading)
+    val demoAdRewardText = stringResource(R.string.demo_ad_reward_message)
+    val creditFailedText = stringResource(R.string.error_credit_failed)
+    val genericErrorShortText = stringResource(com.dan1eidtj.auth.R.string.error_generic_short)
+    val purchasedItemTemplate = stringResource(R.string.purchased_item)
+    var name by remember { mutableStateOf(loadingLabel) }
     var username by remember { mutableStateOf("") }
     var avatar by remember { mutableStateOf("") }
     var profileIcon by remember { mutableStateOf("ghost") }
@@ -108,7 +133,7 @@ fun ProfileScreen(
     var desc by remember { mutableStateOf("") }
     var emojiStatus by remember { mutableStateOf("") }
     var isOnline by remember { mutableStateOf(false) }
-    var lastSeenText by remember { mutableStateOf("был(а) недавно") }
+    var lastSeenText by remember { mutableStateOf(recentlyLabel) }
     var isPremium by remember { mutableStateOf(false) }
     var balance by remember { mutableIntStateOf(0) }
     var verifiedIcon by remember { mutableStateOf("verified") }
@@ -227,7 +252,7 @@ fun ProfileScreen(
                     if (isGroup) {
                         val docType = data["type"] as? String ?: "GROUP"
                         name = data["groupName"] as? String
-                            ?: if (docType == "CHANNEL") "Канал" else "Группа"
+                            ?: if (docType == "CHANNEL") channelFallbackName else groupFallbackName
                         avatar = data["groupAvatar"] as? String ?: ""
 
                         desc = data["description"] as? String ?: ""
@@ -250,7 +275,7 @@ fun ProfileScreen(
                             com.dan1eidtj.data.VerificationInfo.fromMap(data)
                         else com.dan1eidtj.data.VerificationInfo()
                     } else {
-                        name = data["name"] as? String ?: "Без имени"
+                        name = data["name"] as? String ?: noNameLabel
                         username = data["username"] as? String ?: ""
                         profileIcon = data["profileIcon"] as? String ?: "ghost"
                         profileGlow = data["profileGlow"] as? String ?: "purple"
@@ -282,8 +307,8 @@ fun ProfileScreen(
                         val lastSeen = (data["lastSeen"] as? Timestamp)
                             ?: (status?.get("lastSeen") as? Timestamp)
                         lastSeenText = when {
-                            !lastSeenAllowed -> "был(а) недавно"
-                            isOnline -> "в сети"
+                            !lastSeenAllowed -> recentlyLabel
+                            isOnline -> onlineLabel
                             else -> formatLastSeen(lastSeen)
                         }
                     }
@@ -361,7 +386,7 @@ fun ProfileScreen(
                     useCustomAvatar = true
                 } catch (e: Exception) {
                     Log.e("ProfileScreen", "Не удалось загрузить аватар", e)
-                    Toast.makeText(context, "Не удалось загрузить фото", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, avatarUploadFailedText, Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -382,12 +407,12 @@ fun ProfileScreen(
                 onEditClick = {
                     if (isEditing) {
                         if (!isUsernameAvailable) {
-                            Toast.makeText(context, "Этот юзернейм занят", Toast.LENGTH_SHORT)
+                            Toast.makeText(context, usernameTakenShortText, Toast.LENGTH_SHORT)
                                 .show()
                             return@ProfileTopBar
                         }
                         if (username.length < 3 && (!isGroup || isChannel) && username.isNotBlank()) {
-                            Toast.makeText(context, "Юзернейм слишком короткий", Toast.LENGTH_SHORT)
+                            Toast.makeText(context, usernameTooShortText, Toast.LENGTH_SHORT)
                                 .show()
                             return@ProfileTopBar
                         }
@@ -425,14 +450,14 @@ fun ProfileScreen(
                             .addOnSuccessListener {
                                 Toast.makeText(
                                     context,
-                                    "Сохранено",
+                                    savedStatusText,
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
                             .addOnFailureListener {
                                 Toast.makeText(
                                     context,
-                                    "Ошибка сохранения",
+                                    saveErrorGenericText,
                                     Toast.LENGTH_SHORT
                                 ).show()
                             }
@@ -488,7 +513,7 @@ fun ProfileScreen(
                             fullScreenAvatarUrl = resolved
                         } else {
                             coroutineScope.launch {
-                                fullScreenAvatarUrl = B2MediaClient.resolveDownloadUrl(avatar)
+                                fullScreenAvatarUrl = MediaFileCache.resolveModel(context, avatar)
                             }
                         }
                     },
@@ -518,7 +543,7 @@ fun ProfileScreen(
                             val clipboard =
                                 context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Ссылка скопирована", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, linkCopiedText, Toast.LENGTH_SHORT).show()
                         },
                         onMembersClick = { showGroupMembers = true },
                         onMentionClick = { mentionedUsername ->
@@ -533,7 +558,7 @@ fun ProfileScreen(
                                     } else {
                                         Toast.makeText(
                                             context,
-                                            "Пользователь @$mentionedUsername не найден",
+                                            String.format(mentionedUserNotFoundTemplate, mentionedUsername),
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     }
@@ -541,7 +566,7 @@ fun ProfileScreen(
                                 .addOnFailureListener {
                                     Toast.makeText(
                                         context,
-                                        "Не удалось открыть профиль",
+                                        openProfileFailedText,
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 }
@@ -565,7 +590,7 @@ fun ProfileScreen(
                                     chatVM.unblockUser(currentMyUid, finalId) {
                                         isBlockActionLoading = false
                                         isBlockedByMe = false
-                                        Toast.makeText(context, "Пользователь разблокирован", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, userUnblockedText, Toast.LENGTH_SHORT).show()
                                     }
                                 } else {
                                     showBlockConfirm = true
@@ -601,9 +626,9 @@ fun ProfileScreen(
                         ) {
                             Text(
                                 if (isGroupOwner) {
-                                    if (isChannel) "Удалить канал" else "Удалить группу"
+                                    if (isChannel) stringResource(R.string.delete_channel) else stringResource(R.string.delete_group)
                                 } else {
-                                    if (isChannel) "Покинуть канал" else "Покинуть группу"
+                                    if (isChannel) stringResource(R.string.leave_channel) else stringResource(R.string.leave_group)
                                 },
                                 color = MayasTheme.ErrorRed, fontWeight = FontWeight.Medium
                             )
@@ -625,7 +650,7 @@ fun ProfileScreen(
                             },
                             divider = {}
                         ) {
-                            listOf("Медиа", "Ссылки", "Закреплённые").forEachIndexed { i, label ->
+                            listOf(stringResource(R.string.media_label), stringResource(com.dan1eidtj.chat.R.string.links_label), stringResource(R.string.pinned_label)).forEachIndexed { i, label ->
                                 Tab(selected = selectedTab == i, onClick = { selectedTab = i }) {
                                     Text(
                                         label, modifier = Modifier.padding(16.dp),
@@ -647,7 +672,7 @@ fun ProfileScreen(
                                         fullScreenAvatarUrl = if (mediaKey.startsWith("http")) {
                                             mediaKey
                                         } else {
-                                            B2MediaClient.resolveDownloadUrl(mediaKey)
+                                            MediaFileCache.resolveModel(context, mediaKey)
                                         }
                                     }
                                 }
@@ -661,7 +686,7 @@ fun ProfileScreen(
                 if (isMyProfile) {
                     item {
                         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                            SectionTitle("ЗАРАБОТОК")
+                            SectionTitle(stringResource(R.string.earnings_section))
                             EarnAndShopSection(
                                 adsWatched = adsWatchedToday,
                                 isAdLoading = isAdLoading,
@@ -669,7 +694,7 @@ fun ProfileScreen(
                                     if (adsWatchedToday >= 5) {
                                         Toast.makeText(
                                             context,
-                                            "Лимит рекламы на сегодня исчерпан",
+                                            adLimitReachedText,
                                             Toast.LENGTH_SHORT
                                         ).show()
                                         return@EarnAndShopSection
@@ -682,7 +707,7 @@ fun ProfileScreen(
                                         )
                                         Toast.makeText(
                                             context,
-                                            "Реклама ещё грузится, попробуй через пару секунд",
+                                            adStillLoadingText,
                                             Toast.LENGTH_SHORT
                                         ).show()
                                         AdsManager.loadRewarded()
@@ -721,7 +746,7 @@ fun ProfileScreen(
                                                     if (isFirstOfCycle) adsResetAt = newResetAt
                                                     Toast.makeText(
                                                         context,
-                                                        "Эта реклама была демо, но ладно держи 250.",
+                                                        demoAdRewardText,
                                                         Toast.LENGTH_SHORT
                                                     ).show()
                                                 }
@@ -734,7 +759,7 @@ fun ProfileScreen(
                                                     )
                                                     Toast.makeText(
                                                         context,
-                                                        "Ошибка начисления",
+                                                        creditFailedText,
                                                         Toast.LENGTH_SHORT
                                                     ).show()
                                                 }
@@ -760,7 +785,7 @@ fun ProfileScreen(
 
                 item {
                     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        SectionTitle("ЦВЕТОВОЕ ОФОРМЛЕНИЕ")
+                        SectionTitle(stringResource(R.string.color_scheme_section))
                         ColorPicker(
                             profileGlow,
                             isPremium,
@@ -773,7 +798,7 @@ fun ProfileScreen(
                 if (isGroup) {
                     item {
                         Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                            SectionTitle("ИКОНКА ГРУППЫ")
+                            SectionTitle(stringResource(R.string.group_icon_section))
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -795,13 +820,13 @@ fun ProfileScreen(
                                 Spacer(Modifier.width(14.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        "Иконка группы",
+                                        stringResource(R.string.group_icon_label),
                                         color = MayasTheme.TextPrimary,
                                         fontSize = 15.sp,
                                         fontWeight = FontWeight.Medium
                                     )
                                     Text(
-                                        "Нажмите, чтобы выбрать",
+                                        stringResource(R.string.tap_to_select),
                                         color = MayasTheme.TextSecondary,
                                         fontSize = 12.sp
                                     )
@@ -833,7 +858,7 @@ fun ProfileScreen(
                                             .addOnFailureListener {
                                                 Toast.makeText(
                                                     context,
-                                                    "Ошибка",
+                                                    genericErrorShortText,
                                                     Toast.LENGTH_SHORT
                                                 ).show()
                                             }
@@ -847,7 +872,7 @@ fun ProfileScreen(
                                             .addOnFailureListener {
                                                 Toast.makeText(
                                                     context,
-                                                    "Ошибка",
+                                                    genericErrorShortText,
                                                     Toast.LENGTH_SHORT
                                                 ).show()
                                             }
@@ -868,7 +893,7 @@ fun ProfileScreen(
                 vm.buyItem(
                     id, price,
                     onSuccess = {
-                        Toast.makeText(context, "Куплено: $itemName", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, String.format(purchasedItemTemplate, itemName), Toast.LENGTH_SHORT).show()
                     },
                     onError = { error -> Toast.makeText(context, error, Toast.LENGTH_SHORT).show() }
                 )
@@ -971,6 +996,7 @@ fun ProfileScreen(
     }
 
     if (showBlockConfirm) {
+        val userBlockedText = stringResource(com.dan1eidtj.chat.R.string.user_blocked)
         BlockUserConfirmDialog(
             onConfirm = {
                 showBlockConfirm = false
@@ -978,7 +1004,7 @@ fun ProfileScreen(
                 chatVM.blockUser(currentMyUid, finalId) {
                     isBlockActionLoading = false
                     isBlockedByMe = true
-                    Toast.makeText(context, "Пользователь заблокирован", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, userBlockedText, Toast.LENGTH_SHORT).show()
                 }
             },
             onDismiss = { showBlockConfirm = false }
@@ -1084,7 +1110,7 @@ private fun ProfileHeader(
                 ) {
                     OutlinedTextField(
                         value = name, onValueChange = onNameChange,
-                        label = { Text("Имя", fontSize = 12.sp) },
+                        label = { Text(stringResource(com.dan1eidtj.auth.R.string.name_label), fontSize = 12.sp) },
                         singleLine = true, modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -1102,7 +1128,7 @@ private fun ProfileHeader(
                             value = username, onValueChange = onUsernameChange,
                             label = {
                                 Text(
-                                    if (isChannel) "Username канала (@)" else "Имя пользователя (@)",
+                                    if (isChannel) stringResource(R.string.channel_username_label) else stringResource(R.string.username_at_label),
                                     fontSize = 12.sp
                                 )
                             },
@@ -1126,8 +1152,8 @@ private fun ProfileHeader(
                             },
                             supportingText = {
                                 Text(
-                                    if (!isUsernameAvailable) "Этот юзернейм уже занят"
-                                    else "Можно использовать a-z, 0-9 и подчёркивания",
+                                    if (!isUsernameAvailable) stringResource(R.string.username_already_taken_ru)
+                                    else stringResource(R.string.username_allowed_chars),
                                     color = if (!isUsernameAvailable) MayasTheme.ErrorRed else MayasTheme.TextSecondary,
                                     fontSize = 11.sp
                                 )
@@ -1161,7 +1187,7 @@ private fun ProfileHeader(
                         value = desc, onValueChange = onDescChange,
                         label = {
                             Text(
-                                if (isChannel) "Описание канала" else if (isGroup) "Описание группы" else "О себе",
+                                if (isChannel) stringResource(R.string.channel_description_label) else if (isGroup) stringResource(R.string.group_description_label) else stringResource(R.string.about_me_label),
                                 fontSize = 12.sp
                             )
                         },
@@ -1178,8 +1204,8 @@ private fun ProfileHeader(
                         )
                     )
                     Text(
-                        if (isGroup) "Видно всем участникам."
-                        else "Пара слов о себе — видно всем, кто откроет твой профиль.",
+                        if (isGroup) stringResource(R.string.visible_to_all_members)
+                        else stringResource(R.string.about_me_hint),
                         color = MayasTheme.TextSecondary,
                         fontSize = 11.sp,
                         modifier = Modifier.padding(horizontal = 4.dp)
@@ -1198,8 +1224,8 @@ private fun ProfileHeader(
                     ) {
                         OutlinedTextField(
                             value = phone, onValueChange = onPhoneChange,
-                            label = { Text("Номер телефона", fontSize = 12.sp) },
-                            placeholder = { Text("+7 999 123-45-67") },
+                            label = { Text(stringResource(R.string.phone_number_label), fontSize = 12.sp) },
+                            placeholder = { Text(stringResource(R.string.phone_placeholder_example)) },
                             singleLine = true, modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
@@ -1216,7 +1242,7 @@ private fun ProfileHeader(
                             )
                         )
                         Text(
-                            "По номеру тебя смогут найти другие пользователи. Оставь пустым, чтобы не показывать номер.",
+                            stringResource(R.string.phone_number_hint),
                             color = MayasTheme.TextSecondary,
                             fontSize = 11.sp,
                             modifier = Modifier.padding(horizontal = 4.dp)
@@ -1243,17 +1269,13 @@ private fun ProfileHeader(
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                if (isChannel) "${formatCompactCount(membersCount)} подписчиков" else "${
-                                    formatCompactCount(
-                                        membersCount
-                                    )
-                                } участников",
+                                if (isChannel) "${formatCompactCount(membersCount)} " + stringResource(com.dan1eidtj.chat.R.string.subscribers) else "${formatCompactCount(membersCount)} " + stringResource(com.dan1eidtj.chat.R.string.participants_label),
                                 color = MayasTheme.TextPrimary,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium
                             )
                             Text(
-                                if (isChannel) "Управление подписчиками канала" else "Управление участниками группы",
+                                if (isChannel) stringResource(R.string.manage_channel_subscribers) else stringResource(R.string.manage_group_members),
                                 color = MayasTheme.TextSecondary, fontSize = 12.sp
                             )
                         }
@@ -1300,8 +1322,8 @@ private fun ProfileHeader(
             Spacer(Modifier.height(4.dp))
             Text(
                 when {
-                    isChannel -> "${formatCompactCount(membersCount)} подписчиков"
-                    isGroup -> "${formatCompactCount(membersCount)} участников"
+                    isChannel -> "${formatCompactCount(membersCount)} " + stringResource(com.dan1eidtj.chat.R.string.subscribers)
+                    isGroup -> "${formatCompactCount(membersCount)} " + stringResource(com.dan1eidtj.chat.R.string.participants_label)
                     username.isNotEmpty() -> "@$username"
                     else -> lastSeenText
                 },
@@ -1330,19 +1352,19 @@ private fun ProfileInfoSection(
 
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(8.dp))
-        SectionTitle("СТАТИСТИКА")
+        SectionTitle(stringResource(R.string.statistics_section))
         InfoSection {
             if (!isGroup) {
                 TelegramInfoRow(
                     title = "$messagesSent",
-                    subtitle = "Сообщений отправлено",
+                    subtitle = stringResource(R.string.messages_sent_label),
                     icon = Icons.Default.Chat
                 )
             } else {
                 groupCreatedAt?.let {
                     TelegramInfoRow(
                         title = sdf.format(it),
-                        subtitle = if (isChannel) "Дата создания канала" else "Дата создания группы",
+                        subtitle = if (isChannel) stringResource(R.string.channel_created_date_label) else stringResource(R.string.group_created_date_label),
                         icon = Icons.Default.CalendarToday
                     )
                 }
@@ -1352,12 +1374,12 @@ private fun ProfileInfoSection(
         if (!isGroup) {
             if (desc.isNotEmpty() || username.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                SectionTitle("ИНФОРМАЦИЯ")
+                SectionTitle(stringResource(R.string.information_section))
                 InfoSection {
                     if (desc.isNotEmpty()) {
                         DescriptionInfoRow(
                             title = desc,
-                            subtitle = "О себе",
+                            subtitle = stringResource(R.string.about_me_label),
                             onMentionClick = onMentionClick
                         )
                         if (username.isNotEmpty()) {
@@ -1371,7 +1393,7 @@ private fun ProfileInfoSection(
                     if (username.isNotEmpty()) {
                         TelegramInfoRow(
                             title = "@$username",
-                            subtitle = "Имя пользователя",
+                            subtitle = stringResource(R.string.username_label),
                             onClick = onUsernameClick
                         )
                     }
@@ -1380,11 +1402,11 @@ private fun ProfileInfoSection(
         } else {
             if (desc.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                SectionTitle("ОПИСАНИЕ")
+                SectionTitle(stringResource(R.string.description_section))
                 InfoSection {
                     DescriptionInfoRow(
                         title = desc,
-                        subtitle = if (isChannel) "Описание канала" else "Описание группы",
+                        subtitle = if (isChannel) stringResource(R.string.channel_description_label) else stringResource(R.string.group_description_label),
                         onMentionClick = onMentionClick
                     )
                 }
@@ -1392,28 +1414,24 @@ private fun ProfileInfoSection(
 
             if (isChannel && username.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                SectionTitle("ССЫЛКА")
+                SectionTitle(stringResource(R.string.link_section))
                 InfoSection {
                     TelegramInfoRow(
                         title = "@$username",
-                        subtitle = "Публичная ссылка на канал",
+                        subtitle = stringResource(R.string.public_channel_link_label),
                         onClick = onUsernameClick
                     )
                 }
             }
 
             Spacer(Modifier.height(16.dp))
-            SectionTitle(if (isChannel) "ПОДПИСЧИКИ" else "УЧАСТНИКИ")
+            SectionTitle(if (isChannel) stringResource(R.string.subscribers_section) else stringResource(com.dan1eidtj.chat.R.string.members_label))
             InfoSection {
                 TelegramInfoRow(
-                    title = if (isChannel) "${formatCompactCount(membersCount)} подписчиков" else "${
-                        formatCompactCount(
-                            membersCount
-                        )
-                    } участников",
+                    title = if (isChannel) "${formatCompactCount(membersCount)} " + stringResource(com.dan1eidtj.chat.R.string.subscribers) else "${formatCompactCount(membersCount)} " + stringResource(com.dan1eidtj.chat.R.string.participants_label),
                     subtitle = if (isGroupAdmin) {
-                        if (isChannel) "Управление каналом" else "Управление группой"
-                    } else "Посмотреть список",
+                        if (isChannel) stringResource(R.string.manage_channel) else stringResource(R.string.manage_group)
+                    } else stringResource(R.string.view_list),
                     icon = Icons.Default.Group, onClick = onMembersClick
                 )
             }
@@ -1442,6 +1460,19 @@ fun GroupMembersScreen(
         coroutineScope.launch { snackbarHostState.showSnackbar(text) }
     }
 
+    val membersAddedText = stringResource(R.string.members_added)
+    val addMembersFailedText = stringResource(R.string.error_add_members_failed)
+    val adminRightsRevokedText = stringResource(R.string.admin_rights_revoked)
+    val permissionRevokeFailedText = stringResource(com.dan1eidtj.chat.R.string.error_permission_revoke_failed)
+    val promotedToAdminText = stringResource(R.string.promoted_to_admin)
+    val promoteFailedText = stringResource(R.string.error_promote_failed)
+    val moderatorRightsRevokedText = stringResource(R.string.moderator_rights_revoked)
+    val promotedToModeratorText = stringResource(R.string.promoted_to_moderator)
+    val memberKickedText = stringResource(R.string.member_kicked)
+    val kickFailedText = stringResource(R.string.error_kick_failed)
+    val bannedStatusText = stringResource(R.string.banned_status)
+    val banFailedText = stringResource(com.dan1eidtj.chats.R.string.error_ban_failed)
+
     Scaffold(
         containerColor = MayasTheme.Background,
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -1450,7 +1481,7 @@ fun GroupMembersScreen(
                 title = {
                     Column {
                         Text(
-                            "Участники",
+                            stringResource(R.string.participants_title),
                             color = MayasTheme.TextPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
@@ -1524,7 +1555,7 @@ fun GroupMembersScreen(
                 vm.addMembers(
                     chatId,
                     selectedUids
-                ) { success -> showSnack(if (success) "Участники добавлены" else "Не удалось добавить участников") }
+                ) { success -> showSnack(if (success) membersAddedText else addMembersFailedText) }
             }
         )
     }
@@ -1539,25 +1570,25 @@ fun GroupMembersScreen(
                     member.uid
                 ) { success, error ->
                     showSnack(
-                        if (success) "Права администратора сняты" else (error
-                            ?: "Не удалось снять права")
+                        if (success) adminRightsRevokedText else (error
+                            ?: permissionRevokeFailedText)
                     )
                 }
                 else vm.promoteToAdmin(
                     chatId,
                     member.uid
-                ) { success -> showSnack(if (success) "Назначен администратором" else "Не удалось назначить") }
+                ) { success -> showSnack(if (success) promotedToAdminText else promoteFailedText) }
             },
             onToggleModerator = {
                 memberPendingAction = null
                 if (member.isModerator) vm.demoteModerator(
                     chatId,
                     member.uid
-                ) { success -> showSnack(if (success) "Права модератора сняты" else "Не удалось снять права") }
+                ) { success -> showSnack(if (success) moderatorRightsRevokedText else permissionRevokeFailedText) }
                 else vm.promoteToModerator(
                     chatId,
                     member.uid
-                ) { success -> showSnack(if (success) "Назначен модератором" else "Не удалось назначить") }
+                ) { success -> showSnack(if (success) promotedToModeratorText else promoteFailedText) }
             },
             onKick = { memberPendingAction = null; memberPendingKick = member },
             onBan = { memberPendingAction = null; memberPendingBan = member }
@@ -1568,10 +1599,10 @@ fun GroupMembersScreen(
         AlertDialog(
             onDismissRequest = { memberPendingKick = null },
             containerColor = MayasTheme.Surface, shape = RoundedCornerShape(20.dp),
-            title = { Text("Исключить ${member.name}?", color = MayasTheme.TextPrimary) },
+            title = { Text(stringResource(R.string.kick_member_confirm, member.name), color = MayasTheme.TextPrimary) },
             text = {
                 Text(
-                    "Участник больше не сможет писать в этой группе.",
+                    stringResource(R.string.kick_explanation),
                     color = MayasTheme.TextSecondary
                 )
             },
@@ -1583,18 +1614,18 @@ fun GroupMembersScreen(
                         member.uid
                     ) { success, error ->
                         showSnack(
-                            if (success) "Участник исключён" else (error
-                                ?: "Не удалось исключить")
+                            if (success) memberKickedText else (error
+                                ?: kickFailedText)
                         )
                     }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.ErrorRed)
-                ) { Text("Исключить") }
+                ) { Text(stringResource(R.string.kick)) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     memberPendingKick = null
-                }) { Text("Отмена", color = MayasTheme.TextSecondary) }
+                }) { Text(stringResource(com.dan1eidtj.mayas.ui.R.string.cancel), color = MayasTheme.TextSecondary) }
             }
         )
     }
@@ -1603,10 +1634,10 @@ fun GroupMembersScreen(
         AlertDialog(
             onDismissRequest = { memberPendingBan = null },
             containerColor = MayasTheme.Surface, shape = RoundedCornerShape(20.dp),
-            title = { Text("Забанить ${member.name}?", color = MayasTheme.TextPrimary) },
+            title = { Text(stringResource(R.string.ban_member_confirm, member.name), color = MayasTheme.TextPrimary) },
             text = {
                 Text(
-                    "В отличие от исключения — этот человек больше не сможет вернуться по ссылке или найти канал в поиске.",
+                    stringResource(R.string.ban_explanation_channel),
                     color = MayasTheme.TextSecondary
                 )
             },
@@ -1618,17 +1649,17 @@ fun GroupMembersScreen(
                         member.uid
                     ) { success, error ->
                         showSnack(
-                            if (success) "Забанен" else (error ?: "Не удалось забанить")
+                            if (success) bannedStatusText else (error ?: banFailedText)
                         )
                     }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.ErrorRed)
-                ) { Text("Забанить") }
+                ) { Text(stringResource(R.string.ban)) }
             },
             dismissButton = {
                 TextButton(onClick = { memberPendingBan = null }) {
                     Text(
-                        "Отмена",
+                        stringResource(com.dan1eidtj.mayas.ui.R.string.cancel),
                         color = MayasTheme.TextSecondary
                     )
                 }
@@ -1658,6 +1689,24 @@ fun GroupMembersBottomSheet(
     fun showSnack(text: String) {
         coroutineScope.launch { snackbarHostState.showSnackbar(text) }
     }
+
+    val membersAddedText2 = stringResource(R.string.members_added)
+    val addMembersFailedText2 = stringResource(R.string.error_add_members_failed)
+    val adminRightsRevokedText2 = stringResource(R.string.admin_rights_revoked)
+    val permissionRevokeFailedText2 = stringResource(com.dan1eidtj.chat.R.string.error_permission_revoke_failed)
+    val promotedToAdminText2 = stringResource(R.string.promoted_to_admin)
+    val promoteFailedText2 = stringResource(R.string.error_promote_failed)
+    val moderatorRightsRevokedText2 = stringResource(R.string.moderator_rights_revoked)
+    val promotedToModeratorText2 = stringResource(R.string.promoted_to_moderator)
+    val memberKickedText2 = stringResource(R.string.member_kicked)
+    val kickFailedText2 = stringResource(R.string.error_kick_failed)
+    val bannedStatusText2 = stringResource(R.string.banned_status)
+    val banFailedText2 = stringResource(com.dan1eidtj.chats.R.string.error_ban_failed)
+    val unbannedStatusText2 = stringResource(R.string.unbanned_status)
+    val unbanFailedText2 = stringResource(com.dan1eidtj.chats.R.string.error_unban_failed)
+    val linkCopiedText2 = stringResource(R.string.link_copied)
+    val linkCreatedAndCopiedText2 = stringResource(R.string.link_created_and_copied)
+    val createLinkFailedText2 = stringResource(R.string.error_create_link_failed)
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1699,7 +1748,7 @@ fun GroupMembersBottomSheet(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            "Участники",
+                            stringResource(R.string.participants_title),
                             color = MayasTheme.TextPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
@@ -1719,14 +1768,14 @@ fun GroupMembersBottomSheet(
                         IconButton(onClick = {
                             if (vm.inviteCode != null) {
                                 clipboardManager.setText(AnnotatedString("https://dan1eidt.github.io/mayas-site/join/?code=${vm.inviteCode}"))
-                                showSnack("Ссылка скопирована")
+                                showSnack(linkCopiedText2)
                             } else {
                                 vm.generateInviteLink(chatId) { code ->
                                     if (code != null) {
                                         clipboardManager.setText(AnnotatedString("https://dan1eidt.github.io/mayas-site/join/?code=${vm.inviteCode}"))
-                                        showSnack("Ссылка создана и скопирована")
+                                        showSnack(linkCreatedAndCopiedText2)
                                     } else {
-                                        showSnack("Не удалось создать ссылку")
+                                        showSnack(createLinkFailedText2)
                                     }
                                 }
                             }
@@ -1772,7 +1821,7 @@ fun GroupMembersBottomSheet(
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Text(
-                                            "Заблокированные (${vm.bannedMembers.size})",
+                                            stringResource(R.string.banned_count, vm.bannedMembers.size),
                                             color = MayasTheme.ErrorRed,
                                             fontWeight = FontWeight.Medium,
                                             fontSize = 13.sp
@@ -1813,10 +1862,10 @@ fun GroupMembersBottomSheet(
                                                 vm.unbanMember(
                                                     chatId,
                                                     member.uid
-                                                ) { success -> showSnack(if (success) "Разбанен" else "Не удалось разбанить") }
+                                                ) { success -> showSnack(if (success) unbannedStatusText2 else unbanFailedText2) }
                                             }) {
                                                 Text(
-                                                    "Разбанить",
+                                                    stringResource(R.string.unban),
                                                     color = MayasTheme.Accent,
                                                     fontSize = 13.sp
                                                 )
@@ -1850,7 +1899,7 @@ fun GroupMembersBottomSheet(
                 vm.addMembers(
                     chatId,
                     selectedUids
-                ) { success -> showSnack(if (success) "Участники добавлены" else "Не удалось добавить участников") }
+                ) { success -> showSnack(if (success) membersAddedText2 else addMembersFailedText2) }
             }
         )
     }
@@ -1865,25 +1914,25 @@ fun GroupMembersBottomSheet(
                     member.uid
                 ) { success, error ->
                     showSnack(
-                        if (success) "Права администратора сняты" else (error
-                            ?: "Не удалось снять права")
+                        if (success) adminRightsRevokedText2 else (error
+                            ?: permissionRevokeFailedText2)
                     )
                 }
                 else vm.promoteToAdmin(
                     chatId,
                     member.uid
-                ) { success -> showSnack(if (success) "Назначен администратором" else "Не удалось назначить") }
+                ) { success -> showSnack(if (success) promotedToAdminText2 else promoteFailedText2) }
             },
             onToggleModerator = {
                 memberPendingAction = null
                 if (member.isModerator) vm.demoteModerator(
                     chatId,
                     member.uid
-                ) { success -> showSnack(if (success) "Права модератора сняты" else "Не удалось снять права") }
+                ) { success -> showSnack(if (success) moderatorRightsRevokedText2 else permissionRevokeFailedText2) }
                 else vm.promoteToModerator(
                     chatId,
                     member.uid
-                ) { success -> showSnack(if (success) "Назначен модератором" else "Не удалось назначить") }
+                ) { success -> showSnack(if (success) promotedToModeratorText2 else promoteFailedText2) }
             },
             onKick = { memberPendingAction = null; memberPendingKick = member },
             onBan = { memberPendingAction = null; memberPendingBan = member }
@@ -1894,10 +1943,10 @@ fun GroupMembersBottomSheet(
         AlertDialog(
             onDismissRequest = { memberPendingKick = null },
             containerColor = MayasTheme.Surface, shape = RoundedCornerShape(20.dp),
-            title = { Text("Исключить ${member.name}?", color = MayasTheme.TextPrimary) },
+            title = { Text(stringResource(R.string.kick_member_confirm, member.name), color = MayasTheme.TextPrimary) },
             text = {
                 Text(
-                    "Участник больше не сможет писать в этой группе.",
+                    stringResource(R.string.kick_explanation),
                     color = MayasTheme.TextSecondary
                 )
             },
@@ -1909,18 +1958,18 @@ fun GroupMembersBottomSheet(
                         member.uid
                     ) { success, error ->
                         showSnack(
-                            if (success) "Участник исключён" else (error
-                                ?: "Не удалось исключить")
+                            if (success) memberKickedText2 else (error
+                                ?: kickFailedText2)
                         )
                     }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.ErrorRed)
-                ) { Text("Исключить") }
+                ) { Text(stringResource(R.string.kick)) }
             },
             dismissButton = {
                 TextButton(onClick = {
                     memberPendingKick = null
-                }) { Text("Отмена", color = MayasTheme.TextSecondary) }
+                }) { Text(stringResource(com.dan1eidtj.mayas.ui.R.string.cancel), color = MayasTheme.TextSecondary) }
             }
         )
     }
@@ -1929,10 +1978,10 @@ fun GroupMembersBottomSheet(
         AlertDialog(
             onDismissRequest = { memberPendingBan = null },
             containerColor = MayasTheme.Surface, shape = RoundedCornerShape(20.dp),
-            title = { Text("Забанить ${member.name}?", color = MayasTheme.TextPrimary) },
+            title = { Text(stringResource(R.string.ban_member_confirm, member.name), color = MayasTheme.TextPrimary) },
             text = {
                 Text(
-                    "В отличие от исключения — этот человек больше не сможет вернуться по ссылке или найти канал в поиске.",
+                    stringResource(R.string.ban_explanation_channel),
                     color = MayasTheme.TextSecondary
                 )
             },
@@ -1944,17 +1993,17 @@ fun GroupMembersBottomSheet(
                         member.uid
                     ) { success, error ->
                         showSnack(
-                            if (success) "Забанен" else (error ?: "Не удалось забанить")
+                            if (success) bannedStatusText2 else (error ?: banFailedText2)
                         )
                     }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.ErrorRed)
-                ) { Text("Забанить") }
+                ) { Text(stringResource(R.string.ban)) }
             },
             dismissButton = {
                 TextButton(onClick = { memberPendingBan = null }) {
                     Text(
-                        "Отмена",
+                        stringResource(com.dan1eidtj.mayas.ui.R.string.cancel),
                         color = MayasTheme.TextSecondary
                     )
                 }
@@ -1986,17 +2035,17 @@ private fun GroupMemberRow(
         Column(modifier = Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    member.name + if (isSelf) " (вы)" else "",
+                    member.name + if (isSelf) stringResource(R.string.suffix_you) else "",
                     color = MayasTheme.TextPrimary,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Medium
                 )
                 if (member.isOwner) {
-                    Spacer(Modifier.width(6.dp)); RoleChip("создатель", MayasTheme.GlowGold)
+                    Spacer(Modifier.width(6.dp)); RoleChip(stringResource(R.string.role_owner), MayasTheme.GlowGold)
                 } else if (member.isAdmin) {
-                    Spacer(Modifier.width(6.dp)); RoleChip("админ", MayasTheme.GlowPurple)
+                    Spacer(Modifier.width(6.dp)); RoleChip(stringResource(R.string.role_admin), MayasTheme.GlowPurple)
                 } else if (member.isModerator) {
-                    Spacer(Modifier.width(6.dp)); RoleChip("модератор", MayasTheme.GlowBlue)
+                    Spacer(Modifier.width(6.dp)); RoleChip(stringResource(R.string.role_moderator), MayasTheme.GlowBlue)
                 }
                 if (member.verification.verified) {
                     Spacer(Modifier.width(4.dp)); VerificationBadge(info = member.verification, size = 14.dp)
@@ -2054,7 +2103,7 @@ private fun GroupMemberActionsSheet(
         text = {
             Column {
                 ListItem(
-                    headlineContent = { Text(if (member.isAdmin) "Снять права администратора" else "Назначить администратором") },
+                    headlineContent = { Text(if (member.isAdmin) stringResource(R.string.revoke_admin_rights) else stringResource(R.string.promote_to_admin)) },
                     leadingContent = {
                         Icon(
                             if (member.isAdmin) Icons.Default.RemoveModerator else Icons.Default.AdminPanelSettings,
@@ -2065,7 +2114,7 @@ private fun GroupMemberActionsSheet(
                     modifier = Modifier.clickable { onToggleAdmin() }
                 )
                 ListItem(
-                    headlineContent = { Text(if (member.isModerator) "Снять права модератора" else "Назначить модератором") },
+                    headlineContent = { Text(if (member.isModerator) stringResource(R.string.revoke_moderator_rights) else stringResource(R.string.promote_to_moderator)) },
                     leadingContent = {
                         Icon(
                             if (member.isModerator) Icons.Default.VerifiedUser else Icons.Default.Shield,
@@ -2076,7 +2125,7 @@ private fun GroupMemberActionsSheet(
                     modifier = Modifier.clickable { onToggleModerator() }
                 )
                 ListItem(
-                    headlineContent = { Text("Исключить из группы") },
+                    headlineContent = { Text(stringResource(R.string.kick_from_group)) },
                     leadingContent = {
                         Icon(
                             Icons.Default.PersonRemove,
@@ -2089,7 +2138,7 @@ private fun GroupMemberActionsSheet(
                 ListItem(
                     headlineContent = {
                         Text(
-                            "Забанить навсегда",
+                            stringResource(R.string.ban_forever),
                             color = MayasTheme.ErrorRed
                         )
                     },
@@ -2107,7 +2156,7 @@ private fun GroupMemberActionsSheet(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text(
-                    "Закрыть",
+                    stringResource(R.string.close),
                     color = MayasTheme.TextSecondary
                 )
             }
@@ -2139,13 +2188,13 @@ private fun AddMembersDialog(
         onDismissRequest = onDismiss,
         containerColor = MayasTheme.Surface,
         shape = RoundedCornerShape(20.dp),
-        title = { Text("Добавить участников", color = MayasTheme.TextPrimary) },
+        title = { Text(stringResource(R.string.add_members), color = MayasTheme.TextPrimary) },
         text = {
             Column {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = { Text("Поиск по @username") },
+                    placeholder = { Text(stringResource(R.string.search_by_username)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -2164,7 +2213,7 @@ private fun AddMembersDialog(
                         )
 
                         results.isEmpty() -> Text(
-                            "Никого не нашли",
+                            stringResource(R.string.nobody_found),
                             color = MayasTheme.TextSecondary,
                             modifier = Modifier.align(Alignment.Center)
                         )
@@ -2216,12 +2265,12 @@ private fun AddMembersDialog(
                 onClick = { onConfirm(selected.toList()) },
                 enabled = selected.isNotEmpty(),
                 colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.Accent)
-            ) { Text("Добавить (${selected.size})") }
+            ) { Text(stringResource(R.string.add_count, selected.size)) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(
-                    "Отмена",
+                    stringResource(com.dan1eidtj.mayas.ui.R.string.cancel),
                     color = MayasTheme.TextSecondary
                 )
             }

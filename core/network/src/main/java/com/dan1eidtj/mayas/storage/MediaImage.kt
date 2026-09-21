@@ -2,9 +2,11 @@ package com.dan1eidtj.mayas.storage
 
 import android.util.Log
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -23,34 +25,18 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun rememberResolvedAvatarUrl(rawUrl: String?, useCustomAvatar: Boolean): String? {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val resolved by androidx.compose.runtime.produceState<String?>(
-        initialValue = null,
+        initialValue = if (useCustomAvatar) MediaFileCache.cachedModel(context, rawUrl) else null,
         rawUrl,
         useCustomAvatar
     ) {
         value = when {
             !useCustomAvatar || rawUrl.isNullOrBlank() -> null
-            rawUrl.startsWith("http") -> rawUrl
-            else -> B2MediaClient.resolveDownloadUrl(rawUrl)
+            else -> MediaFileCache.resolveModel(context, rawUrl)
         }
     }
     return resolved
-}
-
-private object PresignedUrlCache {
-    private data class Entry(val url: String, val expiresAtMs: Long)
-    private val map = mutableMapOf<String, Entry>()
-
-    private const val SAFETY_MARGIN_MS = 60_000L
-
-    fun get(key: String): String? {
-        val entry = map[key] ?: return null
-        return if (System.currentTimeMillis() < entry.expiresAtMs - SAFETY_MARGIN_MS) entry.url else null
-    }
-
-    fun put(key: String, url: String, ttlMs: Long = 15 * 60_000L) {
-        map[key] = Entry(url, System.currentTimeMillis() + ttlMs)
-    }
 }
 
 @Composable
@@ -61,48 +47,38 @@ fun B2Image(
     contentScale: ContentScale = ContentScale.Fit,
     mediaClient: B2MediaClient = remember { B2MediaClient() },
 ) {
-    var resolvedUrl by remember(key) { mutableStateOf(key?.let { PresignedUrlCache.get(it) }) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var model by remember(key) { mutableStateOf(MediaFileCache.cachedModel(context, key)) }
     var error by remember(key) { mutableStateOf(false) }
+    var attempt by remember(key) { mutableStateOf(0) }
+    var manual by remember(key) { mutableStateOf(false) }
+    var blocked by remember(key) { mutableStateOf(false) }
 
-    LaunchedEffect(key) {
-        if (key.isNullOrBlank()) return@LaunchedEffect
-        val cached = PresignedUrlCache.get(key)
-        if (cached != null) {
-            resolvedUrl = cached
+    LaunchedEffect(key, attempt, manual) {
+        if (key.isNullOrBlank() || model != null) return@LaunchedEffect
+        error = false
+        blocked = false
+        var resolved = runCatching { MediaFileCache.resolveModel(context, key, auto = !manual) }.getOrNull()
+        if (resolved == null && !manual && MediaCachePrefs.autoDownloadBlocked(context)) {
+            blocked = true
             return@LaunchedEffect
         }
-        runCatching { mediaClient.refreshDownloadUrl(key) }
-            .onSuccess { url ->
-                PresignedUrlCache.put(key, url)
-                resolvedUrl = url
-            }
-            .onFailure { e ->
-
-
-
-                if (e is kotlinx.coroutines.CancellationException) throw e
-
-                delay(1500)
-                runCatching { mediaClient.refreshDownloadUrl(key) }
-                    .onSuccess { url -> PresignedUrlCache.put(key, url); resolvedUrl = url }
-                    .onFailure { retryError ->
-                        if (retryError is kotlinx.coroutines.CancellationException) throw retryError
-                        error = true
-                    }
-            }
+        if (resolved == null) {
+            delay(1500)
+            resolved = runCatching { MediaFileCache.resolveModel(context, key, auto = !manual) }.getOrNull()
+        }
+        if (resolved == null) error = true else model = resolved
     }
+
     Box(modifier = modifier.heightIn(min = 120.dp)) {
         when {
-            resolvedUrl != null -> AsyncImage(
-                model = ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
-                    .data(resolvedUrl)
+            model != null -> AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(model)
+                    .crossfade(220)
                     .listener(
                         onError = { _, result ->
-                            Log.e(
-                                "B2Image",
-                                "Coil не смог загрузить картинку по key=$key, url=$resolvedUrl",
-                                result.throwable
-                            )
+                            Log.e("B2Image", "Coil не смог загрузить картинку key=$key", result.throwable)
                         }
                     )
                     .build(),
@@ -110,10 +86,24 @@ fun B2Image(
                 modifier = Modifier.fillMaxSize(),
                 contentScale = contentScale,
             )
+            blocked -> Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.DarkGray)
+                    .clickable { manual = true },
+                contentAlignment = Alignment.Center
+            ) {
+                androidx.compose.material3.Icon(
+                    androidx.compose.material.icons.Icons.Default.Download,
+                    contentDescription = null,
+                    tint = Color.White
+                )
+            }
             error -> Box(
                 Modifier
                     .fillMaxSize()
                     .background(Color.DarkGray)
+                    .clickable { attempt++ }
             )
             else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()

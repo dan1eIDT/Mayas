@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.dan1eidtj.mayas
 
@@ -31,6 +32,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -38,6 +40,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
+import com.dan1eidtj.profile.R
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import java.util.*
@@ -50,14 +53,14 @@ data class PremiumFeature(
 )
 
 enum class SubscriptionPlan(
-    val title: String,
-    val priceText: String,
-    val periodText: String,
-    val badge: String? = null,
+    val titleRes: Int,
+    val priceRes: Int,
+    val periodRes: Int,
+    val badgeRes: Int? = null,
     val isBestValue: Boolean = false
 ) {
-    MONTHLY("1 Месяц", "59 ₽", "/ мес", null, false),
-    ANNUAL("1 Год", "499 ₽", "/ год", "ВЫГОДА 30%", true)
+    MONTHLY(R.string.plan_1_month, R.string.price_59, R.string.per_month_suffix, null, false),
+    ANNUAL(R.string.plan_1_year, R.string.price_499, R.string.per_year_suffix, R.string.savings_30_badge, true)
 }
 
 
@@ -114,12 +117,14 @@ fun PremiumScreen(
         }
     }
 
+    val cancelRequestSentText = stringResource(R.string.cancel_request_sent)
+
     if (isPremium) {
 
         ManageSubscriptionScreen(
             onBack = onBack,
             onCancelSubscription = {
-                Toast.makeText(vm.getApplication(), "Запрос на отмену отправлен", Toast.LENGTH_SHORT).show()
+                Toast.makeText(vm.getApplication(), cancelRequestSentText, Toast.LENGTH_SHORT).show()
             }
         )
     } else {
@@ -144,10 +149,10 @@ private fun PaywallScreen(
 
     val features = remember {
         listOf(
-            PremiumFeature(Icons.Default.Palette, "Градиентный ник", "Ваш ник переливается уникальным стильным градиентом"),
-            PremiumFeature(Icons.Default.Verified, "Золотая галочка", "Особая золотая отметка VIP-подписчика"),
-            PremiumFeature(Icons.Default.AutoAwesome, "Эксклюзивные рамки", "Анимированные и редкие рамки вокруг профиля"),
-            PremiumFeature(Icons.Default.Bolt, "Приоритетная поддержка", "Ваши обращения обрабатываются в первую очередь")
+            PremiumFeature(Icons.Default.Palette, context.getString(R.string.gradient_nick_perk), context.getString(R.string.perk_gradient_nick_desc)),
+            PremiumFeature(Icons.Default.Verified, context.getString(R.string.gold_checkmark_perk), context.getString(R.string.perk_vip_mark_desc)),
+            PremiumFeature(Icons.Default.AutoAwesome, context.getString(R.string.exclusive_frames_perk), context.getString(R.string.perk_animated_frames)),
+            PremiumFeature(Icons.Default.Bolt, context.getString(R.string.priority_support_perk), context.getString(R.string.perk_priority_support_desc))
         )
     }
 
@@ -177,9 +182,9 @@ private fun PaywallScreen(
                         .padding(16.dp)
                 ) {
                     GoldCtaButton(
-                        text = "ОФОРМИТЬ MAYAS+ • ${selectedPlan.priceText}",
+                        text = stringResource(R.string.subscribe_mayas_plus, stringResource(selectedPlan.priceRes)),
                         onClick = {
-                            Toast.makeText(context, "Переход к оплате ${selectedPlan.title}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, context.getString(R.string.proceeding_to_payment, context.getString(selectedPlan.titleRes)), Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -218,7 +223,7 @@ private fun PaywallScreen(
                     )
 
                     Spacer(Modifier.height(24.dp))
-                    SectionLabel("ЧТО ВХОДИТ В ПОДПИСКУ")
+                    SectionLabel(stringResource(R.string.whats_included_section))
                     Spacer(Modifier.height(12.dp))
                 }
 
@@ -254,7 +259,7 @@ fun ManageSubscriptionScreen(
         containerColor = Color.Transparent,
         topBar = {
             TopAppBar(
-                title = { Text("Управление MAYAS+", color = Color.White, fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.manage_mayas_plus), color = Color.White, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, tint = Color.White)
@@ -287,35 +292,35 @@ fun ManageSubscriptionScreen(
                     ActiveSubscriptionCard()
                     Spacer(Modifier.height(24.dp))
 
-                    SectionLabel("АКТИВНЫЕ ПРИВИЛЕГИИ")
+                    SectionLabel(stringResource(R.string.active_perks_section))
                     Spacer(Modifier.height(12.dp))
 
-                    ActivePerkRow("Градиентный никнейм", "Активен в профиле")
-                    ActivePerkRow("Золотой значок VIP", "Отображается у всех")
-                    ActivePerkRow("Доступ к премиум рамкам", "Открыты все рамки")
+                    ActivePerkRow(stringResource(R.string.gradient_nickname_perk), stringResource(R.string.active_in_profile))
+                    ActivePerkRow(stringResource(R.string.gold_vip_badge_perk), stringResource(R.string.shown_to_everyone))
+                    ActivePerkRow(stringResource(R.string.perk_premium_frames_access), stringResource(R.string.perk_all_frames_unlocked))
 
                     Spacer(Modifier.height(32.dp))
-                    SectionLabel("НАСТРОЙКИ И ДЕЙСТВИЯ")
+                    SectionLabel(stringResource(R.string.settings_and_actions_section))
                     Spacer(Modifier.height(12.dp))
 
                     ManageOptionTile(
                         icon = Icons.Default.CreditCard,
-                        title = "Способ оплаты",
-                        subtitle = "Пока недоступно.",
+                        title = stringResource(R.string.payment_method_label),
+                        subtitle = stringResource(R.string.not_available_yet),
                         onClick = {}
                     )
 
                     ManageOptionTile(
                         icon = Icons.Default.HelpOutline,
-                        title = "Служба поддержки",
-                        subtitle = "Пока недоступно.",
+                        title = stringResource(R.string.support_service_label),
+                        subtitle = stringResource(R.string.not_available_yet),
                         onClick = {}
                     )
 
                     ManageOptionTile(
                         icon = Icons.Default.Cancel,
-                        title = "Отменить подписку",
-                        subtitle = "Пока недоступно.",
+                        title = stringResource(R.string.cancel_subscription),
+                        subtitle = stringResource(R.string.not_available_yet),
                         isDangerous = true,
                         onClick = { showCancelDialog = true }
                     )
@@ -328,10 +333,10 @@ fun ManageSubscriptionScreen(
         AlertDialog(
             onDismissRequest = { showCancelDialog = false },
             containerColor = Color(0xFF1E1A29),
-            title = { Text("Отменить MAYAS+?", color = Color.White, fontWeight = FontWeight.Bold) },
+            title = { Text(stringResource(R.string.cancel_mayas_plus_confirm), color = Color.White, fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    "Вы потеряете градиентный ник, золотую иконку и эксклюзивные рамки по окончании текущего периода.",
+                    stringResource(R.string.cancel_sub_warning),
                     color = MayasTheme.TextSecondary
                 )
             },
@@ -342,7 +347,7 @@ fun ManageSubscriptionScreen(
                         onCancelSubscription()
                     }
                 ) {
-                    Text("Да, отменить", color = Color(0xFFE74C3C), fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.yes_cancel), color = Color(0xFFE74C3C), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
@@ -350,7 +355,7 @@ fun ManageSubscriptionScreen(
                     onClick = { showCancelDialog = false },
                     colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.GlowGold)
                 ) {
-                    Text("Оставить подписку", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.keep_subscription), color = Color.Black, fontWeight = FontWeight.Bold)
                 }
             }
         )
@@ -393,7 +398,7 @@ private fun ActiveSubscriptionCard() {
                         .background(MayasTheme.GlowGold)
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
-                    Text("АКТИВНА", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(stringResource(R.string.active_badge), color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold)
                 }
             }
 
@@ -406,12 +411,12 @@ private fun ActiveSubscriptionCard() {
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
-                    Text("Следующее списание", color = MayasTheme.TextSecondary, fontSize = 12.sp)
-                    Text("Никогда", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.next_billing_date), color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                    Text(stringResource(R.string.never_label), color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 }
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("Тариф", color = MayasTheme.TextSecondary, fontSize = 12.sp)
-                    Text("59 ₽ / месяц", color = MayasTheme.GlowGold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.plan_label), color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                    Text(stringResource(R.string.price_59_per_month), color = MayasTheme.GlowGold, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -444,25 +449,25 @@ private fun PlanSelectionSection(
                     .padding(16.dp)
             ) {
                 Column {
-                    if (plan.badge != null) {
+                    if (plan.badgeRes != null) {
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(MayasTheme.GlowGold)
                                 .padding(horizontal = 8.dp, vertical = 2.dp)
                         ) {
-                            Text(plan.badge, color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
+                            Text(stringResource(plan.badgeRes), color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.ExtraBold)
                         }
                         Spacer(Modifier.height(8.dp))
                     } else {
                         Spacer(Modifier.height(18.dp))
                     }
 
-                    Text(plan.title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(stringResource(plan.titleRes), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
                     Row(verticalAlignment = Alignment.Bottom) {
-                        Text(plan.priceText, color = MayasTheme.GlowGold, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
-                        Text(plan.periodText, color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                        Text(stringResource(plan.priceRes), color = MayasTheme.GlowGold, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                        Text(stringResource(plan.periodRes), color = MayasTheme.TextSecondary, fontSize = 12.sp)
                     }
                 }
             }
@@ -582,7 +587,7 @@ fun PremiumHeader() {
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Раскройте весь потенциал своего профиля",
+            stringResource(R.string.unlock_full_potential),
             textAlign = TextAlign.Center,
             fontSize = 14.sp,
             color = MayasTheme.TextSecondary
@@ -691,7 +696,7 @@ fun PromoCodeSection(
                     Icon(Icons.Default.ConfirmationNumber, contentDescription = null, tint = MayasTheme.Accent, modifier = Modifier.size(16.dp))
                 }
                 Spacer(Modifier.width(10.dp))
-                Text("Есть промокод?", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(stringResource(R.string.have_promo_code), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
 
             Spacer(Modifier.height(10.dp))
@@ -702,7 +707,7 @@ fun PromoCodeSection(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = RoundedCornerShape(14.dp),
-                placeholder = { Text("Введите промокод", fontSize = 13.sp) },
+                placeholder = { Text(stringResource(R.string.enter_promo_code), fontSize = 13.sp) },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = MayasTheme.GlowGold,
                     unfocusedBorderColor = MayasTheme.TextSecondary.copy(alpha = 0.2f),

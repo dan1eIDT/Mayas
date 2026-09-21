@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas.feature.chat
 
 import android.widget.Toast
@@ -33,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,6 +48,7 @@ import com.dan1eidtj.mayas.feature.ChatVM
 import com.dan1eidtj.mayas.storage.B2MediaClient
 import com.dan1eidtj.mayas.storage.ImageCompressor
 import com.dan1eidtj.mayas.storage.MediaKind
+import com.dan1eidtj.chat.R
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
 
@@ -105,7 +108,7 @@ fun CreateGroupScreen(
                     )
                     groupAvatarKey = key
                 } catch (e: Exception) {
-                    Toast.makeText(context, "Не удалось загрузить фото", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.error_avatar_upload_failed), Toast.LENGTH_SHORT).show()
                 } finally {
                     isUploadingAvatar = false
                 }
@@ -216,14 +219,14 @@ fun CreateGroupScreen(
                 title = {
                     Column {
                         Text(
-                            text = if (step == 1) "Новая группа" else "Название группы",
+                            text = if (step == 1) stringResource(R.string.new_group) else stringResource(R.string.group_name),
                             color = MayasTheme.TextPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
                         )
                         if (step == 1 && selectedUsers.isNotEmpty()) {
                             Text(
-                                text = "${selectedUsers.size} из ${contacts.size} выбрано",
+                                text = stringResource(R.string.selected_out_of, selectedUsers.size, contacts.size),
                                 color = MayasTheme.TextSecondary,
                                 fontSize = 13.sp
                             )
@@ -248,7 +251,7 @@ fun CreateGroupScreen(
                             step = 2
                         } else {
                             if (groupTitle.isBlank()) {
-                                Toast.makeText(context, "Введите название группы", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.enter_group_name), Toast.LENGTH_SHORT).show()
                                 return@FloatingActionButton
                             }
                             val selectedIds = selectedUsers.map { it.uid }
@@ -306,8 +309,8 @@ fun CreateGroupScreen(
                                     .fillMaxWidth()
                                     .padding(horizontal = 16.dp, vertical = 8.dp)
                                     .clip(RoundedCornerShape(20.dp)),
-                                placeholder = { Text("Поиск участников...", color = MayasTheme.TextSecondary) },
-                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Поиск", tint = MayasTheme.TextSecondary) },
+                                placeholder = { Text(stringResource(R.string.search_participants), color = MayasTheme.TextSecondary) },
+                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search_content_description), tint = MayasTheme.TextSecondary) },
                                 singleLine = true,
                                 shape = RoundedCornerShape(20.dp),
                                 colors = TextFieldDefaults.colors(
@@ -497,14 +500,14 @@ fun CreateGroupScreen(
                                     TextField(
                                         value = groupTitle,
                                         onValueChange = { if (it.length <= 32) groupTitle = it },
-                                        placeholder = { Text("Название группы", color = MayasTheme.TextSecondary) },
+                                        placeholder = { Text(stringResource(R.string.group_name), color = MayasTheme.TextSecondary) },
                                         singleLine = true,
                                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
                                         colors = groupTgTextFieldColors(),
                                         modifier = Modifier.fillMaxWidth()
                                     )
                                     Text(
-                                        text = "${groupTitle.length}/32",
+                                        text = stringResource(R.string.char_count_32, groupTitle.length),
                                         color = MayasTheme.TextSecondary,
                                         fontSize = 11.sp,
                                         modifier = Modifier.fillMaxWidth().padding(start = 16.dp),
@@ -516,13 +519,13 @@ fun CreateGroupScreen(
                             TextField(
                                 value = groupDescription,
                                 onValueChange = { groupDescription = it },
-                                placeholder = { Text("Описание группы (необязательно)", color = MayasTheme.TextSecondary) },
+                                placeholder = { Text(stringResource(R.string.group_description_optional), color = MayasTheme.TextSecondary) },
                                 maxLines = 3,
                                 colors = groupTgTextFieldColors(),
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
                             )
 
-                            GroupSectionLabel("ТИП ГРУППЫ")
+                            GroupSectionLabel(stringResource(R.string.group_type))
 
                             Column(
                                 modifier = Modifier
@@ -533,22 +536,22 @@ fun CreateGroupScreen(
                             ) {
                                 GroupPrivacyRow(
                                     icon = Icons.Outlined.Public,
-                                    title = "Публичная группа",
-                                    subtitle = "Виден в поиске, вступить может любой",
+                                    title = stringResource(R.string.public_group),
+                                    subtitle = stringResource(R.string.public_group_desc),
                                     selected = isPublic,
                                     onClick = { isPublic = true }
                                 )
                                 HorizontalDivider(color = MayasTheme.TextSecondary.copy(alpha = 0.1f), modifier = Modifier.padding(start = 60.dp))
                                 GroupPrivacyRow(
                                     icon = Icons.Outlined.Lock,
-                                    title = "Приватная группа",
-                                    subtitle = "Присоединиться можно только по приглашению",
+                                    title = stringResource(R.string.private_group),
+                                    subtitle = stringResource(R.string.private_group_desc),
                                     selected = !isPublic,
                                     onClick = { isPublic = false }
                                 )
                             }
 
-                            GroupSectionLabel("УЧАСТНИКИ")
+                            GroupSectionLabel(stringResource(R.string.members_label))
 
                             Row(
                                 modifier = Modifier
@@ -562,7 +565,7 @@ fun CreateGroupScreen(
                                 Icon(Icons.Outlined.People, null, tint = MayasTheme.GlowPurple, modifier = Modifier.size(20.dp))
                                 Spacer(Modifier.width(12.dp))
                                 Text(
-                                    text = "Участников: ${selectedUsers.size}",
+                                    text = stringResource(R.string.members_count, selectedUsers.size),
                                     color = MayasTheme.TextPrimary,
                                     fontSize = 15.sp
                                 )

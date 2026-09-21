@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 @file:OptIn(ExperimentalMaterial3Api::class)
 
 package com.dan1eidtj.mayas.feature.chats.ChatListScreen
@@ -47,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,6 +61,7 @@ import com.dan1eidtj.data.ContactsSyncResult
 import com.dan1eidtj.data.MatchedContact
 import com.dan1eidtj.data.UnregisteredContact
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
+import com.dan1eidtj.chats.R
 import kotlinx.coroutines.launch
 
 private enum class ContactsSyncState { IDLE, NO_PERMISSION, LOADING, DONE, ERROR }
@@ -83,6 +86,7 @@ fun ContactsSyncScreen(
     var state by remember { mutableStateOf(ContactsSyncState.IDLE) }
     var result by remember { mutableStateOf(ContactsSyncResult(emptyList(), emptyList())) }
     var errorMessage by remember { mutableStateOf("") }
+    val readContactsFailedMessage = stringResource(R.string.error_read_contacts_failed)
 
     fun startSync() {
         state = ContactsSyncState.LOADING
@@ -91,7 +95,7 @@ fun ContactsSyncScreen(
                 result = ContactsRepository.syncDeviceContacts(context, myUid)
                 state = ContactsSyncState.DONE
             } catch (e: Exception) {
-                errorMessage = e.localizedMessage ?: "Не удалось прочитать контакты"
+                errorMessage = e.localizedMessage ?: readContactsFailedMessage
                 state = ContactsSyncState.ERROR
             }
         }
@@ -119,10 +123,10 @@ fun ContactsSyncScreen(
         containerColor = MayasTheme.Background,
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Контакты в Маяс", color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.contacts_in_mayas_title), color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад", tint = MayasTheme.TextPrimary)
+                        Icon(Icons.Default.ArrowBack, contentDescription = stringResource(com.dan1eidtj.mayas.ui.R.string.back), tint = MayasTheme.TextPrimary)
                     }
                 },
                 colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
@@ -147,7 +151,7 @@ fun ContactsSyncScreen(
                     ) {
                         CircularProgressIndicator(color = MayasTheme.GlowPurple)
                         Spacer(Modifier.height(12.dp))
-                        Text("Ищем твоих друзей в Маяс…", color = MayasTheme.TextSecondary, fontSize = 13.sp)
+                        Text(stringResource(R.string.searching_friends), color = MayasTheme.TextSecondary, fontSize = 13.sp)
                     }
                 }
 
@@ -165,20 +169,20 @@ fun ContactsSyncScreen(
                         )
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            "Нужен доступ к контактам",
+                            stringResource(R.string.contacts_permission_needed),
                             color = MayasTheme.TextPrimary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         )
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "Маяс сравнит номера из твоей адресной книги с зарегистрированными юзерами — сами номера контактов никуда не выгружаются",
+                            stringResource(R.string.contacts_permission_desc),
                             color = MayasTheme.TextSecondary,
                             fontSize = 13.sp
                         )
                         Spacer(Modifier.height(20.dp))
                         Button(onClick = { permissionLauncher.launch(Manifest.permission.READ_CONTACTS) }) {
-                            Text("Разрешить доступ")
+                            Text(stringResource(R.string.allow_access))
                         }
                     }
                 }
@@ -189,11 +193,11 @@ fun ContactsSyncScreen(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        Text("Что-то пошло не так", color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.something_went_wrong), color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(6.dp))
                         Text(errorMessage, color = MayasTheme.TextSecondary, fontSize = 13.sp)
                         Spacer(Modifier.height(16.dp))
-                        Button(onClick = { startSync() }) { Text("Повторить") }
+                        Button(onClick = { startSync() }) { Text(stringResource(R.string.retry_action)) }
                     }
                 }
 
@@ -211,10 +215,10 @@ fun ContactsSyncScreen(
                                 modifier = Modifier.size(48.dp)
                             )
                             Spacer(Modifier.height(12.dp))
-                            Text("В контактах никого с номером", color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.no_contacts_with_number), color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "В адресной книге не нашлось ни одного номера",
+                                stringResource(R.string.no_numbers_found_in_address_book),
                                 color = MayasTheme.TextSecondary,
                                 fontSize = 13.sp
                             )
@@ -226,7 +230,7 @@ fun ContactsSyncScreen(
                         ) {
                             if (result.onMayas.isNotEmpty()) {
                                 item(key = "header_on_mayas") {
-                                    SectionHeader("Уже в Маяс — ${result.onMayas.size}")
+                                    SectionHeader(stringResource(R.string.already_on_mayas_count, result.onMayas.size))
                                 }
                                 items(result.onMayas, key = { "u_" + it.uid }) { contact ->
                                     ContactMatchRow(
@@ -237,9 +241,11 @@ fun ContactsSyncScreen(
                             }
                             if (result.notOnMayas.isNotEmpty()) {
                                 item(key = "header_not_on_mayas") {
-                                    SectionHeader("Ещё не в Маяс — ${result.notOnMayas.size}")
+                                    SectionHeader(stringResource(R.string.not_on_mayas_count, result.notOnMayas.size))
                                 }
                                 items(result.notOnMayas, key = { "n_" + it.rawPhone }) { contact ->
+                                    val inviteShareText = stringResource(R.string.invite_share_text)
+                                    val inviteActionLabel = stringResource(R.string.invite_action)
                                     UnregisteredContactRow(
                                         contact = contact,
                                         onInvite = {
@@ -248,10 +254,10 @@ fun ContactsSyncScreen(
                                                     type = "text/plain"
                                                     putExtra(
                                                         Intent.EXTRA_TEXT,
-                                                        "Заходи в Маяс, го общаться - https://dan1eidt.github.io/mayas-site/"
+                                                        inviteShareText
                                                     )
                                                 }
-                                                context.startActivity(Intent.createChooser(shareIntent, "Пригласить"))
+                                                context.startActivity(Intent.createChooser(shareIntent, inviteActionLabel))
                                             } catch (e: Exception) {}
                                         }
                                     )
@@ -308,14 +314,14 @@ private fun UnregisteredContactRow(contact: UnregisteredContact, onInvite: () ->
                 fontSize = 15.sp
             )
             Text(
-                text = "Не в Маяс",
+                text = stringResource(R.string.not_on_mayas_label),
                 color = MayasTheme.TextSecondary,
                 fontSize = 12.sp
             )
         }
 
         Text(
-            text = "Пригласить",
+            text = stringResource(R.string.invite_action),
             color = MayasTheme.GlowPurple,
             fontWeight = FontWeight.Medium,
             fontSize = 13.sp,

@@ -63,4 +63,7 @@ interface ChatDao {
 
     @Query("SELECT * FROM chats_table WHERE chatId = :chatId")
     suspend fun getChatById(chatId: String): ChatEntity?
+
+    @Query("SELECT * FROM chats_table ORDER BY updatedAt DESC")
+    suspend fun getChatsOnce(): List<ChatEntity>
 }

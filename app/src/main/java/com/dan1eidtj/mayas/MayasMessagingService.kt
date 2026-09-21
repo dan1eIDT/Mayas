@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
+import com.dan1eidtj.chats.R
 import com.dan1eidtj.data.NotificationPrefs
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.messaging.FirebaseMessagingService
@@ -60,7 +61,7 @@ class MayasMessagingService : FirebaseMessagingService() {
         val chatId = data["chatId"] ?: return
         val senderId = data["senderId"].orEmpty()
         val senderName = data["senderName"] ?: "MAYAS"
-        val text = data["text"] ?: "Новое сообщение"
+        val text = data["text"] ?: getString(R.string.message_generic)
         val isGroup = data["isGroup"] == "true"
 
         if (isGroup && !NotificationPrefs.groupMessagesEnabled(applicationContext)) return
@@ -117,7 +118,7 @@ class MayasMessagingService : FirebaseMessagingService() {
         if (showPreview) {
             val sender = Person.Builder().setName(senderName).setKey(senderId.ifBlank { senderName }).build()
             val me = Person.Builder()
-                .setName(FirebaseAuth.getInstance().currentUser?.displayName ?: "Я")
+                .setName(FirebaseAuth.getInstance().currentUser?.displayName ?: getString(R.string.me))
                 .build()
 
             val history = ChatNotificationStore.appendMessage(
@@ -144,11 +145,11 @@ class MayasMessagingService : FirebaseMessagingService() {
         } else {
             builder
                 .setContentTitle(senderName)
-                .setContentText("Новое сообщение")
+                .setContentText(getString(com.dan1eidtj.mayas.R.string.new_message_notification_text))
                 .setPublicVersion(
                     NotificationCompat.Builder(this, channelId)
                         .setSmallIcon(android.R.drawable.sym_action_chat)
-                        .setContentTitle("Новое сообщение")
+                        .setContentTitle(getString(com.dan1eidtj.mayas.R.string.new_message_notification_text))
                         .build()
                 )
         }
@@ -159,7 +160,7 @@ class MayasMessagingService : FirebaseMessagingService() {
 
     private fun buildReplyAction(chatId: String, notificationId: Int, senderName: String): NotificationCompat.Action {
         val remoteInput = RemoteInput.Builder(MayasNotifications.KEY_REPLY_TEXT)
-            .setLabel("Сообщение")
+            .setLabel(getString(R.string.message_generic))
             .build()
 
         val replyIntent = Intent(this, NotificationReplyReceiver::class.java).apply {
@@ -175,7 +176,7 @@ class MayasMessagingService : FirebaseMessagingService() {
         )
 
         return NotificationCompat.Action.Builder(
-            android.R.drawable.ic_menu_send, "Ответить", replyPendingIntent
+            android.R.drawable.ic_menu_send, getString(com.dan1eidtj.chat.R.string.reply), replyPendingIntent
         )
             .addRemoteInput(remoteInput)
             .setAllowGeneratedReplies(true)
@@ -196,7 +197,7 @@ class MayasMessagingService : FirebaseMessagingService() {
         )
 
         return NotificationCompat.Action.Builder(
-            android.R.drawable.ic_menu_close_clear_cancel, "Прочитано", markReadPendingIntent
+            android.R.drawable.ic_menu_close_clear_cancel, getString(com.dan1eidtj.mayas.R.string.mark_read_action), markReadPendingIntent
         )
             .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
             .setShowsUserInterface(false)
@@ -211,7 +212,7 @@ class MayasMessagingService : FirebaseMessagingService() {
             .setSmallIcon(android.R.drawable.sym_action_chat)
             .setStyle(
                 NotificationCompat.InboxStyle()
-                    .setSummaryText("Новые сообщения")
+                    .setSummaryText(getString(com.dan1eidtj.mayas.R.string.new_messages_summary))
             )
             .setGroup(MayasNotifications.GROUP_KEY_MESSAGES)
             .setGroupSummary(true)
@@ -232,10 +233,10 @@ class MayasMessagingService : FirebaseMessagingService() {
             if (manager?.getNotificationChannel(channelId) == null) {
                 val channel = NotificationChannel(
                     channelId,
-                    "Messages",
+                    getString(com.dan1eidtj.mayas.R.string.messages_channel_name),
                     NotificationManager.IMPORTANCE_HIGH
                 ).apply {
-                    description = "Уведомления о новых сообщениях в Маяс"
+                    description = getString(com.dan1eidtj.mayas.R.string.messages_channel_description)
                     enableVibration(vibrateOn)
                     if (!soundOn) setSound(null, null)
                 }

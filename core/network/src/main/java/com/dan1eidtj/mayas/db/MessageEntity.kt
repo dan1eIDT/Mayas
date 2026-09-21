@@ -20,8 +20,18 @@ data class MessageEntity(
 
     val readBy: List<String> = emptyList(),
     val mediaUrl: String? = null,
+    val mediaUrls: List<String> = emptyList(),
+    val mediaTypes: List<String> = emptyList(),
     val isPremium: Boolean = false,
     val messageStyle: String? = null,
+    val messageEffect: String? = null,
+    val circleVideoUrl: String? = null,
+    val circleVideoDuration: Int = 0,
 
-    val forwardedFromName: String? = null
+    val forwardedFromName: String? = null,
+
+    val isEdited: Boolean = false,
+    val editedAt: Long? = null,
+
+    val payloadJson: String = ""
 )

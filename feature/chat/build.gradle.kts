@@ -74,6 +74,15 @@ dependencies {
     implementation(libs.coil)
     implementation(libs.coil.compose)
 
+    // кружочки: камера + видеоплеер
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.video)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.ui)
+
     // supabase
     implementation(platform(libs.supabase.bom))
     implementation(libs.supabase.postgrest.kt)

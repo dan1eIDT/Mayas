@@ -38,5 +38,6 @@ data class ChatEntity(
     val partnerVerifiedBy: String? = null,
     val partnerRank: Int = 0,
     val typingText: String? = null,
-    val isSavedMessages: Boolean = false
+    val isSavedMessages: Boolean = false,
+    val draftText: String? = null
 )

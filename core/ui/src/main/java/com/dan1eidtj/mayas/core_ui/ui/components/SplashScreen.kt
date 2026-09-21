@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas.core_ui.ui.components
 
 import androidx.compose.animation.core.*
@@ -17,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -27,20 +29,29 @@ import java.util.Calendar
 
 @Composable
 fun SplashScreen() {
+    val day8MarchText = stringResource(R.string.event_8_march)
+    val dan1eYtBdayText = stringResource(R.string.event_dan1eyt_bday)
+    val dan1eBdayText = stringResource(R.string.event_dan1e_bday)
+    val victoryDayText = stringResource(R.string.event_victory_day)
+    val summerText = stringResource(R.string.event_summer)
+    val newYearText = stringResource(R.string.event_new_year)
+    val xDayText = stringResource(R.string.event_x_day)
+    val tryTgText = stringResource(R.string.event_try_tg)
+
     val eventData = remember {
         val calendar = Calendar.getInstance()
         val day = calendar.get(Calendar.DAY_OF_MONTH)
         val month = calendar.get(Calendar.MONTH) + 1
 
         when {
-            day == 26 && month == 5 -> "dan1eYT С ДР!" to Color(0xFFFF0000)
-            day == 14 && month == 2 -> "dan1e С ДР!" to Color(0xFFFF4081)
-            day == 9 && month == 5 -> "С ПОБЕДОЙ!" to Color(0xFFFF9C06)
-            day == 1 && month == 6 -> "ЛЕТО!" to Color(0xFF00FFC2)
-            day == 8 && month == 3 -> "8 февраля." to Color(0xFFFF4081)
-            day == 31 && month == 12 -> "С НОВЫМ ГОДОМ!" to Color(0xFF00B1FF)
-            day == 30 && month == 7 -> "День Х" to Color(0xFF00FF19)
-            else -> "Также попробуйте TG!" to MayasTheme.RedAccent
+            day == 26 && month == 5 -> dan1eYtBdayText to Color(0xFFFF0000)
+            day == 14 && month == 2 -> dan1eBdayText to Color(0xFFFF4081)
+            day == 9 && month == 5 -> victoryDayText to Color(0xFFFF9C06)
+            day == 1 && month == 6 -> summerText to Color(0xFF00FFC2)
+            day == 8 && month == 3 -> day8MarchText to Color(0xFFFF4081)
+            day == 31 && month == 12 -> newYearText to Color(0xFF00B1FF)
+            day == 30 && month == 7 -> xDayText to Color(0xFF00FF19)
+            else -> tryTgText to MayasTheme.RedAccent
         }
     }
 
@@ -139,7 +150,7 @@ fun SplashScreen() {
             Spacer(Modifier.height(20.dp))
 
             Text(
-                "МАЯС",
+                stringResource(R.string.app_name_caps_splash),
                 fontSize = 28.sp,
                 fontWeight = FontWeight.ExtraLight,
                 letterSpacing = 12.sp,

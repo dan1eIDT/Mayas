@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 dan1eIDT */
 package com.dan1eidtj.mayas.feature
 
 import android.content.Context
@@ -8,44 +9,73 @@ import java.io.File
 class VoiceRecorder(private val context: Context) {
     private var recorder: MediaRecorder? = null
     private var outputFile: File? = null
+    private var recording = false
 
+    val isActive: Boolean
+        get() = recording
 
-    private var isRecording = false
+    fun start(): Boolean {
+        if (recording) return true
+        val file = File(context.cacheDir, "temp_voice_${System.currentTimeMillis()}.m4a")
+        outputFile = file
 
-    fun start() {
-        if (isRecording) return
-        outputFile = File(context.cacheDir, "temp_voice_${System.currentTimeMillis()}.m4a")
-
-        recorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            MediaRecorder(context)
-        } else {
-            @Suppress("DEPRECATION")
-            MediaRecorder()
-        }.apply {
-            setAudioSource(MediaRecorder.AudioSource.MIC)
-            setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            setOutputFile(outputFile?.absolutePath)
-            prepare()
-            start()
+        return try {
+            val newRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                MediaRecorder(context)
+            } else {
+                @Suppress("DEPRECATION")
+                MediaRecorder()
+            }
+            recorder = newRecorder
+            newRecorder.apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioSamplingRate(44100)
+                setAudioEncodingBitRate(64000)
+                setOutputFile(file.absolutePath)
+                prepare()
+                start()
+            }
+            recording = true
+            true
+        } catch (e: Exception) {
+            releaseQuietly()
+            file.delete()
+            outputFile = null
+            false
         }
-        isRecording = true
     }
 
     fun stop(): File? {
-        if (!isRecording) return null
-        isRecording = false
+        if (!recording) return null
+        recording = false
+        val file = outputFile
+        outputFile = null
         return try {
             recorder?.apply {
                 stop()
                 release()
             }
             recorder = null
-            outputFile
+            file
         } catch (e: Exception) {
-            recorder?.release()
-            recorder = null
+            releaseQuietly()
+            file?.delete()
             null
         }
+    }
+
+    fun cancel() {
+        stop()?.delete()
+    }
+
+    private fun releaseQuietly() {
+        try {
+            recorder?.release()
+        } catch (_: Exception) {
+        }
+        recorder = null
+        recording = false
     }
 }

@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas.feature.chat
 
 import android.widget.Toast
@@ -23,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -36,6 +38,7 @@ import com.dan1eidtj.mayas.feature.ChatVM
 import com.dan1eidtj.mayas.storage.B2MediaClient
 import com.dan1eidtj.mayas.storage.ImageCompressor
 import com.dan1eidtj.mayas.storage.MediaKind
+import com.dan1eidtj.chat.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -78,7 +81,7 @@ fun CreateChannelScreen(
                     )
                     channelAvatarKey = key
                 } catch (e: Exception) {
-                    Toast.makeText(context, "Не удалось загрузить фото", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.error_avatar_upload_failed), Toast.LENGTH_SHORT).show()
                 } finally {
                     isUploadingAvatar = false
                 }
@@ -111,7 +114,7 @@ fun CreateChannelScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MayasTheme.Surface),
                 title = {
                     Text(
-                        text = "Новый канал",
+                        text = stringResource(R.string.new_channel),
                         color = MayasTheme.TextPrimary,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp
@@ -221,14 +224,14 @@ fun CreateChannelScreen(
                     TextField(
                         value = channelTitle,
                         onValueChange = { if (it.length <= 32) channelTitle = it },
-                        placeholder = { Text("Название канала", color = MayasTheme.TextSecondary) },
+                        placeholder = { Text(stringResource(R.string.channel_name), color = MayasTheme.TextSecondary) },
                         singleLine = true,
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 18.sp, fontWeight = FontWeight.SemiBold),
                         colors = tgTextFieldColors(),
                         modifier = Modifier.fillMaxWidth()
                     )
                     Text(
-                        text = "${channelTitle.length}/32",
+                        text = stringResource(R.string.char_count_32, channelTitle.length),
                         color = MayasTheme.TextSecondary,
                         fontSize = 11.sp,
                         modifier = Modifier.fillMaxWidth().padding(start = 16.dp),
@@ -240,19 +243,19 @@ fun CreateChannelScreen(
             TextField(
                 value = channelDescription,
                 onValueChange = { channelDescription = it },
-                placeholder = { Text("Описание (необязательно)", color = MayasTheme.TextSecondary) },
+                placeholder = { Text(stringResource(R.string.description_optional), color = MayasTheme.TextSecondary) },
                 maxLines = 3,
                 colors = tgTextFieldColors(),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
             )
             Text(
-                text = "Опишите тему канала — это увидят подписчики в профиле",
+                text = stringResource(R.string.channel_description_hint),
                 color = MayasTheme.TextSecondary,
                 fontSize = 12.sp,
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp)
             )
 
-            SectionLabel("ТИП КАНАЛА")
+            SectionLabel(stringResource(R.string.channel_type))
 
             Column(
                 modifier = Modifier
@@ -263,23 +266,23 @@ fun CreateChannelScreen(
             ) {
                 PrivacyTypeRow(
                     icon = Icons.Outlined.Public,
-                    title = "Публичный канал",
-                    subtitle = "Виден в поиске, подписаться может любой",
+                    title = stringResource(R.string.public_channel),
+                    subtitle = stringResource(R.string.public_channel_desc),
                     selected = isPublic,
                     onClick = { isPublic = true }
                 )
                 HorizontalDivider(color = MayasTheme.TextSecondary.copy(alpha = 0.1f), modifier = Modifier.padding(start = 60.dp))
                 PrivacyTypeRow(
                     icon = Icons.Outlined.Lock,
-                    title = "Приватный канал",
-                    subtitle = "Присоединиться можно только по ссылке-приглашению",
+                    title = stringResource(R.string.private_channel),
+                    subtitle = stringResource(R.string.private_channel_desc),
                     selected = !isPublic,
                     onClick = { isPublic = false }
                 )
             }
 
             if (isPublic) {
-                SectionLabel("ССЫЛКА-ПРИГЛАШЕНИЕ")
+                SectionLabel(stringResource(R.string.invite_link))
 
                 Row(
                     modifier = Modifier
@@ -310,11 +313,11 @@ fun CreateChannelScreen(
 
                 Text(
                     text = when (usernameStatus) {
-                        UsernameStatus.EMPTY -> "Минимум 5 символов: латиница, цифры, _"
-                        UsernameStatus.CHECKING -> "Проверяем..."
-                        UsernameStatus.AVAILABLE -> "Ссылка свободна ✓"
-                        UsernameStatus.TAKEN -> "Этот username уже занят"
-                        UsernameStatus.INVALID -> "Минимум 5 символов: латиница, цифры, _"
+                        UsernameStatus.EMPTY -> stringResource(R.string.username_hint)
+                        UsernameStatus.CHECKING -> stringResource(R.string.checking)
+                        UsernameStatus.AVAILABLE -> stringResource(R.string.username_available)
+                        UsernameStatus.TAKEN -> stringResource(R.string.username_taken)
+                        UsernameStatus.INVALID -> stringResource(R.string.username_hint)
                     },
                     color = when (usernameStatus) {
                         UsernameStatus.AVAILABLE -> Color(0xFF4CAF50)

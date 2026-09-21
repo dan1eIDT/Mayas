@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas.core.ui.theme
 
 import androidx.compose.foundation.background
@@ -35,25 +36,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.dan1eidtj.mayas.settings.R
 
 
 private data class EditableField(
-    val label: String,
+    val labelResId: Int,
     val get: (MayasColorScheme) -> Color,
     val set: (MayasColorScheme, Color) -> MayasColorScheme,
 )
 
 private val editableFields = listOf(
-    EditableField("Фон чата", { it.background }, { s, c -> s.copy(background = c) }),
-    EditableField("Моё сообщение", { it.bubbleMine }, { s, c -> s.copy(bubbleMine = c) }),
-    EditableField("Чужое сообщение", { it.bubbleOther }, { s, c -> s.copy(bubbleOther = c) }),
-    EditableField("Акцентный цвет", { it.accent }, { s, c -> s.copy(accent = c) }),
-    EditableField("Текст (основной)", { it.textPrimary }, { s, c -> s.copy(textPrimary = c) }),
-    EditableField("Текст (вторичный)", { it.textSecondary }, { s, c -> s.copy(textSecondary = c) }),
-    EditableField("Поверхность (карточки, поле ввода)", { it.surface }, { s, c -> s.copy(surface = c) }),
-    EditableField("Ссылки", { it.linkColor }, { s, c -> s.copy(linkColor = c) }),
+    EditableField(R.string.chat_background_field, { it.background }, { s, c -> s.copy(background = c) }),
+    EditableField(R.string.my_message_field, { it.bubbleMine }, { s, c -> s.copy(bubbleMine = c) }),
+    EditableField(R.string.other_message_field, { it.bubbleOther }, { s, c -> s.copy(bubbleOther = c) }),
+    EditableField(R.string.accent_color_field, { it.accent }, { s, c -> s.copy(accent = c) }),
+    EditableField(R.string.text_primary_field, { it.textPrimary }, { s, c -> s.copy(textPrimary = c) }),
+    EditableField(R.string.text_secondary_field, { it.textSecondary }, { s, c -> s.copy(textSecondary = c) }),
+    EditableField(R.string.surface_field, { it.surface }, { s, c -> s.copy(surface = c) }),
+    EditableField(com.dan1eidtj.chat.R.string.links_label, { it.linkColor }, { s, c -> s.copy(linkColor = c) }),
 )
 
 
@@ -70,7 +73,7 @@ fun ThemeEditorScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Редактор темы") },
+                title = { Text(stringResource(R.string.theme_editor_title)) },
             )
         },
         bottomBar = {
@@ -79,7 +82,7 @@ fun ThemeEditorScreen(
                     onClick = { onSave(scheme) },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Сохранить тему")
+                    Text(stringResource(R.string.save_theme_action))
                 }
             }
         }
@@ -97,14 +100,14 @@ fun ThemeEditorScreen(
                 item { Spacer(modifier = Modifier.height(8.dp)) }
                 items(editableFields) { field ->
                     ColorFieldRow(
-                        label = field.label,
+                        label = stringResource(field.labelResId),
                         color = field.get(scheme),
                         onClick = { editingField = field }
                     )
                 }
                 item {
                     Text(
-                        text = "Темы между устройствами не синхронизируются.",
+                        text = stringResource(R.string.themes_not_synced_note),
                         color = MayasTheme.TextSecondary,
                         modifier = Modifier.padding(top = 12.dp, start = 4.dp, end = 4.dp)
                     )
@@ -116,7 +119,7 @@ fun ThemeEditorScreen(
 
     editingField?.let { field ->
         ColorPickerDialog(
-            title = field.label,
+            title = stringResource(field.labelResId),
             initialColor = field.get(scheme),
             onDismiss = { editingField = null },
             onConfirm = { newColor ->
@@ -195,7 +198,7 @@ private fun ChatPreview(scheme: MayasColorScheme) {
                     .background(scheme.bubbleOther)
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                Text(text = "Скажите если не секрет..Кто ваш любимый персонаж?", color = scheme.textPrimary)
+                Text(text = stringResource(R.string.preview_msg_1), color = scheme.textPrimary)
             }
         }
 
@@ -209,7 +212,7 @@ private fun ChatPreview(scheme: MayasColorScheme) {
                     .background(scheme.bubbleMine)
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-            Text(text = "Ооо.. Вы запишите , конешно это Фолли!", color = Color.White)
+            Text(text = stringResource(R.string.preview_msg_2), color = Color.White)
             }
         }
 
@@ -222,7 +225,7 @@ private fun ChatPreview(scheme: MayasColorScheme) {
                     .background(scheme.bubbleOther)
                     .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                Text(text = "Емать. Справа пожалуйста остановите.", color = scheme.textPrimary)
+                Text(text = stringResource(R.string.preview_msg_3), color = scheme.textPrimary)
             }
         }
 
@@ -240,13 +243,13 @@ private fun ChatPreview(scheme: MayasColorScheme) {
             TextField(
                 value = previewText,
                 onValueChange = { previewText = it },
-                placeholder = { Text("Сообщение", color = scheme.textSecondary) },
+                placeholder = { Text(stringResource(R.string.preview_message_placeholder), color = scheme.textSecondary) },
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = {  }) {
                 Icon(
                     imageVector = Icons.Filled.Send,
-                    contentDescription = "Отправить",
+                    contentDescription = stringResource(com.dan1eidtj.mayas.ui.R.string.send),
                     tint = scheme.accent
                 )
             }

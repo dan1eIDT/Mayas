@@ -21,6 +21,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -33,9 +34,22 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.dan1eidtj.data.UserSession
 import com.dan1eidtj.data.AdminConfig
-import com.dan1eidtj.data.cache.CacheStats
-import com.dan1eidtj.data.cache.ImageCacheManager
-import com.dan1eidtj.data.cache.formatCacheSize
+import com.dan1eidtj.data.cache.AppCacheManager
+import com.dan1eidtj.data.cache.CacheBreakdown
+import com.dan1eidtj.mayas.core_ui.emoji.EmojiGlyphStyled
+import com.dan1eidtj.mayas.core_ui.emoji.EmojiStyle
+import com.dan1eidtj.mayas.core_ui.emoji.EmojiStyleState
+import com.dan1eidtj.mayas.storage.MediaCachePrefs
+import com.dan1eidtj.mayas.storage.MediaFileCache
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.mayas.feature.auth.AuthVM
 import com.google.firebase.auth.FirebaseAuth
@@ -89,15 +103,15 @@ fun SettingsScreen(
                 switchPassword = ""
                 switchError = null
             },
-            title = { Text("Переключить аккаунт", color = MayasTheme.TextPrimary) },
+            title = { Text(stringResource(R.string.switch_account_title), color = MayasTheme.TextPrimary) },
             text = {
                 Column {
-                    Text("Введите пароль для ${accountToSwitch?.email}", color = MayasTheme.TextSecondary, fontSize = 14.sp)
+                    Text(stringResource(R.string.switch_password_prompt, accountToSwitch?.email.orEmpty()), color = MayasTheme.TextSecondary, fontSize = 14.sp)
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = switchPassword,
                         onValueChange = { switchPassword = it; switchError = null },
-                        label = { Text("Пароль") },
+                        label = { Text(stringResource(R.string.password_label)) },
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         isError = switchError != null,
                         supportingText = { switchError?.let { Text(it, color = MayasTheme.ErrorRed) } },
@@ -112,7 +126,11 @@ fun SettingsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        vm.switchAccount(accountToSwitch!!.email, switchPassword) {
+                        vm.switchAccount(
+                            accountToSwitch!!.email,
+                            switchPassword,
+                            onError = { switchError = it }
+                        ) {
                             showPasswordDialog = false
                             switchPassword = ""
                             onBack()
@@ -122,12 +140,12 @@ fun SettingsScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.Accent)
                 ) {
                     if (vm.isLoading) CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
-                    else Text("Войти")
+                    else Text(stringResource(R.string.sign_in_action))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showPasswordDialog = false }) {
-                    Text("Отмена", color = MayasTheme.TextSecondary)
+                    Text(stringResource(R.string.storage_cancel), color = MayasTheme.TextSecondary)
                 }
             },
             containerColor = MayasTheme.Surface
@@ -135,13 +153,14 @@ fun SettingsScreen(
     }
 
 
-    val currentUserName = vm.userData["name"] ?: vm.userData["username"] ?: "Пользователь Mayas"
+    val currentUserName = vm.userData["name"] ?: vm.userData["username"] ?: stringResource(R.string.default_user_name)
     val currentUserAvatar = vm.userData["avatarUrl"] ?: vm.userData["photoUrl"] ?: ""
 
     if (showAccountSheet) {
         AccountSwitchSheet(
             sessions = vm.activeSessions,
             currentUid = vm.user?.uid,
+            currentDeviceCount = vm.remoteSessions.size,
             onSelect = { session ->
                 if (session.uid != vm.user?.uid) {
                     accountToSwitch = session
@@ -154,7 +173,16 @@ fun SettingsScreen(
             },
             onAddAccount = {
                 showAccountSheet = false
-                vm.addNewAccount(onNavigateToAuth)
+                vm.addNewAccount(
+                    onNavigateToAuth = onNavigateToAuth,
+                    onLimitReached = {
+                        android.widget.Toast.makeText(
+                            context,
+                            context.getString(com.dan1eidtj.auth.R.string.auth_account_limit_reached),
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                )
             },
             onDismiss = { showAccountSheet = false }
         )
@@ -164,7 +192,7 @@ fun SettingsScreen(
         containerColor = MayasTheme.Background,
         topBar = {
             TopAppBar(
-                title = { Text("Настройки", color = MayasTheme.TextPrimary) },
+                title = { Text(stringResource(R.string.settings_title), color = MayasTheme.TextPrimary) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = MayasTheme.TextPrimary)
@@ -189,258 +217,198 @@ fun SettingsScreen(
                     isPremium = vm.isPremium,
                     onHeaderClick = { showAccountSheet = true }
                 )
-                Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(20.dp))
             }
 
-
-            item { SettingsSectionTitle("АККАУНТ") }
+            item { SettingsSectionTitle(stringResource(R.string.settings_section_account)) }
 
             item {
                 val premiumSubtitle = if (vm.isPremium) {
                     val dateStr = vm.premiumUntil?.let {
                         val sdf = SimpleDateFormat("dd.MM.yyyy", Locale.getDefault())
-                        " до ${sdf.format(it.toDate())}"
+                        stringResource(R.string.settings_premium_until, sdf.format(it.toDate()))
                     } ?: ""
-                    "Подписка активна$dateStr"
+                    stringResource(R.string.settings_premium_active, dateStr)
                 } else {
-                    "Получить эксклюзивные фишки"
+                    stringResource(R.string.settings_premium_get)
                 }
 
-                SettingsItem(
-                    icon = Icons.Default.AutoAwesome,
-                    title = "MAYAS+",
-                    subtitle = premiumSubtitle,
-                    iconColor = MayasTheme.GlowGold,
-                    onClick = onNavigateToPremium
-                )
-            }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.ShoppingBag,
-                    title = "Магазин Маяса",
-                    subtitle = "Уникальные стили и фишки",
-                    iconColor = MayasTheme.GlowGold,
-                    onClick = onNavigateToShop
-                )
-            }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.People,
-                    title = "Управление аккаунтами",
-                    subtitle = "Активных профилей: ${vm.activeSessions.size}",
-                    onClick = { showAccountSheet = true }
-                )
-            }
-
-
-            item { Spacer(Modifier.height(24.dp)) }
-            item { SettingsSectionTitle("НАСТРОЙКИ") }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Brush,
-                    title = "Кастомизация чата",
-                    subtitle = "Фоны, пузыри, эффекты",
-                    iconColor = MayasTheme.Accent,
-                    onClick = onNavigateToCustomization
-                )
-            }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Palette,
-                    title = "Темы",
-                    subtitle = "Тёмная, светлая или своя тема",
-                    iconColor = MayasTheme.Accent,
-                    onClick = onNavigateToThemes
-                )
-            }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Dashboard,
-                    title = "Настройка интерфейса",
-                    subtitle = "Расположение элементов главного экрана и панели",
-                    iconColor = MayasTheme.Accent,
-                    onClick = { showInterfaceSettings = !showInterfaceSettings }
-                )
-            }
-
-            item {
-                AnimatedVisibility(
-                    visible = showInterfaceSettings,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    InterfaceSettingsSubSection(
-                        onNavigateToHomeScreenLayout = onNavigateToHomeScreenLayout,
-                        onNavigateToSidebarLayout = onNavigateToSidebarLayout
+                SettingsGroup {
+                    SettingsRow(
+                        icon = Icons.Default.AutoAwesome,
+                        iconBackground = MayasTheme.GlowGold,
+                        title = "MAYAS+",
+                        subtitle = premiumSubtitle,
+                        showDivider = false,
+                        onClick = onNavigateToPremium
+                    )
+                    SettingsRow(
+                        icon = Icons.Default.ShoppingBag,
+                        iconBackground = MayasTheme.GlowOrange,
+                        title = stringResource(R.string.settings_shop_title),
+                        subtitle = stringResource(R.string.settings_shop_subtitle),
+                        onClick = onNavigateToShop
+                    )
+                    SettingsRow(
+                        icon = Icons.Default.People,
+                        iconBackground = MayasTheme.GlowSky,
+                        title = stringResource(R.string.settings_accounts_title),
+                        subtitle = stringResource(R.string.settings_accounts_subtitle, vm.activeSessions.size),
+                        onClick = { showAccountSheet = true }
                     )
                 }
+                Spacer(Modifier.height(20.dp))
             }
 
-            if (AdminConfig.isAdmin(FirebaseAuth.getInstance().currentUser?.uid)) {
-                item {
-                    SettingsItem(
-                        icon = Icons.Default.Storefront,
-                        title = "Админка магазина",
-                        subtitle = "Добавление и редактирование товаров",
-                        iconColor = MayasTheme.Accent,
-                        onClick = onNavigateToAdminShop
+            item { SettingsSectionTitle(stringResource(R.string.settings_section_settings)) }
+
+            item {
+                SettingsGroup {
+                    SettingsRow(
+                        icon = Icons.Default.Brush,
+                        iconBackground = MayasTheme.GlowPink,
+                        title = stringResource(R.string.settings_customization_title),
+                        subtitle = stringResource(R.string.settings_customization_subtitle),
+                        showDivider = false,
+                        onClick = onNavigateToCustomization
                     )
-                }
-            }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Chat,
-                    title = "Настройки чатов",
-                    subtitle = "Фон, размер текста, стикеры",
-                    onClick = { showChatSettings = !showChatSettings }
-                )
-            }
-
-            item {
-                AnimatedVisibility(
-                    visible = showChatSettings,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    ChatSettingsSubSection(vm)
-                }
-            }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Lock,
-                    title = "Конфиденциальность",
-                    subtitle = "Кто видит мой номер и статус",
-                    onClick = { showPrivacy = !showPrivacy }
-                )
-            }
-
-            item {
-                AnimatedVisibility(
-                    visible = showPrivacy,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    PrivacySubSection(vm, onNavigateToPremium)
-                }
-            }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.PhoneAndroid,
-                    title = "Активные сессии",
-                    subtitle = "${vm.remoteSessions.size} устройств(а) залогинено",
-                    onClick = { showActiveSessions = !showActiveSessions }
-                )
-            }
-
-            item {
-                AnimatedVisibility(
-                    visible = showActiveSessions,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    ActiveSessionsSubSection(vm)
-                }
-            }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Security,
-                    title = "Безопасность",
-                    subtitle = "Пароль, сессии, удаление аккаунта",
-                    onClick = { showSecurity = !showSecurity }
-                )
-            }
-
-            item {
-                AnimatedVisibility(
-                    visible = showSecurity,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    SecuritySubSection(vm, onNavigateToAuth)
-                }
-            }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Notifications,
-                    title = "Уведомления и звуки",
-                    subtitle = "Настроить пуши",
-                    onClick = onNavigateToNotificationSettings
-                )
-            }
-
-
-            item { Spacer(Modifier.height(24.dp)) }
-            item { SettingsSectionTitle("ПРИЛОЖЕНИЕ") }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Storage,
-                    title = "Хранилище данных",
-                    subtitle = "Что и сколько занимает кэш изображений",
-                    onClick = { showStorage = !showStorage }
-                )
-            }
-
-            item {
-                AnimatedVisibility(
-                    visible = showStorage,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
-                ) {
-                    StorageSubSection()
-                }
-            }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Info,
-                    title = "О приложении",
-                    subtitle = "Версия Mayas $versionName",
-                    onClick = onNavigateToCredits
-                )
-            }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.Gavel,
-                    title = "Пользовательское соглашение Маяс",
-                    subtitle = "Условия использования приложения",
-                    onClick = { uriHandler.openUri(MAYAS_TOS_URL) }
-                )
-            }
-
-            item {
-                SettingsItem(
-                    icon = Icons.Default.ExitToApp,
-                    title = "Выйти",
-                    subtitle = "Завершить текущую сессию",
-                    iconColor = Color.Red,
-                    onClick = {
-                        vm.logout()
-                        onBack()
+                    SettingsRow(
+                        icon = Icons.Default.Palette,
+                        iconBackground = MayasTheme.GlowPurple,
+                        title = stringResource(R.string.settings_themes_title),
+                        subtitle = stringResource(R.string.settings_themes_subtitle),
+                        onClick = onNavigateToThemes
+                    )
+                    SettingsRow(
+                        icon = Icons.Default.Dashboard,
+                        iconBackground = Color(0xFF26A69A),
+                        title = stringResource(R.string.settings_interface_title),
+                        subtitle = stringResource(R.string.settings_interface_subtitle),
+                        expanded = showInterfaceSettings,
+                        onClick = { showInterfaceSettings = !showInterfaceSettings }
+                    )
+                    SettingsExpandable(showInterfaceSettings) {
+                        InterfaceSettingsSubSection(
+                            onNavigateToHomeScreenLayout = onNavigateToHomeScreenLayout,
+                            onNavigateToSidebarLayout = onNavigateToSidebarLayout
+                        )
                     }
-                )
+                    if (AdminConfig.isAdmin(FirebaseAuth.getInstance().currentUser?.uid)) {
+                        SettingsRow(
+                            icon = Icons.Default.Storefront,
+                            iconBackground = MayasTheme.GlowOrange,
+                            title = stringResource(R.string.settings_admin_title),
+                            subtitle = stringResource(R.string.settings_admin_subtitle),
+                            onClick = onNavigateToAdminShop
+                        )
+                    }
+                    SettingsRow(
+                        icon = Icons.Default.Chat,
+                        iconBackground = MayasTheme.Accent,
+                        title = stringResource(R.string.settings_chats_title),
+                        subtitle = stringResource(R.string.settings_chats_subtitle),
+                        expanded = showChatSettings,
+                        onClick = { showChatSettings = !showChatSettings }
+                    )
+                    SettingsExpandable(showChatSettings) { ChatSettingsSubSection(vm) }
+                    SettingsRow(
+                        icon = Icons.Default.Lock,
+                        iconBackground = Color(0xFF34C759),
+                        title = stringResource(R.string.settings_privacy_title),
+                        subtitle = stringResource(R.string.settings_privacy_subtitle),
+                        expanded = showPrivacy,
+                        onClick = { showPrivacy = !showPrivacy }
+                    )
+                    SettingsExpandable(showPrivacy) { PrivacySubSection(vm, onNavigateToPremium) }
+                    SettingsRow(
+                        icon = Icons.Default.PhoneAndroid,
+                        iconBackground = MayasTheme.GlowOrange,
+                        title = stringResource(R.string.settings_sessions_title),
+                        subtitle = stringResource(R.string.settings_sessions_subtitle, vm.remoteSessions.size),
+                        expanded = showActiveSessions,
+                        onClick = { showActiveSessions = !showActiveSessions }
+                    )
+                    SettingsExpandable(showActiveSessions) { ActiveSessionsSubSection(vm) }
+                    SettingsRow(
+                        icon = Icons.Default.Security,
+                        iconBackground = Color(0xFF8E8E93),
+                        title = stringResource(R.string.settings_security_title),
+                        subtitle = stringResource(R.string.settings_security_subtitle),
+                        expanded = showSecurity,
+                        onClick = { showSecurity = !showSecurity }
+                    )
+                    SettingsExpandable(showSecurity) { SecuritySubSection(vm, onNavigateToAuth) }
+                    SettingsRow(
+                        icon = Icons.Default.Notifications,
+                        iconBackground = MayasTheme.ErrorRed,
+                        title = stringResource(R.string.settings_notifications_title),
+                        subtitle = stringResource(R.string.settings_notifications_subtitle),
+                        onClick = onNavigateToNotificationSettings
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
+            }
+
+            item { SettingsSectionTitle(stringResource(R.string.settings_section_app)) }
+
+            item {
+                SettingsGroup {
+                    SettingsRow(
+                        icon = Icons.Default.Storage,
+                        iconBackground = Color(0xFF30B0C7),
+                        title = stringResource(R.string.settings_storage_title),
+                        subtitle = stringResource(R.string.settings_storage_subtitle),
+                        expanded = showStorage,
+                        showDivider = false,
+                        onClick = { showStorage = !showStorage }
+                    )
+                    SettingsExpandable(showStorage) { StorageSubSection() }
+                    SettingsRow(
+                        icon = Icons.Default.Info,
+                        iconBackground = MayasTheme.GlowSky,
+                        title = stringResource(R.string.settings_about_title),
+                        subtitle = stringResource(R.string.settings_about_subtitle, versionName),
+                        onClick = onNavigateToCredits
+                    )
+                    SettingsRow(
+                        icon = Icons.Default.Gavel,
+                        iconBackground = Color(0xFF8E8E93),
+                        title = stringResource(R.string.settings_tos_title),
+                        subtitle = stringResource(R.string.settings_tos_subtitle),
+                        onClick = { uriHandler.openUri(MAYAS_TOS_URL) }
+                    )
+                }
+                Spacer(Modifier.height(20.dp))
             }
 
             item {
-                Spacer(Modifier.height(32.dp))
+                SettingsGroup {
+                    SettingsRow(
+                        icon = Icons.Default.ExitToApp,
+                        iconBackground = MayasTheme.ErrorRed,
+                        title = stringResource(R.string.settings_logout_title),
+                        subtitle = stringResource(R.string.settings_logout_subtitle),
+                        showDivider = false,
+                        titleColor = MayasTheme.ErrorRed,
+                        showChevron = false,
+                        onClick = {
+                            vm.logout()
+                            onBack()
+                        }
+                    )
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(28.dp))
                 Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     Text(
-                        "Mayas for Android v$versionName",
+                        stringResource(R.string.settings_footer, versionName),
                         color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
                         fontSize = 12.sp
                     )
                 }
+                Spacer(Modifier.height(16.dp))
             }
         }
     }
@@ -454,41 +422,175 @@ fun UserProfileHeader(
     isPremium: Boolean,
     onHeaderClick: () -> Unit
 ) {
-    Surface(
-        onClick = onHeaderClick,
-        color = MayasTheme.Surface,
-        shape = RoundedCornerShape(24.dp),
-        modifier = Modifier.fillMaxWidth()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(onClick = onHeaderClick)
+            .padding(vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(
-            modifier = Modifier.padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        val ringModifier = if (isPremium) {
+            Modifier
+                .size(104.dp)
+                .border(
+                    width = 3.dp,
+                    brush = Brush.sweepGradient(listOf(MayasTheme.GlowGold, MayasTheme.GlowOrange, MayasTheme.GlowGold)),
+                    shape = CircleShape
+                )
+                .padding(5.dp)
+        } else {
+            Modifier
+                .size(104.dp)
+                .padding(4.dp)
+        }
+        Box(modifier = ringModifier, contentAlignment = Alignment.Center) {
             AsyncImage(
                 model = avatarUrl.ifEmpty { "https://ui-avatars.com/api/?name=$name" },
                 contentDescription = null,
                 modifier = Modifier
-                    .size(64.dp)
+                    .fillMaxSize()
                     .clip(CircleShape),
                 contentScale = ContentScale.Crop
             )
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = name,
-                        color = if (isPremium) MayasTheme.GlowGold else MayasTheme.TextPrimary,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    if (isPremium) {
-                        Spacer(Modifier.width(6.dp))
-                        Icon(Icons.Default.WorkspacePremium, null, tint = MayasTheme.GlowGold, modifier = Modifier.size(20.dp))
-                    }
-                }
-                Text(text = email, color = MayasTheme.TextSecondary, fontSize = 14.sp)
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = name,
+                color = if (isPremium) MayasTheme.GlowGold else MayasTheme.TextPrimary,
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (isPremium) {
+                Spacer(Modifier.width(6.dp))
+                Icon(Icons.Default.WorkspacePremium, null, tint = MayasTheme.GlowGold, modifier = Modifier.size(20.dp))
             }
-            Icon(Icons.Default.SwapHoriz, null, tint = MayasTheme.Accent)
+        }
+        Text(text = email, color = MayasTheme.TextSecondary, fontSize = 14.sp)
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(MayasTheme.Accent.copy(alpha = 0.14f))
+                .padding(horizontal = 14.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.SwapHoriz, null, tint = MayasTheme.Accent, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(
+                stringResource(R.string.settings_switch_account),
+                color = MayasTheme.Accent,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(MayasTheme.Surface),
+        content = content
+    )
+}
+
+@Composable
+fun SettingsRow(
+    icon: ImageVector,
+    iconBackground: Color,
+    title: String,
+    subtitle: String?,
+    onClick: () -> Unit,
+    showDivider: Boolean = true,
+    expanded: Boolean? = null,
+    titleColor: Color = MayasTheme.TextPrimary,
+    showChevron: Boolean = true,
+    enabled: Boolean = true,
+    trailing: (@Composable () -> Unit)? = null
+) {
+    if (showDivider) {
+        HorizontalDivider(
+            modifier = Modifier.padding(start = 68.dp),
+            thickness = 0.5.dp,
+            color = MayasTheme.TextSecondary.copy(alpha = 0.15f)
+        )
+    }
+    val chevronRotation by animateFloatAsState(
+        targetValue = if (expanded == true) 90f else 0f,
+        animationSpec = tween(200),
+        label = "settingsChevron"
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick)
+            .alpha(if (enabled) 1f else 0.5f)
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(iconBackground),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, null, tint = Color.White, modifier = Modifier.size(20.dp))
+        }
+        Spacer(Modifier.width(16.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                title,
+                color = titleColor,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (!subtitle.isNullOrEmpty()) {
+                Text(
+                    subtitle,
+                    color = MayasTheme.TextSecondary,
+                    fontSize = 13.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+        if (trailing != null) {
+            Spacer(Modifier.width(8.dp))
+            trailing()
+        } else if (showChevron) {
+            Icon(
+                Icons.Default.ChevronRight,
+                null,
+                tint = MayasTheme.TextSecondary.copy(alpha = 0.4f),
+                modifier = Modifier.graphicsLayer { rotationZ = chevronRotation }
+            )
+        }
+    }
+}
+
+@Composable
+fun SettingsExpandable(visible: Boolean, content: @Composable () -> Unit) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(180)) + expandVertically(tween(220)),
+        exit = fadeOut(tween(120)) + shrinkVertically(tween(200))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+        ) {
+            content()
         }
     }
 }
@@ -498,6 +600,7 @@ fun UserProfileHeader(
 fun AccountSwitchSheet(
     sessions: List<UserSession>,
     currentUid: String?,
+    currentDeviceCount: Int? = null,
     onSelect: (UserSession) -> Unit,
     onDeleteSession: (String) -> Unit,
     onAddAccount: () -> Unit,
@@ -514,7 +617,7 @@ fun AccountSwitchSheet(
                 .padding(bottom = 32.dp)
         ) {
             Text(
-                text = "Ваши аккаунты",
+                text = stringResource(R.string.accounts_sheet_title),
                 color = MayasTheme.TextPrimary,
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(16.dp)
@@ -524,8 +627,34 @@ fun AccountSwitchSheet(
                 items(sessions) { session: UserSession ->
                     val isCurrent = session.uid == currentUid
                     ListItem(
-                        headlineContent = { Text(session.name, color = MayasTheme.TextPrimary) },
-                        supportingContent = { Text(session.email, color = MayasTheme.TextSecondary) },
+                        headlineContent = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(session.name, color = MayasTheme.TextPrimary)
+                                if (!session.username.isNullOrBlank()) {
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("@${session.username}", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                                }
+                            }
+                        },
+                        supportingContent = {
+                            Column {
+                                Text(session.email, color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                                if (session.createdAt > 0L) {
+                                    Text(
+                                        stringResource(R.string.on_mayas_since, SimpleDateFormat("dd.MM.yyyy", Locale.getDefault()).format(Date(session.createdAt))),
+                                        color = MayasTheme.TextSecondary.copy(alpha = 0.7f),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                if (isCurrent && currentDeviceCount != null) {
+                                    Text(
+                                        stringResource(R.string.devices_count, currentDeviceCount),
+                                        color = MayasTheme.Accent.copy(alpha = 0.8f),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        },
                         leadingContent = {
                             AsyncImage(
                                 model = session.avatarUrl.ifEmpty { "https://ui-avatars.com/api/?name=${session.name}" },
@@ -554,7 +683,7 @@ fun AccountSwitchSheet(
 
                 item {
                     ListItem(
-                        headlineContent = { Text("Добавить аккаунт", color = MayasTheme.Accent) },
+                        headlineContent = { Text(stringResource(R.string.add_account_action), color = MayasTheme.Accent) },
                         leadingContent = {
                             Icon(Icons.Default.Add, null, tint = MayasTheme.Accent)
                         },
@@ -613,7 +742,7 @@ fun ChatSettingsSubSection(vm: AuthVM) {
             .background(MayasTheme.SurfaceVariant.copy(alpha = 0.3f))
             .padding(16.dp)
     ) {
-        Text("Размер текста: ${vm.fontSize.toInt()}", color = MayasTheme.TextPrimary, fontSize = 14.sp)
+        Text(stringResource(R.string.chat_text_size, vm.fontSize.toInt()), color = MayasTheme.TextPrimary, fontSize = 14.sp)
         Slider(
             value = vm.fontSize,
             onValueChange = {
@@ -641,8 +770,8 @@ fun ChatSettingsSubSection(vm: AuthVM) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Автозагрузка медиа", color = MayasTheme.TextPrimary, fontSize = 14.sp)
-                Text("Фото и видео скачиваются сразу, без тапа", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                Text(stringResource(R.string.chat_autoload_media), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text(stringResource(R.string.chat_autoload_media_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
             }
             Switch(
                 checked = autoDownloadMedia,
@@ -661,8 +790,8 @@ fun ChatSettingsSubSection(vm: AuthVM) {
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Отправка по Enter", color = MayasTheme.TextPrimary, fontSize = 14.sp)
-                Text("Enter отправляет сообщение, Shift+Enter — новая строка", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                Text(stringResource(R.string.chat_send_on_enter), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text(stringResource(R.string.chat_send_on_enter_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
             }
             Switch(
                 checked = sendByEnter,
@@ -688,6 +817,10 @@ fun InterfaceSettingsSubSection(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
+        EmojiStyleSelector()
+
+        HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -699,8 +832,8 @@ fun InterfaceSettingsSubSection(
             Icon(Icons.Default.Home, null, tint = MayasTheme.TextPrimary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("Настройка главного экрана", color = MayasTheme.TextPrimary, fontSize = 14.sp)
-                Text("Расположение поиска, вкладок и списка чатов", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                Text(stringResource(R.string.interface_home_title), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text(stringResource(R.string.interface_home_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
             }
             Icon(Icons.Default.ChevronRight, null, tint = MayasTheme.TextSecondary.copy(alpha = 0.3f))
         }
@@ -718,8 +851,8 @@ fun InterfaceSettingsSubSection(
             Icon(Icons.Default.Menu, null, tint = MayasTheme.TextPrimary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("Настройка боковой панели", color = MayasTheme.TextPrimary, fontSize = 14.sp)
-                Text("Порядок и расположение пунктов меню", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                Text(stringResource(R.string.interface_sidebar_title), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text(stringResource(R.string.interface_sidebar_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
             }
             Icon(Icons.Default.ChevronRight, null, tint = MayasTheme.TextSecondary.copy(alpha = 0.3f))
         }
@@ -730,7 +863,7 @@ fun InterfaceSettingsSubSection(
             Icon(Icons.Default.Info, null, tint = MayasTheme.TextSecondary, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
             Text(
-                "На разных DPI настройка отличается. Между устройствами не синхронизируется.",
+                stringResource(R.string.interface_dpi_note),
                 color = MayasTheme.TextSecondary,
                 fontSize = 12.sp
             )
@@ -743,16 +876,16 @@ fun PrivacySubSection(vm: AuthVM, onNavigateToPremium: () -> Unit) {
     var showSelectorFor by remember { mutableStateOf<String?>(null) }
 
     val privacySettings = listOf(
-        Triple("privacy_phone", "Номер телефона", Icons.Default.Phone),
-        Triple("privacy_last_seen", "Последняя активность", Icons.Default.AccessTime),
-        Triple("privacy_photo", "Фотография профиля", Icons.Default.AccountCircle),
-        Triple("privacy_groups", "Группы и каналы", Icons.Default.Group)
+        Triple("privacy_phone", stringResource(R.string.privacy_phone_label), Icons.Default.Phone),
+        Triple("privacy_last_seen", stringResource(R.string.privacy_last_seen_label), Icons.Default.AccessTime),
+        Triple("privacy_photo", stringResource(R.string.privacy_photo_label), Icons.Default.AccountCircle),
+        Triple("privacy_groups", stringResource(R.string.privacy_groups_label), Icons.Default.Group)
     )
 
     if (showSelectorFor != null) {
         val currentKey = showSelectorFor!!
         val currentValue = vm.userData[currentKey] ?: "all"
-        val title = privacySettings.find { it.first == currentKey }?.second ?: "Настройка"
+        val title = privacySettings.find { it.first == currentKey }?.second ?: stringResource(R.string.privacy_setting_fallback)
 
         PrivacySelectorDialog(
             title = title,
@@ -781,8 +914,8 @@ fun PrivacySubSection(vm: AuthVM, onNavigateToPremium: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Режим невидимки", color = MayasTheme.TextPrimary, fontSize = 14.sp)
-                Text("Скрывает статус 'в сети'", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                Text(stringResource(R.string.privacy_invisible_title), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text(stringResource(R.string.privacy_invisible_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
             }
             Switch(
                 checked = vm.isInvisible && vm.isPremium,
@@ -794,7 +927,7 @@ fun PrivacySubSection(vm: AuthVM, onNavigateToPremium: () -> Unit) {
 
         if (!vm.isPremium) {
             Text(
-                "Доступно только в MAYAS+",
+                stringResource(R.string.privacy_premium_only),
                 color = MayasTheme.GlowGold,
                 fontSize = 11.sp,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -807,9 +940,9 @@ fun PrivacySubSection(vm: AuthVM, onNavigateToPremium: () -> Unit) {
         privacySettings.forEach { (key, label, icon) ->
             val value = vm.userData[key] ?: "all"
             val valueText = when (value) {
-                "contacts" -> "Мои контакты"
-                "none" -> "Никто"
-                else -> "Все"
+                "contacts" -> stringResource(R.string.audience_contacts)
+                "none" -> stringResource(R.string.audience_nobody)
+                else -> stringResource(R.string.audience_everyone)
             }
 
             Row(
@@ -837,13 +970,13 @@ fun ActiveSessionsSubSection(vm: AuthVM) {
     sessionToEnd?.let { session ->
         AlertDialog(
             onDismissRequest = { sessionToEnd = null },
-            title = { Text(if (session.isCurrent) "Выйти?" else "Завершить сессию?") },
+            title = { Text(if (session.isCurrent) stringResource(R.string.session_logout_question) else stringResource(R.string.session_end_question)) },
             text = {
                 Text(
                     if (session.isCurrent) {
-                        "Вы выйдете из аккаунта на этом устройстве."
+                        stringResource(R.string.session_logout_message)
                     } else {
-                        "Устройство «${session.deviceName}» будет разлогинено."
+                        stringResource(R.string.session_device_logout_message, session.deviceName)
                     }
                 )
             },
@@ -852,11 +985,11 @@ fun ActiveSessionsSubSection(vm: AuthVM) {
                     vm.endSession(session.id)
                     sessionToEnd = null
                 }) {
-                    Text(if (session.isCurrent) "Выйти" else "Завершить", color = Color.Red)
+                    Text(if (session.isCurrent) stringResource(R.string.settings_logout_title) else stringResource(R.string.session_end_action), color = Color.Red)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { sessionToEnd = null }) { Text("Отмена") }
+                TextButton(onClick = { sessionToEnd = null }) { Text(stringResource(R.string.storage_cancel)) }
             }
         )
     }
@@ -870,14 +1003,14 @@ fun ActiveSessionsSubSection(vm: AuthVM) {
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
         Text(
-            "Активные сессии",
+            stringResource(R.string.settings_sessions_title),
             color = MayasTheme.TextPrimary,
             fontSize = 14.sp,
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
         if (vm.remoteSessions.isEmpty()) {
-            Text("Загрузка...", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+            Text(stringResource(R.string.session_loading), color = MayasTheme.TextSecondary, fontSize = 12.sp)
         }
 
         vm.remoteSessions.forEach { session ->
@@ -905,7 +1038,7 @@ fun ActiveSessionsSubSection(vm: AuthVM) {
                         if (session.isCurrent) {
                             Spacer(Modifier.width(6.dp))
                             Text(
-                                "Это устройство",
+                                stringResource(R.string.session_this_device),
                                 color = MayasTheme.Accent,
                                 fontSize = 10.sp,
                                 modifier = Modifier
@@ -931,18 +1064,49 @@ fun ActiveSessionsSubSection(vm: AuthVM) {
                 }
             }
         }
+
+        if (vm.remoteSessions.count { !it.isCurrent } > 0) {
+            var showEndAllConfirm by remember { mutableStateOf(false) }
+
+            if (showEndAllConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showEndAllConfirm = false },
+                    title = { Text(stringResource(R.string.session_end_others_question)) },
+                    text = { Text(stringResource(R.string.session_end_others_message)) },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            vm.endAllOtherSessions()
+                            showEndAllConfirm = false
+                        }) {
+                            Text(stringResource(R.string.session_end_action), color = Color.Red)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showEndAllConfirm = false }) { Text(stringResource(R.string.storage_cancel)) }
+                    }
+                )
+            }
+
+            TextButton(
+                onClick = { showEndAllConfirm = true },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) {
+                Text(stringResource(R.string.session_end_others_action), color = Color.Red.copy(alpha = 0.8f), fontSize = 13.sp)
+            }
+        }
     }
 }
 
+@Composable
 private fun formatSessionLastActive(timestamp: com.google.firebase.Timestamp?): String {
-    if (timestamp == null) return "недавно"
+    if (timestamp == null) return stringResource(R.string.session_recently)
     val diffMs = System.currentTimeMillis() - timestamp.toDate().time
-    val minutes = diffMs / 60_000
+    val minutes = (diffMs / 60_000).toInt()
     return when {
-        minutes < 1 -> "активен только что"
-        minutes < 60 -> "был(а) $minutes мин назад"
-        minutes < 24 * 60 -> "был(а) ${minutes / 60} ч назад"
-        else -> "был(а) ${minutes / (24 * 60)} дн назад"
+        minutes < 1 -> stringResource(R.string.session_active_now)
+        minutes < 60 -> stringResource(R.string.session_seen_minutes, minutes)
+        minutes < 24 * 60 -> stringResource(R.string.session_seen_hours, minutes / 60)
+        else -> stringResource(R.string.session_seen_days, minutes / (24 * 60))
     }
 }
 
@@ -959,9 +1123,9 @@ fun PrivacySelectorDialog(
         text = {
             Column {
                 val options = listOf(
-                    "all" to "Все",
-                    "contacts" to "Мои контакты",
-                    "none" to "Никто"
+                    "all" to stringResource(R.string.audience_everyone),
+                    "contacts" to stringResource(R.string.audience_contacts),
+                    "none" to stringResource(R.string.audience_nobody)
                 )
                 options.forEach { (value, label) ->
                     Row(
@@ -985,7 +1149,7 @@ fun PrivacySelectorDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Отмена", color = MayasTheme.TextSecondary)
+                Text(stringResource(R.string.storage_cancel), color = MayasTheme.TextSecondary)
             }
         },
         containerColor = MayasTheme.Surface
@@ -1007,20 +1171,20 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
 
         AlertDialog(
             onDismissRequest = { showEmailDialog = false },
-            title = { Text("Сменить Email", color = MayasTheme.TextPrimary) },
+            title = { Text(stringResource(R.string.change_email_title), color = MayasTheme.TextPrimary) },
             text = {
                 Column {
                     OutlinedTextField(
                         value = newEmail,
                         onValueChange = { newEmail = it },
-                        label = { Text("Новый Email") },
+                        label = { Text(stringResource(R.string.new_email_label)) },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = pass,
                         onValueChange = { pass = it },
-                        label = { Text("Текущий пароль") },
+                        label = { Text(stringResource(R.string.current_password_label)) },
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1035,7 +1199,7 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
                             loading = false
                             if (err == null) {
                                 showEmailDialog = false
-                                Toast.makeText(context, "Подтвердите новый Email по ссылке", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, context.getString(R.string.change_email_toast), Toast.LENGTH_LONG).show()
                             } else {
                                 error = err
                             }
@@ -1044,7 +1208,7 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
                     enabled = pass.isNotBlank() && newEmail.contains("@") && !loading
                 ) {
                     if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
-                    else Text("Обновить")
+                    else Text(stringResource(R.string.update_action))
                 }
             },
             containerColor = MayasTheme.Surface
@@ -1059,13 +1223,13 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
 
         AlertDialog(
             onDismissRequest = { showPassDialog = false },
-            title = { Text("Сменить пароль", color = MayasTheme.TextPrimary) },
+            title = { Text(stringResource(R.string.change_password_title), color = MayasTheme.TextPrimary) },
             text = {
                 Column {
                     OutlinedTextField(
                         value = oldPass,
                         onValueChange = { oldPass = it },
-                        label = { Text("Старый пароль") },
+                        label = { Text(stringResource(R.string.old_password_label)) },
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1073,7 +1237,7 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
                     OutlinedTextField(
                         value = newPass,
                         onValueChange = { newPass = it },
-                        label = { Text("Новый пароль") },
+                        label = { Text(stringResource(R.string.new_password_label)) },
                         visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -1088,7 +1252,7 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
                             loading = false
                             if (err == null) {
                                 showPassDialog = false
-                                Toast.makeText(context, "Пароль успешно изменен", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.password_changed_toast), Toast.LENGTH_SHORT).show()
                             } else {
                                 error = err
                             }
@@ -1097,7 +1261,7 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
                     enabled = oldPass.isNotBlank() && newPass.length >= 6 && !loading
                 ) {
                     if (loading) CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
-                    else Text("Сменить")
+                    else Text(stringResource(R.string.change_action))
                 }
             },
             containerColor = MayasTheme.Surface
@@ -1107,8 +1271,8 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Удалить аккаунт?", color = MayasTheme.ErrorRed) },
-            text = { Text("Это действие необратимо. Все ваши данные, чаты и медиа будут удалены навсегда.", color = MayasTheme.TextSecondary) },
+            title = { Text(stringResource(R.string.delete_account_question), color = MayasTheme.ErrorRed) },
+            text = { Text(stringResource(R.string.delete_account_message), color = MayasTheme.TextSecondary) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -1116,17 +1280,17 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
                             onSuccess = { showDeleteDialog = false },
                             onError = {
                                 showDeleteDialog = false
-                                Toast.makeText(context, "Не удалось удалить аккаунт", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.delete_account_failed), Toast.LENGTH_SHORT).show()
                             }
                         )
                     }
                 ) {
-                    Text("Удалить", color = MayasTheme.ErrorRed)
+                    Text(stringResource(R.string.delete_action), color = MayasTheme.ErrorRed)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Отмена", color = MayasTheme.TextPrimary)
+                    Text(stringResource(R.string.storage_cancel), color = MayasTheme.TextPrimary)
                 }
             },
             containerColor = MayasTheme.Surface
@@ -1160,12 +1324,12 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    if (vm.isEmailVerified) "Почта подтверждена!" else "Подтвердить почту",
+                    if (vm.isEmailVerified) stringResource(R.string.email_verified) else stringResource(R.string.email_verify_action),
                     color = if (vm.isEmailVerified) MayasTheme.TextSecondary.copy(alpha = 0.6f) else MayasTheme.TextPrimary,
                     fontSize = 14.sp
                 )
                 if (!vm.isEmailVerified) {
-                    Text("Нужно для звонков и переписки", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                    Text(stringResource(R.string.email_verify_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
                 }
             }
         }
@@ -1181,8 +1345,8 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
             Icon(Icons.Default.Email, null, tint = MayasTheme.TextPrimary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
             Column {
-                Text("Сменить почту", color = MayasTheme.TextPrimary, fontSize = 14.sp)
-                Text("Изменить привязанный Email", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                Text(stringResource(R.string.change_email_action), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text(stringResource(R.string.change_email_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
             }
         }
 
@@ -1198,8 +1362,8 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
             Icon(Icons.Default.Password, null, tint = MayasTheme.TextPrimary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
             Column {
-                Text("Сменить пароль", color = MayasTheme.TextPrimary, fontSize = 14.sp)
-                Text("Обновить текущий пароль", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                Text(stringResource(R.string.change_password_title), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text(stringResource(R.string.change_password_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
             }
         }
 
@@ -1211,7 +1375,7 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
                 .fillMaxWidth()
                 .clickable {
                     vm.sendPasswordReset { error ->
-                        val msg = error ?: "Ссылка для сброса пароля отправлена на почту"
+                        val msg = error ?: context.getString(R.string.reset_link_sent)
                         Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                     }
                 },
@@ -1220,8 +1384,8 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
             Icon(Icons.Default.LockReset, null, tint = MayasTheme.TextPrimary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
             Column {
-                Text("Сбросить пароль", color = MayasTheme.TextPrimary, fontSize = 14.sp)
-                Text("Отправить ссылку на почту", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                Text(stringResource(R.string.reset_password_title), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text(stringResource(R.string.reset_password_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
             }
         }
 
@@ -1237,8 +1401,8 @@ fun SecuritySubSection(vm: AuthVM, onNavigateToAuth: () -> Unit) {
             Icon(Icons.Default.PersonOff, null, tint = MayasTheme.ErrorRed, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(12.dp))
             Column {
-                Text("Удалить аккаунт", color = MayasTheme.ErrorRed, fontSize = 14.sp)
-                Text("Полное удаление данных", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                Text(stringResource(R.string.delete_account_title), color = MayasTheme.ErrorRed, fontSize = 14.sp)
+                Text(stringResource(R.string.delete_account_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
             }
         }
     }
@@ -1249,47 +1413,76 @@ fun StorageSubSection() {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var stats by remember { mutableStateOf<CacheStats?>(null) }
+    var breakdown by remember { mutableStateOf<CacheBreakdown?>(null) }
     var isClearing by remember { mutableStateOf(false) }
-    var showClearDialog by remember { mutableStateOf(false) }
+    var showClearCacheDialog by remember { mutableStateOf(false) }
+    var showClearOfflineDialog by remember { mutableStateOf(false) }
+    val clearedText = stringResource(R.string.storage_cleared)
 
-
-    LaunchedEffect(Unit) {
-        stats = ImageCacheManager.getCacheStats(context)
+    suspend fun refresh() {
+        breakdown = AppCacheManager.breakdown(context)
     }
 
-    if (showClearDialog) {
+    LaunchedEffect(Unit) { refresh() }
+
+    if (showClearCacheDialog) {
         AlertDialog(
-            onDismissRequest = { if (!isClearing) showClearDialog = false },
-            title = { Text("Очистить кэш изображений?", color = MayasTheme.TextPrimary) },
-            text = {
-                Text(
-                    "Все закэшированные фото и аватары будут удалены с устройства. " +
-                            "При повторном открытии чатов они скачаются заново.",
-                    color = MayasTheme.TextSecondary
-                )
-            },
+            onDismissRequest = { if (!isClearing) showClearCacheDialog = false },
+            title = { Text(stringResource(R.string.storage_clear_confirm_title), color = MayasTheme.TextPrimary) },
+            text = { Text(stringResource(R.string.storage_clear_confirm_text), color = MayasTheme.TextSecondary) },
             confirmButton = {
                 TextButton(
                     onClick = {
                         isClearing = true
                         scope.launch {
-                            ImageCacheManager.clearCache(context)
-                            stats = ImageCacheManager.getCacheStats(context)
+                            AppCacheManager.clearAll(context)
+                            refresh()
                             isClearing = false
-                            showClearDialog = false
-                            Toast.makeText(context, "Кэш очищен", Toast.LENGTH_SHORT).show()
+                            showClearCacheDialog = false
+                            Toast.makeText(context, clearedText, Toast.LENGTH_SHORT).show()
                         }
                     },
                     enabled = !isClearing
                 ) {
                     if (isClearing) CircularProgressIndicator(modifier = Modifier.size(18.dp))
-                    else Text("Очистить", color = MayasTheme.ErrorRed)
+                    else Text(stringResource(R.string.storage_clear_action), color = MayasTheme.ErrorRed)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showClearDialog = false }, enabled = !isClearing) {
-                    Text("Отмена", color = MayasTheme.TextSecondary)
+                TextButton(onClick = { showClearCacheDialog = false }, enabled = !isClearing) {
+                    Text(stringResource(R.string.storage_cancel), color = MayasTheme.TextSecondary)
+                }
+            },
+            containerColor = MayasTheme.Surface
+        )
+    }
+
+    if (showClearOfflineDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isClearing) showClearOfflineDialog = false },
+            title = { Text(stringResource(R.string.storage_clear_offline_title), color = MayasTheme.TextPrimary) },
+            text = { Text(stringResource(R.string.storage_clear_offline_text), color = MayasTheme.TextSecondary) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        isClearing = true
+                        scope.launch {
+                            AppCacheManager.clearOfflineData(context)
+                            refresh()
+                            isClearing = false
+                            showClearOfflineDialog = false
+                            Toast.makeText(context, clearedText, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = !isClearing
+                ) {
+                    if (isClearing) CircularProgressIndicator(modifier = Modifier.size(18.dp))
+                    else Text(stringResource(R.string.storage_clear_action), color = MayasTheme.ErrorRed)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearOfflineDialog = false }, enabled = !isClearing) {
+                    Text(stringResource(R.string.storage_cancel), color = MayasTheme.TextSecondary)
                 }
             },
             containerColor = MayasTheme.Surface
@@ -1304,70 +1497,111 @@ fun StorageSubSection() {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        val current = stats
+        val current = breakdown
 
         if (current == null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                 Spacer(Modifier.width(10.dp))
-                Text("Считаем кэш…", color = MayasTheme.TextSecondary, fontSize = 13.sp)
+                Text(stringResource(R.string.storage_calculating), color = MayasTheme.TextSecondary, fontSize = 13.sp)
             }
         } else {
-            val usedFraction = if (current.maxSizeBytes > 0) {
-                (current.sizeBytes.toFloat() / current.maxSizeBytes.toFloat()).coerceIn(0f, 1f)
-            } else 0f
-
-
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text("Занято кэшем изображений", color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                    Text(stringResource(R.string.storage_total), color = MayasTheme.TextPrimary, fontSize = 14.sp)
                     Text(
-                        "${formatCacheSize(current.sizeBytes)} / ${formatCacheSize(current.maxSizeBytes)}",
-                        color = MayasTheme.TextSecondary,
-                        fontSize = 13.sp
+                        AppCacheManager.format(context, current.totalBytes),
+                        color = MayasTheme.TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
-                LinearProgressIndicator(
-                    progress = { usedFraction },
+                val total = current.totalBytes.coerceAtLeast(1L).toFloat()
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp)),
-                    color = MayasTheme.Accent,
-                    trackColor = MayasTheme.TextSecondary.copy(alpha = 0.15f)
-                )
-            }
-
-            HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
-
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Image, null, tint = MayasTheme.TextPrimary, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(12.dp))
-                Column {
-                    Text("Фото и аватары", color = MayasTheme.TextPrimary, fontSize = 14.sp)
-                    Text(
-                        "${current.fileCount} файлов, ${formatCacheSize(current.sizeBytes)}",
-                        color = MayasTheme.TextSecondary,
-                        fontSize = 12.sp
-                    )
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MayasTheme.TextSecondary.copy(alpha = 0.15f))
+                ) {
+                    listOf(
+                        current.imagesBytes to MayasTheme.Accent,
+                        current.mediaBytes to MayasTheme.GlowSky,
+                        current.offlineDataBytes to MayasTheme.GlowLime,
+                        current.firestoreBytes to MayasTheme.GlowGold,
+                        current.tempBytes to MayasTheme.ErrorRed
+                    ).forEach { (bytes, color) ->
+                        if (bytes > 0L) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(bytes / total)
+                                    .fillMaxHeight()
+                                    .background(color)
+                            )
+                        }
+                    }
                 }
             }
 
             HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
 
+            StorageCategoryRow(
+                icon = Icons.Default.Image,
+                tint = MayasTheme.Accent,
+                title = stringResource(R.string.storage_images),
+                subtitle = stringResource(
+                    R.string.storage_files_count,
+                    current.imagesCount,
+                    AppCacheManager.format(context, current.imagesBytes)
+                )
+            )
+            StorageCategoryRow(
+                icon = Icons.Default.PermMedia,
+                tint = MayasTheme.GlowSky,
+                title = stringResource(R.string.storage_media),
+                subtitle = stringResource(
+                    R.string.storage_files_count,
+                    current.mediaCount,
+                    AppCacheManager.format(context, current.mediaBytes)
+                ),
+                description = stringResource(R.string.storage_media_desc)
+            )
+            StorageCategoryRow(
+                icon = Icons.Default.Storage,
+                tint = MayasTheme.GlowLime,
+                title = stringResource(R.string.storage_offline_data),
+                subtitle = AppCacheManager.format(context, current.offlineDataBytes),
+                description = stringResource(R.string.storage_offline_data_desc)
+            )
+            StorageCategoryRow(
+                icon = Icons.Default.Sync,
+                tint = MayasTheme.GlowGold,
+                title = stringResource(R.string.storage_server_copy),
+                subtitle = AppCacheManager.format(context, current.firestoreBytes),
+                description = stringResource(R.string.storage_server_copy_desc)
+            )
+            StorageCategoryRow(
+                icon = Icons.Default.Schedule,
+                tint = MayasTheme.ErrorRed,
+                title = stringResource(R.string.storage_temp),
+                subtitle = stringResource(
+                    R.string.storage_files_count,
+                    current.tempCount,
+                    AppCacheManager.format(context, current.tempBytes)
+                ),
+                description = stringResource(R.string.storage_temp_desc)
+            )
+
+            HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
 
             Row(verticalAlignment = Alignment.Top) {
                 Icon(Icons.Default.Info, null, tint = MayasTheme.TextSecondary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    "Картинки сохраняются на устройство при первой загрузке и берутся из кэша " +
-                            "при повторном открытии чата — экономит трафик и грузится мгновенно. " +
-                            "Место хранения ограничено ${formatCacheSize(current.maxSizeBytes)}: " +
-                            "самые старые и редко используемые файлы удаляются автоматически.",
+                    stringResource(R.string.storage_hint),
                     color = MayasTheme.TextSecondary,
                     fontSize = 12.sp
                 )
@@ -1375,26 +1609,238 @@ fun StorageSubSection() {
 
             HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
 
+            CachePolicySettings(
+                onPolicyChanged = {
+                    scope.launch {
+                        MediaFileCache.applyPolicy(context)
+                        refresh()
+                    }
+                }
+            )
+
+            HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
+
+            val canClear = current.clearableBytes > 0L
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = current.sizeBytes > 0) { showClearDialog = true },
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(enabled = canClear && !isClearing) { showClearCacheDialog = true }
+                    .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
                     Icons.Default.DeleteSweep,
                     null,
-                    tint = if (current.sizeBytes > 0) MayasTheme.ErrorRed else MayasTheme.TextSecondary.copy(alpha = 0.4f),
+                    tint = if (canClear) MayasTheme.ErrorRed else MayasTheme.TextSecondary.copy(alpha = 0.4f),
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
-                        "Очистить кэш",
-                        color = if (current.sizeBytes > 0) MayasTheme.ErrorRed else MayasTheme.TextSecondary.copy(alpha = 0.4f),
+                        stringResource(R.string.storage_clear_cache),
+                        color = if (canClear) MayasTheme.ErrorRed else MayasTheme.TextSecondary.copy(alpha = 0.4f),
                         fontSize = 14.sp
                     )
-                    Text("Освободить занятое место", color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                    Text(stringResource(R.string.storage_clear_cache_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                }
+            }
+
+            val canClearOffline = current.offlineDataBytes > 0L
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(enabled = canClearOffline && !isClearing) { showClearOfflineDialog = true }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.Storage,
+                    null,
+                    tint = if (canClearOffline) MayasTheme.ErrorRed else MayasTheme.TextSecondary.copy(alpha = 0.4f),
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(
+                        stringResource(R.string.storage_clear_offline),
+                        color = if (canClearOffline) MayasTheme.ErrorRed else MayasTheme.TextSecondary.copy(alpha = 0.4f),
+                        fontSize = 14.sp
+                    )
+                    Text(stringResource(R.string.storage_clear_offline_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CachePolicySettings(onPolicyChanged: () -> Unit) {
+    val context = LocalContext.current
+    var maxBytes by remember { mutableStateOf(MediaCachePrefs.maxBytes(context)) }
+    var keepDays by remember { mutableStateOf(MediaCachePrefs.keepDays(context)) }
+    var wifiOnly by remember { mutableStateOf(MediaCachePrefs.wifiOnly(context)) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.cache_limit_title), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                MediaCachePrefs.limitOptions.forEach { option ->
+                    val label = when (option) {
+                        MediaCachePrefs.UNLIMITED -> stringResource(R.string.cache_limit_unlimited)
+                        else -> stringResource(
+                            when {
+                                option <= 1024L * 1024L * 1024L -> R.string.cache_limit_1gb
+                                option <= 2L * 1024L * 1024L * 1024L -> R.string.cache_limit_2gb
+                                else -> R.string.cache_limit_5gb
+                            }
+                        )
+                    }
+                    CacheChoiceChip(label, maxBytes == option) {
+                        maxBytes = option
+                        MediaCachePrefs.setMaxBytes(context, option)
+                        onPolicyChanged()
+                    }
+                }
+            }
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.cache_keep_title), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                MediaCachePrefs.keepOptions.forEach { option ->
+                    val label = stringResource(
+                        when (option) {
+                            3 -> R.string.cache_keep_3d
+                            7 -> R.string.cache_keep_7d
+                            30 -> R.string.cache_keep_30d
+                            else -> R.string.cache_keep_forever
+                        }
+                    )
+                    CacheChoiceChip(label, keepDays == option) {
+                        keepDays = option
+                        MediaCachePrefs.setKeepDays(context, option)
+                        onPolicyChanged()
+                    }
+                }
+            }
+        }
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.cache_wifi_title), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text(stringResource(R.string.cache_wifi_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Switch(
+                checked = wifiOnly,
+                onCheckedChange = {
+                    wifiOnly = it
+                    MediaCachePrefs.setWifiOnly(context, it)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun CacheChoiceChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) MayasTheme.Accent.copy(alpha = 0.2f) else MayasTheme.TextSecondary.copy(alpha = 0.1f))
+            .border(
+                width = if (selected) 1.5.dp else 0.dp,
+                color = if (selected) MayasTheme.Accent else Color.Transparent,
+                shape = RoundedCornerShape(50)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp)
+    ) {
+        Text(
+            label,
+            color = if (selected) MayasTheme.Accent else MayasTheme.TextPrimary,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+        )
+    }
+}
+
+@Composable
+private fun StorageCategoryRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    tint: Color,
+    title: String,
+    subtitle: String,
+    description: String? = null
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = MayasTheme.TextPrimary, fontSize = 14.sp)
+            Text(subtitle, color = MayasTheme.TextSecondary, fontSize = 12.sp)
+            if (description != null) {
+                Text(description, color = MayasTheme.TextSecondary.copy(alpha = 0.7f), fontSize = 11.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmojiStyleSelector() {
+    val context = LocalContext.current
+    EmojiStyleState.ensureInit(context)
+    val current = EmojiStyleState.style
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
+            Icon(Icons.Default.EmojiEmotions, null, tint = MayasTheme.TextPrimary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.emoji_style_title), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text(stringResource(R.string.emoji_style_subtitle), color = MayasTheme.TextSecondary, fontSize = 12.sp)
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            listOf(
+                EmojiStyle.STANDARD to R.string.emoji_style_standard,
+                EmojiStyle.MAYAS to R.string.emoji_style_mayas
+            ).forEach { (style, label) ->
+                val selected = current == style
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (selected) MayasTheme.Accent.copy(alpha = 0.18f) else MayasTheme.SurfaceVariant.copy(alpha = 0.4f))
+                        .border(
+                            width = if (selected) 1.5.dp else 0.dp,
+                            color = if (selected) MayasTheme.Accent else Color.Transparent,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .clickable { EmojiStyleState.set(context, style) }
+                        .padding(vertical = 12.dp, horizontal = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("😍", "🔥", "❤️", "👍").forEach { emoji ->
+                            EmojiGlyphStyled(emoji, fontSize = 20.sp, style = style)
+                        }
+                    }
+                    Text(
+                        stringResource(label),
+                        color = if (selected) MayasTheme.Accent else MayasTheme.TextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                    )
                 }
             }
         }
@@ -1406,10 +1852,10 @@ const val MAYAS_TOS_URL = "https://dan1eidt.github.io/mayas-site/tos.html"
 @Composable
 fun SettingsSectionTitle(title: String) {
     Text(
-        text = title,
+        text = title.uppercase(),
         color = MayasTheme.Accent,
         fontSize = 12.sp,
         fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(start = 8.dp, bottom = 8.dp)
+        modifier = Modifier.padding(start = 16.dp, bottom = 8.dp)
     )
 }

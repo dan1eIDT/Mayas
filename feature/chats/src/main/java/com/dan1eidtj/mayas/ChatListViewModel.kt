@@ -13,14 +13,30 @@ import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.SetOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+data class ChatFolderData(
+    val id: String,
+    val name: String,
+    val chatIds: List<String> = emptyList(),
+    val order: Int = 0
+)
+
 class ChatListViewModel(application: Application) : AndroidViewModel(application) {
+
+    companion object {
+        const val MAX_CUSTOM_FOLDERS = 10
+        private const val OFFLINE_GRACE_MS = 4000L
+    }
 
     private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
@@ -29,8 +45,16 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
 
     val syncState = MutableStateFlow(SyncState.IDLE)
 
+    private val repository = ChatRepository(application)
+    private var persistChatsJob: Job? = null
+    private var offlineJob: Job? = null
+
     private val _chats = MutableStateFlow<List<ChatEntity>>(emptyList())
     val chats: StateFlow<List<ChatEntity>> = _chats.asStateFlow()
+
+    private val _customFolders = MutableStateFlow<List<ChatFolderData>>(emptyList())
+    val customFolders: StateFlow<List<ChatFolderData>> = _customFolders.asStateFlow()
+    private var foldersListener: ListenerRegistration? = null
 
     private val chatDocuments = mutableMapOf<String, com.google.firebase.firestore.DocumentSnapshot>()
     private val chatDocListeners = mutableMapOf<String, ListenerRegistration>()
@@ -91,6 +115,13 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
         listeningUid = uid
         syncState.value = SyncState.SYNCING
 
+        viewModelScope.launch {
+            val cached = repository.loadCachedChats()
+            if (cached.isNotEmpty()) {
+                _chats.update { current -> if (current.isEmpty()) cached else current }
+            }
+        }
+
         myProfileListener = db.collection("users").document(uid)
             .addSnapshotListener { doc, error ->
                 if (error != null) {
@@ -112,6 +143,27 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                         "verification" to runCatching { com.dan1eidtj.data.VerificationInfo.fromMap(doc.data) }.getOrDefault(com.dan1eidtj.data.VerificationInfo())
                     )
                 }
+            }
+
+        foldersListener = db.collection("users").document(uid)
+            .collection("chatFolders")
+            .orderBy("order")
+            .addSnapshotListener { snap, error ->
+                if (error != null) {
+                    Log.e("ChatListVM", "Ошибка снапшота папок чатов", error)
+                    return@addSnapshotListener
+                }
+                _customFolders.value = snap?.documents?.mapNotNull { doc ->
+                    val name = doc.getString("name") ?: return@mapNotNull null
+                    ChatFolderData(
+                        id = doc.id,
+                        name = name,
+                        chatIds = (doc.get("chatIds") as? List<*>)
+                            ?.filterIsInstance<String>()
+                            ?: emptyList(),
+                        order = (doc.getLong("order") ?: 0L).toInt()
+                    )
+                } ?: emptyList()
             }
 
         // Слушаем коллекцию уведомлений пользователя: /users/{uid}/notifications
@@ -140,11 +192,25 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
 
                 if (indexSnapshot == null) return@addSnapshotListener
 
-                syncState.value = SyncState.ONLINE
+                offlineJob?.cancel()
+                if (indexSnapshot.metadata.isFromCache) {
+                    offlineJob = viewModelScope.launch {
+                        delay(OFFLINE_GRACE_MS)
+                        syncState.value = SyncState.OFFLINE
+                    }
+                } else {
+                    syncState.value = SyncState.ONLINE
+                }
 
                 val currentChatIds = indexSnapshot.documents
                     .map { it.id }
                     .toSet()
+
+                if (!indexSnapshot.metadata.isFromCache) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        repository.pruneChats(currentChatIds.toList())
+                    }
+                }
 
                 val removedChatIds = chatDocListeners.keys - currentChatIds
 
@@ -344,7 +410,8 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                     partnerNameColor = partner?.get("nameColor") as? String ?: "gold",
                     partnerEmoji = partner?.get("emoji") as? String,
                     typingText = null,
-                    isSavedMessages = isSavedMessages
+                    isSavedMessages = isSavedMessages,
+                    draftText = doc.getString("draft_$uid")
                 )
             } catch (e: Exception) {
                 Log.e("ChatListVM", "Ошибка конвертации чата ${doc.id}", e)
@@ -352,12 +419,25 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
             }
         }
 
-        _chats.value = entities.sortedByDescending { it.updatedAt }
+        val sorted = entities.sortedByDescending { it.updatedAt }
+        _chats.value = sorted
+        persistChats(sorted)
+    }
+
+    private fun persistChats(list: List<ChatEntity>) {
+        if (list.isEmpty()) return
+        persistChatsJob?.cancel()
+        persistChatsJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(400)
+            repository.upsertChats(list)
+        }
     }
 
     fun stopListening() {
         chatsListener?.remove()
         chatsListener = null
+        offlineJob?.cancel()
+        persistChatsJob?.cancel()
 
         chatDocListeners.values.forEach { it.remove() }
         chatDocListeners.clear()
@@ -368,6 +448,9 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
         myProfileListener = null
         notificationsListener?.remove()
         notificationsListener = null
+        foldersListener?.remove()
+        foldersListener = null
+        _customFolders.value = emptyList()
         partnerListeners.values.forEach { it.remove() }
         partnerListeners.clear()
         listeningUid = null
@@ -382,6 +465,65 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
         auth.removeAuthStateListener(authStateListener)
         FirestoreListenerCoordinator.unregister(teardown)
         stopListening()
+    }
+
+    fun createFolder(name: String, chatIds: List<String>, onError: (String) -> Unit = {}) {
+        val uid = myUid ?: return
+        val trimmed = name.trim()
+        if (trimmed.isBlank()) return
+        if (_customFolders.value.size >= MAX_CUSTOM_FOLDERS) {
+            onError("limit")
+            return
+        }
+        val col = db.collection("users").document(uid).collection("chatFolders")
+        col.document().set(
+            mapOf(
+                "name" to trimmed,
+                "chatIds" to chatIds,
+                "order" to _customFolders.value.size
+            )
+        ).addOnFailureListener { e ->
+            Log.e("ChatListVM", "Ошибка создания папки", e)
+            onError("failed")
+        }
+    }
+
+    fun renameFolder(folderId: String, newName: String) {
+        val uid = myUid ?: return
+        val trimmed = newName.trim()
+        if (trimmed.isBlank()) return
+        db.collection("users").document(uid).collection("chatFolders").document(folderId)
+            .update("name", trimmed)
+            .addOnFailureListener { e -> Log.e("ChatListVM", "Ошибка переименования папки", e) }
+    }
+
+    fun updateFolderChats(folderId: String, chatIds: List<String>) {
+        val uid = myUid ?: return
+        db.collection("users").document(uid).collection("chatFolders").document(folderId)
+            .update("chatIds", chatIds)
+            .addOnFailureListener { e -> Log.e("ChatListVM", "Ошибка обновления чатов папки", e) }
+    }
+
+    fun deleteFolder(folderId: String) {
+        val uid = myUid ?: return
+        db.collection("users").document(uid).collection("chatFolders").document(folderId)
+            .delete()
+            .addOnFailureListener { e -> Log.e("ChatListVM", "Ошибка удаления папки", e) }
+    }
+
+    fun moveFolder(folderId: String, direction: Int) {
+        val uid = myUid ?: return
+        val current = _customFolders.value.sortedBy { it.order }
+        val index = current.indexOfFirst { it.id == folderId }
+        val targetIndex = index + direction
+        if (index == -1 || targetIndex < 0 || targetIndex >= current.size) return
+        val reordered = current.toMutableList()
+        val moved = reordered.removeAt(index)
+        reordered.add(targetIndex, moved)
+        val col = db.collection("users").document(uid).collection("chatFolders")
+        val batch = db.batch()
+        reordered.forEachIndexed { i, folder -> batch.update(col.document(folder.id), "order", i) }
+        batch.commit().addOnFailureListener { e -> Log.e("ChatListVM", "Ошибка изменения порядка папок", e) }
     }
 
     fun openOrCreateDirectChat(myUid: String, partnerUid: String, onReady: (String) -> Unit) {

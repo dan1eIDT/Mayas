@@ -44,4 +44,23 @@ interface MessageDao {
         ORDER BY timestamp DESC
     """)
     fun searchAllMessages(query: String): Flow<List<MessageEntity>>
+
+    @Query("SELECT * FROM messages_table WHERE chatId = :chatId ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun getLatestMessages(chatId: String, limit: Int): List<MessageEntity>
+
+    @Query("DELETE FROM messages_table WHERE chatId = :chatId AND messageId NOT IN (:keepIds)")
+    suspend fun deleteMessagesNotIn(chatId: String, keepIds: List<String>)
+
+    @Query("DELETE FROM messages_table")
+    suspend fun clearAllMessages()
+
+    @androidx.room.Transaction
+    suspend fun replaceChatMessages(chatId: String, messages: List<MessageEntity>) {
+        if (messages.isEmpty()) {
+            clearChatHistory(chatId)
+        } else {
+            insertMessages(messages)
+            deleteMessagesNotIn(chatId, messages.map { it.messageId })
+        }
+    }
 }

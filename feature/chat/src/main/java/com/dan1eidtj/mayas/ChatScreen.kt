@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 @file:OptIn(ExperimentalMaterial3Api::class, ExperimentalAnimationApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 
 package com.dan1eidtj.mayas.feature
@@ -14,6 +15,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -49,12 +51,6 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.res.imageResource
-import com.dan1eidtj.mayas.core_ui.ui.components.ninePatchBackground
-import com.dan1eidtj.mayas.core_ui.ui.components.NinePatchInsets
-import com.dan1eidtj.mayas.ui.R
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -74,6 +70,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dan1eidtj.data.SharedContentManager
 import com.dan1eidtj.data.ShopConstants
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import com.dan1eidtj.chat.R
 import com.dan1eidtj.mayas.core.ui.theme.*
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
@@ -87,6 +85,12 @@ import com.dan1eidtj.mayas.core_ui.ui.components.AdminLevelBadge
 import com.dan1eidtj.mayas.core_ui.ui.components.BubbleShape
 import com.dan1eidtj.mayas.core_ui.ui.components.BubbleType
 import com.dan1eidtj.mayas.core_ui.ui.components.FrameStyles
+import com.dan1eidtj.mayas.core_ui.ui.components.MessageEffects
+import com.dan1eidtj.mayas.core_ui.emoji.EmojiCatalog
+import com.dan1eidtj.mayas.core_ui.emoji.EmojiGlyph
+import com.dan1eidtj.mayas.core_ui.emoji.MayasClickableText
+import com.dan1eidtj.mayas.core_ui.emoji.MayasText
+import com.dan1eidtj.mayas.core_ui.ui.components.MessageEffectOverlay
 import com.dan1eidtj.mayas.core_ui.ui.components.FullScreenImageViewer
 import com.dan1eidtj.mayas.core_ui.ui.components.MessageStyle
 import com.dan1eidtj.mayas.core_ui.ui.components.MessageBubbleContainer
@@ -96,6 +100,7 @@ import com.dan1eidtj.mayas.core_ui.utils.getNameColorBrush
 import com.dan1eidtj.mayas.feature.auth.AuthVM
 import com.dan1eidtj.mayas.storage.B2Image
 import com.dan1eidtj.mayas.storage.B2MediaClient
+import com.dan1eidtj.mayas.storage.MediaFileCache
 import com.dan1eidtj.mayas.storage.rememberResolvedAvatarUrl
 import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
@@ -177,10 +182,169 @@ private fun shareText(context: Context, text: String) {
         putExtra(Intent.EXTRA_TEXT, text)
         type = "text/plain"
     }
-    val shareIntent = Intent.createChooser(sendIntent, "Поделиться сообщением")
+    val shareIntent = Intent.createChooser(sendIntent, context.getString(R.string.share_message))
     context.startActivity(shareIntent)
 }
 
+
+@Composable
+private fun AlbumCell(
+    mediaUrl: String,
+    mediaKind: String,
+    modifier: Modifier = Modifier,
+    overlayCount: Int? = null,
+    onImageClick: (String) -> Unit,
+    onVideoClick: (String) -> Unit
+) {
+    Box(modifier = modifier) {
+        if (mediaKind == MediaKind.VIDEO) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+                    .clickable { onVideoClick(mediaUrl) },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(36.dp)
+                )
+            }
+        } else {
+            B2Image(
+                key = mediaUrl,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable { onImageClick(mediaUrl) },
+                contentScale = ContentScale.Crop
+            )
+        }
+        if (overlayCount != null && overlayCount > 0) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.45f))
+                    .clickable { if (mediaKind == MediaKind.VIDEO) onVideoClick(mediaUrl) else onImageClick(mediaUrl) },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "+$overlayCount",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlbumGrid(
+    mediaUrls: List<String>,
+    mediaTypes: List<String>,
+    modifier: Modifier = Modifier,
+    onImageClick: (String) -> Unit,
+    onVideoClick: (String) -> Unit
+) {
+    fun kindOf(index: Int) = mediaTypes.getOrNull(index) ?: MediaKind.IMAGE
+    val gap = 3.dp
+
+    Box(modifier = modifier.clip(RoundedCornerShape(12.dp))) {
+        when (mediaUrls.size) {
+            1 -> {
+                AlbumCell(
+                    mediaUrl = mediaUrls[0],
+                    mediaKind = kindOf(0),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).height(220.dp),
+                    onImageClick = onImageClick,
+                    onVideoClick = onVideoClick
+                )
+            }
+            2 -> {
+                Row(modifier = Modifier.fillMaxWidth().height(180.dp), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    for (i in 0..1) {
+                        AlbumCell(
+                            mediaUrl = mediaUrls[i],
+                            mediaKind = kindOf(i),
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            onImageClick = onImageClick,
+                            onVideoClick = onVideoClick
+                        )
+                    }
+                }
+            }
+            3 -> {
+                Row(modifier = Modifier.fillMaxWidth().height(220.dp), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                    AlbumCell(
+                        mediaUrl = mediaUrls[0],
+                        mediaKind = kindOf(0),
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        onImageClick = onImageClick,
+                        onVideoClick = onVideoClick
+                    )
+                    Column(modifier = Modifier.weight(1f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(gap)) {
+                        AlbumCell(
+                            mediaUrl = mediaUrls[1],
+                            mediaKind = kindOf(1),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            onImageClick = onImageClick,
+                            onVideoClick = onVideoClick
+                        )
+                        AlbumCell(
+                            mediaUrl = mediaUrls[2],
+                            mediaKind = kindOf(2),
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            onImageClick = onImageClick,
+                            onVideoClick = onVideoClick
+                        )
+                    }
+                }
+            }
+            else -> {
+                val visibleCount = 4
+                val extra = (mediaUrls.size - visibleCount).coerceAtLeast(0)
+                Column(modifier = Modifier.fillMaxWidth().height(240.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
+                    Row(modifier = Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        AlbumCell(
+                            mediaUrl = mediaUrls[0],
+                            mediaKind = kindOf(0),
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            onImageClick = onImageClick,
+                            onVideoClick = onVideoClick
+                        )
+                        AlbumCell(
+                            mediaUrl = mediaUrls[1],
+                            mediaKind = kindOf(1),
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            onImageClick = onImageClick,
+                            onVideoClick = onVideoClick
+                        )
+                    }
+                    Row(modifier = Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        AlbumCell(
+                            mediaUrl = mediaUrls[2],
+                            mediaKind = kindOf(2),
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            onImageClick = onImageClick,
+                            onVideoClick = onVideoClick
+                        )
+                        AlbumCell(
+                            mediaUrl = mediaUrls[3],
+                            mediaKind = kindOf(3),
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            overlayCount = extra,
+                            onImageClick = onImageClick,
+                            onVideoClick = onVideoClick
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 
 private fun compressImageBytes(
     context: Context,
@@ -267,13 +431,14 @@ private fun SystemMessageRow(
     chipColor: Color,
     textColor: Color,
     onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     val isMissedCall = message.type == MessageType.CALL &&
             (message.callStatus == CallStatus.MISSED || message.callStatus == CallStatus.DECLINED)
     val contentColor = if (isMissedCall) MayasTheme.GlowRed else textColor
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp),
         contentAlignment = Alignment.Center
@@ -333,7 +498,7 @@ fun ChannelReadOnlyBar(
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = "Только администраторы канала могут публиковать сообщения",
+                text = stringResource(R.string.only_admins_can_post),
                 color = textSecondaryColor,
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center
@@ -365,6 +530,10 @@ fun ChatScreen(
     val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     val density = LocalDensity.current
     val haptic = LocalHapticFeedback.current
+    val overlayDensity = androidx.compose.ui.platform.LocalDensity.current
+    val overlayTopInsetPx = WindowInsets.statusBars.getTop(overlayDensity).toFloat()
+    val overlayBottomInsetPx = WindowInsets.navigationBars.getBottom(overlayDensity).toFloat()
+    val bubbleBounds = remember { HashMap<String, androidx.compose.ui.geometry.Rect>() }
     val chatBackground = MayasTheme.Background
     val surfaceColor = MayasTheme.Surface
     val textPrimaryColor = MayasTheme.TextPrimary
@@ -419,9 +588,169 @@ fun ChatScreen(
 
     var selectedMessage by remember { mutableStateOf<Message?>(null) }
     var replyMessage by remember { mutableStateOf<Message?>(null) }
+    var editingMessage by remember { mutableStateOf<Message?>(null) }
+    var showVideoCircleRecorder by remember { mutableStateOf(false) }
+    var autoStartCircle by remember { mutableStateOf(false) }
+    var showAttachSheet by remember { mutableStateOf(false) }
+    var fullScreenVideoKey by remember { mutableStateOf<String?>(null) }
+    var recordMode by remember { mutableStateOf(RecordModePrefs.load(context)) }
+    var voiceHold by remember { mutableStateOf(false) }
+    var voiceLocked by remember { mutableStateOf(false) }
+    var voiceSlideDx by remember { mutableFloatStateOf(0f) }
+    val voiceRecorder = remember { VoiceRecorder(context) }
     var fullScreenImageUrl by remember { mutableStateOf<String?>(null) }
+    val editFailedText = stringResource(R.string.message_edit_failed)
+    val editForbiddenText = stringResource(R.string.message_edit_forbidden)
 
     val chatTitle = if (chatVM.partnerName == "Группа") "" else chatVM.partnerName
+    val youLabel = stringResource(R.string.you)
+    val photoMessageFallback = stringResource(R.string.photo_message)
+    val voiceMessageFallback = stringResource(R.string.voice_message)
+    val albumMessageFallback = stringResource(R.string.album_message)
+    val circleVideoMessageFallback = stringResource(R.string.circle_video_message)
+    val voicePermissionText = stringResource(R.string.voice_permission_required)
+    val voiceFailedText = stringResource(R.string.voice_record_failed)
+    val circlePermissionsText = stringResource(R.string.circle_permissions_required)
+    val mediaSendFailedText = stringResource(R.string.error_send_media)
+    val mediaLoadFailedText = stringResource(R.string.error_load_media)
+    val recordModeVoiceText = stringResource(R.string.record_mode_voice_toast)
+    val recordModeVideoText = stringResource(R.string.record_mode_video_toast)
+
+    fun replyTextOf(): String? =
+        if (!replyMessage?.text.isNullOrBlank()) replyMessage?.text
+        else if (!replyMessage?.mediaUrls.isNullOrEmpty()) albumMessageFallback
+        else if (replyMessage?.mediaUrl != null) photoMessageFallback
+        else if (replyMessage?.circleVideoUrl != null) circleVideoMessageFallback
+        else if (replyMessage?.voiceUrl != null) voiceMessageFallback
+        else null
+
+    fun replyNameOf(): String? =
+        if (replyMessage == null) null
+        else if (replyMessage?.senderId == myUid) youLabel
+        else if (replyMessage?.senderName == "Система" || replyMessage?.senderName == "Mayas") "Система"
+        else if (chatVM.isGroupChat) replyMessage?.senderName
+        else chatTitle
+
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) Toast.makeText(context, voicePermissionText, Toast.LENGTH_LONG).show()
+    }
+
+    val circlePermissionsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { result ->
+        if (result.values.all { it }) {
+            autoStartCircle = false
+            showVideoCircleRecorder = true
+        } else {
+            Toast.makeText(context, circlePermissionsText, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun hasPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(context, permission) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+    fun startVoiceHold(): Boolean {
+        if (!hasPermission(android.Manifest.permission.RECORD_AUDIO)) {
+            audioPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            return false
+        }
+        if (!voiceRecorder.start()) {
+            Toast.makeText(context, voiceFailedText, Toast.LENGTH_SHORT).show()
+            return false
+        }
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        chatVM.startRecording()
+        voiceHold = true
+        voiceLocked = false
+        voiceSlideDx = 0f
+        return true
+    }
+
+    fun finishVoice(send: Boolean) {
+        val file = voiceRecorder.stop()
+        voiceHold = false
+        voiceLocked = false
+        voiceSlideDx = 0f
+        if (send) {
+            chatVM.stopRecording(
+                chatId = chatId,
+                audioFile = file,
+                replyText = replyTextOf(),
+                replyName = replyNameOf()
+            )
+            replyMessage = null
+        } else {
+            file?.delete()
+            chatVM.cancelRecording()
+        }
+    }
+
+    fun openCircleRecorder(autoStart: Boolean): Boolean {
+        val missing = listOf(
+            android.Manifest.permission.CAMERA,
+            android.Manifest.permission.RECORD_AUDIO
+        ).filter { !hasPermission(it) }
+        if (missing.isNotEmpty()) {
+            circlePermissionsLauncher.launch(missing.toTypedArray())
+            return false
+        }
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        autoStartCircle = autoStart
+        showVideoCircleRecorder = true
+        return true
+    }
+
+    fun startVideoHold(): Boolean = openCircleRecorder(true)
+
+    var showReactionLimit by remember { mutableStateOf(false) }
+    var reactorsFor by remember { mutableStateOf<Pair<String, String>?>(null) }
+
+    fun handleReactionToggle(messageId: String, emoji: String) {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        val result = chatVM.toggleReaction(chatId, messageId, emoji)
+        if (result == ReactionResult.LIMIT_REACHED) showReactionLimit = true
+    }
+
+    LaunchedEffect(showReactionLimit) {
+        if (showReactionLimit) {
+            delay(3200)
+            showReactionLimit = false
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            voiceRecorder.cancel()
+            chatVM.cancelRecording()
+        }
+    }
+
+    val recordLifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(recordLifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP && voiceRecorder.isActive) {
+                finishVoice(false)
+            }
+        }
+        recordLifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { recordLifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(chatVM.mediaSendFailures) {
+        if (chatVM.mediaSendFailures > 0) {
+            Toast.makeText(context, mediaSendFailedText, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    LaunchedEffect(chatVM.mediaLoadFailures) {
+        if (chatVM.mediaLoadFailures > 0) {
+            Toast.makeText(context, mediaLoadFailedText, Toast.LENGTH_SHORT).show()
+        }
+    }
+    val processImageErrorText = stringResource(R.string.error_process_image)
+    val sendPhotoErrorText = stringResource(R.string.error_send_photo)
     val chatAvatarUrl = rememberResolvedAvatarUrl(chatVM.partnerAvatarUrl, chatVM.partnerUseCustomAvatar)
     val chatUseCustomAvatar = chatVM.partnerUseCustomAvatar
     val chatProfileGlow = chatVM.partnerProfileGlow ?: "purple"
@@ -430,6 +759,31 @@ fun ChatScreen(
     // Переход из профиля (вкладка "Закреплённые") с конкретным сообщением — как только
     // список сообщений реально загрузился, проматываем к нему один раз.
     var didScrollToTarget by remember(chatId, scrollToMessageId) { mutableStateOf(false) }
+
+    var effectsInitialized by remember(chatId) { mutableStateOf(false) }
+    var playedEffectIds by remember(chatId) { mutableStateOf(setOf<String>()) }
+    var activeEffectKey by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(messages, chatVM.messagesLoaded) {
+        if (!chatVM.messagesLoaded) return@LaunchedEffect
+        if (!effectsInitialized) {
+            playedEffectIds = messages.mapNotNull { msg -> msg.messageEffect?.let { msg.id } }.toSet()
+            effectsInitialized = true
+        } else {
+            val newEffectMessage = messages.lastOrNull { it.messageEffect != null && it.id !in playedEffectIds }
+            if (newEffectMessage != null) {
+                playedEffectIds = playedEffectIds + newEffectMessage.id
+                activeEffectKey = newEffectMessage.messageEffect
+            }
+        }
+    }
+
+    val replayEvent = chatVM.effectReplayEvent
+    LaunchedEffect(replayEvent?.id) {
+        val event = replayEvent ?: return@LaunchedEffect
+        activeEffectKey = event.effect
+        chatVM.consumeEffectReplay(event.id)
+    }
+
     LaunchedEffect(messages, scrollToMessageId) {
         if (didScrollToTarget || scrollToMessageId.isNullOrBlank()) return@LaunchedEffect
         val index = messages.indexOfFirst { it.id == scrollToMessageId }
@@ -450,6 +804,14 @@ fun ChatScreen(
         chatVM.observeChat(chatId)
     }
 
+    LaunchedEffect(chatVM.draftText) {
+        val draft = chatVM.draftText
+        if (!draft.isNullOrBlank() && input.isBlank() && editingMessage == null) {
+            input = draft
+        }
+        chatVM.consumeDraft()
+    }
+
     LaunchedEffect(chatId) {
         snapshotFlow { input }
             .distinctUntilChanged()
@@ -460,6 +822,16 @@ fun ChatScreen(
                     chatVM.setTyping(chatId, false)
                 } else {
                     chatVM.setTyping(chatId, false)
+                }
+            }
+    }
+
+    LaunchedEffect(chatId) {
+        snapshotFlow { input }
+            .distinctUntilChanged()
+            .collectLatest { text ->
+                if (editingMessage == null) {
+                    chatVM.onComposingTextChanged(chatId, text)
                 }
             }
     }
@@ -497,32 +869,71 @@ fun ChatScreen(
     var pendingTimerOverrideSec by remember { mutableStateOf<Long?>(null) }
 
     val galleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri?.let {
-            coroutineScope.launch(Dispatchers.IO) {
-                try {
-                    val bytes = compressImageBytes(context, it)
-                    if (bytes != null) {
-                        chatVM.sendMediaMessage(
-                            chatId = chatId,
-                            text = "",
-                            fileBytes = bytes,
-                            replyText = if (!replyMessage?.text.isNullOrBlank()) replyMessage?.text else if (replyMessage?.mediaUrl != null) "📷 Фотография" else null,
-                            replyName = if (replyMessage == null) null
-                            else if (replyMessage?.senderId == myUid) "Вы"
-                            else if (replyMessage?.senderName == "Система" || replyMessage?.senderName == "Mayas") "Система"
-                            else if (chatVM.isGroupChat) replyMessage?.senderName
-                            else chatTitle
-                        )
-                        replyMessage = null
-                    } else {
-                        withContextMainToast(context, "Не удалось обработать изображение")
+        contract = ActivityResultContracts.PickMultipleVisualMedia(10)
+    ) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        val currentReplyText = if (!replyMessage?.text.isNullOrBlank()) replyMessage?.text else if (!replyMessage?.mediaUrls.isNullOrEmpty()) albumMessageFallback else if (replyMessage?.mediaUrl != null) photoMessageFallback else null
+        val currentReplyName = if (replyMessage == null) null
+            else if (replyMessage?.senderId == myUid) youLabel
+            else if (replyMessage?.senderName == "Система" || replyMessage?.senderName == "Mayas") "Система"
+            else if (chatVM.isGroupChat) replyMessage?.senderName
+            else chatTitle
+
+        if (uris.size == 1) {
+            val uri = uris.first()
+            val mimeType = context.contentResolver.getType(uri).orEmpty()
+            if (!mimeType.startsWith("video/")) {
+                coroutineScope.launch(Dispatchers.IO) {
+                    try {
+                        val bytes = compressImageBytes(context, uri)
+                        if (bytes != null) {
+                            chatVM.sendMediaMessage(
+                                chatId = chatId,
+                                text = "",
+                                fileBytes = bytes,
+                                replyText = currentReplyText,
+                                replyName = currentReplyName
+                            )
+                            replyMessage = null
+                        } else {
+                            withContextMainToast(context, processImageErrorText)
+                        }
+                    } catch (e: Exception) {
+                        Log.e("ChatScreen", "Ошибка отправки медиа", e)
+                        withContextMainToast(context, sendPhotoErrorText)
                     }
-                } catch (e: Exception) {
-                    Log.e("ChatScreen", "Ошибка отправки медиа", e)
-                    withContextMainToast(context, "Не удалось отправить фото")
                 }
+                return@rememberLauncherForActivityResult
+            }
+        }
+
+        coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val items = uris.mapNotNull { uri ->
+                    val mimeType = context.contentResolver.getType(uri).orEmpty()
+                    if (mimeType.startsWith("video/")) {
+                        val rawBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        rawBytes?.let { ChatVM.AlbumItem(it, "video/mp4", MediaKind.VIDEO) }
+                    } else {
+                        val bytes = compressImageBytes(context, uri)
+                        bytes?.let { ChatVM.AlbumItem(it, "image/jpeg", MediaKind.IMAGE) }
+                    }
+                }
+                if (items.isNotEmpty()) {
+                    chatVM.sendAlbumMessage(
+                        chatId = chatId,
+                        text = "",
+                        items = items,
+                        replyText = currentReplyText,
+                        replyName = currentReplyName
+                    )
+                    replyMessage = null
+                } else {
+                    withContextMainToast(context, processImageErrorText)
+                }
+            } catch (e: Exception) {
+                Log.e("ChatScreen", "Ошибка отправки альбома", e)
+                withContextMainToast(context, sendPhotoErrorText)
             }
         }
     }
@@ -582,7 +993,7 @@ fun ChatScreen(
                                         searchQuery = it
                                         chatVM.searchMessages(chatId, it)
                                     },
-                                    placeholder = { Text("Поиск в чате...", color = overWallpaperSecondaryColor) },
+                                    placeholder = { Text(stringResource(R.string.search_in_chat), color = overWallpaperSecondaryColor) },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .focusRequester(focusRequester),
@@ -773,7 +1184,7 @@ fun ChatScreen(
                                         modifier = Modifier.background(surfaceColor)
                                     ) {
                                         DropdownMenuItem(
-                                            text = { Text("Очистить чат", color = textPrimaryColor) },
+                                            text = { Text(stringResource(R.string.clear_chat), color = textPrimaryColor) },
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.Default.Delete,
@@ -787,7 +1198,7 @@ fun ChatScreen(
                                             }
                                         )
                                         DropdownMenuItem(
-                                            text = { Text("Заблокировать", color = textPrimaryColor) },
+                                            text = { Text(stringResource(R.string.block_user), color = textPrimaryColor) },
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.Default.Block,
@@ -801,7 +1212,7 @@ fun ChatScreen(
                                             }
                                         )
                                         DropdownMenuItem(
-                                            text = { Text("Пожаловаться", color = textPrimaryColor) },
+                                            text = { Text(stringResource(R.string.report), color = textPrimaryColor) },
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.Default.Report,
@@ -815,7 +1226,7 @@ fun ChatScreen(
                                             DropdownMenuItem(
                                                 text = {
                                                     Text(
-                                                        "Выбрать тему",
+                                                        stringResource(R.string.choose_theme),
                                                         color = textPrimaryColor
                                                     )
                                                 },
@@ -833,8 +1244,8 @@ fun ChatScreen(
                                             text = {
                                                 val current = chatVM.chatDisappearingTimerSec
                                                 Text(
-                                                    if (current > 0) "Таймер: ${formatTimerDuration(current)}"
-                                                    else "Таймер исчезающих сообщений",
+                                                    if (current > 0) stringResource(R.string.timer_menu_label_active, formatTimerDuration(current))
+                                                    else stringResource(R.string.disappearing_timer_bare_label),
                                                     color = textPrimaryColor
                                                 )
                                             },
@@ -883,8 +1294,8 @@ fun ChatScreen(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             if (pinnedMessages.size > 1)
-                                                "Закреплено (${pinnedIndex + 1}/${pinnedMessages.size})"
-                                            else "Закрепленное сообщение",
+                                                stringResource(R.string.pinned_count_label, pinnedIndex + 1, pinnedMessages.size)
+                                            else stringResource(R.string.pinned_message),
                                             fontSize = 12.sp,
                                             color = MayasTheme.GlowBlue,
                                             fontWeight = FontWeight.Bold,
@@ -894,7 +1305,7 @@ fun ChatScreen(
                                         )
                                         Text(
                                             currentPinned?.text
-                                                ?: if (currentPinned?.mediaUrl != null) "📷 Фотография" else "",
+                                                ?: if (!currentPinned?.mediaUrls.isNullOrEmpty()) albumMessageFallback else if (currentPinned?.circleVideoUrl != null) circleVideoMessageFallback else if (currentPinned?.mediaUrl != null) photoMessageFallback else "",
                                             fontSize = 13.sp,
                                             maxLines = 1,
                                             color = textSecondaryColor,
@@ -929,6 +1340,31 @@ fun ChatScreen(
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        if (chatVM.messagesLoaded && messages.isEmpty()) {
+                            ChatEmptyState(
+                                textColor = textPrimaryColor,
+                                hintColor = textSecondaryColor,
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        } else if (!chatVM.messagesLoaded && messages.isEmpty()) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.align(Alignment.Center).size(28.dp),
+                                strokeWidth = 2.5.dp,
+                                color = textSecondaryColor
+                            )
+                        }
+
+                        if (chatVM.activeUploads > 0) {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .fillMaxWidth()
+                                    .height(2.dp),
+                                color = accentColor,
+                                trackColor = Color.Transparent
+                            )
+                        }
+
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.fillMaxSize(),
@@ -936,6 +1372,21 @@ fun ChatScreen(
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                             reverseLayout = true
                         ) {
+                            itemsIndexed(
+                                chatVM.outbox.asReversed(),
+                                key = { _, item -> "outbox_" + item.id }
+                            ) { _, item ->
+                                OutboxBubble(
+                                    item = item,
+                                    bubbleColor = bubbleMineColor,
+                                    textColor = textPrimaryColor,
+                                    secondaryColor = textSecondaryColor,
+                                    errorColor = MayasTheme.ErrorRed,
+                                    onRetry = { chatVM.retryOutbox(chatId) },
+                                    onCancel = { chatVM.cancelOutbox(item.id) },
+                                    modifier = Modifier.animateItem()
+                                )
+                            }
                             itemsIndexed(messages, key = { _, msg -> msg.id }) { index, msg ->
                                 if (msg.type == MessageType.SYSTEM || msg.type == MessageType.CALL) {
                                     val onSystemClick: (() -> Unit)? = when {
@@ -963,7 +1414,15 @@ fun ChatScreen(
                                         message = msg,
                                         chipColor = surfaceColor,
                                         textColor = textSecondaryColor,
-                                        onClick = onSystemClick
+                                        onClick = onSystemClick,
+                                        modifier = Modifier.animateItem(
+                                            fadeInSpec = tween(220),
+                                            fadeOutSpec = tween(150),
+                                            placementSpec = spring(
+                                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            )
+                                        )
                                     )
                                     return@itemsIndexed
                                 }
@@ -1150,6 +1609,14 @@ fun ChatScreen(
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
+                                        .animateItem(
+                                            fadeInSpec = tween(220),
+                                            fadeOutSpec = tween(150),
+                                            placementSpec = spring(
+                                                dampingRatio = Spring.DampingRatioLowBouncy,
+                                                stiffness = Spring.StiffnessMediumLow
+                                            )
+                                        )
                                         .padding(start = startPadding, end = endPadding)
                                         .pointerInput(msg.id) {
                                             detectHorizontalDragGestures(
@@ -1271,22 +1738,34 @@ fun ChatScreen(
                                             }
                                         }
 
+                                        val plainCircle = msg.circleVideoUrl != null &&
+                                            msg.text.isNullOrBlank() &&
+                                            msg.replyToText == null &&
+                                            msg.forwardedFromName == null
+                                        val circleTimeText = msg.timestamp?.let { ts ->
+                                            SimpleDateFormat("HH:mm", Locale.getDefault()).format(ts)
+                                        } ?: "--:--"
+
                                         MessageBubbleContainer(
                                             messageStyle = messageStyle,
                                             bubbleShape = bubbleShape,
                                             messageModifier = messageModifier,
+                                            plain = plainCircle,
                                             normalPadding = PaddingValues(
                                                 start = if (isMe) 14.dp else (if (isLastInChain) 26.dp else 14.dp),
                                                 end = if (isMe) (if (isLastInChain) 26.dp else 14.dp) else 14.dp,
                                                 top = 8.dp,
                                                 bottom = 8.dp
                                             ),
-                                            onClick = { selectedMessage = msg }
+                                            onClick = { selectedMessage = msg },
+                                            onDoubleClick = { handleReactionToggle(msg.id, "❤️") },
+                                            onScreenBounds = { bubbleBounds[msg.id] = it }
                                         ) {
-                                            Row(
-                                                modifier = Modifier,
-                                                verticalAlignment = Alignment.Bottom
-                                            ) {
+                                            Column {
+                                                Row(
+                                                    modifier = Modifier,
+                                                    verticalAlignment = Alignment.Bottom
+                                                ) {
                                                 Column(modifier = Modifier.weight(1f, fill = false)) {
 
                                                     if (!isMe && isGroupChat && isLastInChain) {
@@ -1311,8 +1790,8 @@ fun ChatScreen(
                                                             }
                                                             if (chatVM.chatType != "CHANNEL") {
                                                                 val role = when {
-                                                                    msg.senderId.isNotBlank() && msg.senderId == chatVM.chatOwnerId -> "владелец"
-                                                                    msg.senderId.isNotBlank() && msg.senderId in chatVM.chatAdmins -> "админ"
+                                                                    msg.senderId.isNotBlank() && msg.senderId == chatVM.chatOwnerId -> stringResource(R.string.chat_role_owner)
+                                                                    msg.senderId.isNotBlank() && msg.senderId in chatVM.chatAdmins -> stringResource(R.string.chat_role_admin)
                                                                     else -> null
                                                                 }
                                                                 if (role != null) {
@@ -1340,7 +1819,7 @@ fun ChatScreen(
                                                             )
                                                             Spacer(Modifier.width(4.dp))
                                                             Text(
-                                                                "Переслано от ${msg.forwardedFromName}",
+                                                                stringResource(R.string.forwarded_from, msg.forwardedFromName ?: ""),
                                                                 fontSize = 11.sp,
                                                                 fontWeight = FontWeight.Medium,
                                                                 color = (if (isMe) Color.White else MayasTheme.GlowPurple).copy(alpha = 0.7f)
@@ -1374,7 +1853,7 @@ fun ChatScreen(
                                                                     fontWeight = FontWeight.Bold,
                                                                     color = MayasTheme.GlowPurple
                                                                 )
-                                                                Text(
+                                                                MayasText(
                                                                     msg.replyToText.orEmpty(),
                                                                     fontSize = 12.sp,
                                                                     color = textSecondaryColor,
@@ -1384,7 +1863,35 @@ fun ChatScreen(
                                                             }
                                                         }
                                                     }
-                                                    if (!msg.mediaUrl.isNullOrBlank()) {
+                                                    if (msg.circleVideoUrl != null) {
+                                                        CircleVideoBubble(
+                                                            mediaKey = msg.circleVideoUrl,
+                                                            durationSec = msg.circleVideoDuration,
+                                                            messageId = msg.id,
+                                                            isMine = isMe,
+                                                            timeText = if (plainCircle) circleTimeText else null,
+                                                            status = if (plainCircle && isMe) msg.status else null,
+                                                            modifier = Modifier.padding(bottom = if (plainCircle) 0.dp else 6.dp)
+                                                        )
+                                                    } else if (msg.mediaUrls.isNotEmpty()) {
+                                                        AlbumGrid(
+                                                            mediaUrls = msg.mediaUrls,
+                                                            mediaTypes = msg.mediaTypes,
+                                                            modifier = Modifier
+                                                                .padding(bottom = 6.dp)
+                                                                .fillMaxWidth(),
+                                                            onImageClick = { key ->
+                                                                if (key.startsWith("http")) {
+                                                                    fullScreenImageUrl = key
+                                                                } else {
+                                                                    coroutineScope.launch {
+                                                                        fullScreenImageUrl = MediaFileCache.resolveModel(context, key)
+                                                                    }
+                                                                }
+                                                            },
+                                                            onVideoClick = { key -> fullScreenVideoKey = key }
+                                                        )
+                                                    } else if (!msg.mediaUrl.isNullOrBlank()) {
                                                         B2Image(
                                                             key = msg.mediaUrl,
                                                             contentDescription = null,
@@ -1399,7 +1906,7 @@ fun ChatScreen(
                                                                         fullScreenImageUrl = mediaKey
                                                                     } else {
                                                                         coroutineScope.launch {
-                                                                            fullScreenImageUrl = B2MediaClient.resolveDownloadUrl(mediaKey)
+                                                                            fullScreenImageUrl = MediaFileCache.resolveModel(context, mediaKey)
                                                                         }
                                                                     }
                                                                 },
@@ -1442,14 +1949,16 @@ fun ChatScreen(
                                                             }
                                                         )
 
-                                                        ClickableText(
+                                                        val usernameClickedTemplate = stringResource(R.string.username_clicked)
+                                                        val hashtagClickedTemplate = stringResource(R.string.hashtag_clicked)
+                                                        MayasClickableText(
                                                             text = parsedText,
                                                             style = TextStyle(
                                                                 fontSize = fontSize.sp,
                                                                 color = customTextColor
                                                             ),
-                                                            onClick = { offset ->
-                                                                parsedText.getStringAnnotations(
+                                                            onClick = { annotated, offset ->
+                                                                annotated.getStringAnnotations(
                                                                     "URL",
                                                                     offset,
                                                                     offset
@@ -1459,31 +1968,31 @@ fun ChatScreen(
                                                                         Uri.parse(annotation.item)
                                                                     )
                                                                     context.startActivity(intent)
-                                                                    return@ClickableText
+                                                                    return@MayasClickableText
                                                                 }
-                                                                parsedText.getStringAnnotations(
+                                                                annotated.getStringAnnotations(
                                                                     "USERNAME",
                                                                     offset,
                                                                     offset
                                                                 ).firstOrNull()?.let { annotation ->
                                                                     Toast.makeText(
                                                                         context,
-                                                                        "@${annotation.item} кликнут",
+                                                                        String.format(usernameClickedTemplate, annotation.item),
                                                                         Toast.LENGTH_SHORT
                                                                     ).show()
-                                                                    return@ClickableText
+                                                                    return@MayasClickableText
                                                                 }
-                                                                parsedText.getStringAnnotations(
+                                                                annotated.getStringAnnotations(
                                                                     "HASHTAG",
                                                                     offset,
                                                                     offset
                                                                 ).firstOrNull()?.let { annotation ->
                                                                     Toast.makeText(
                                                                         context,
-                                                                        "#${annotation.item} кликнут",
+                                                                        String.format(hashtagClickedTemplate, annotation.item),
                                                                         Toast.LENGTH_SHORT
                                                                     ).show()
-                                                                    return@ClickableText
+                                                                    return@MayasClickableText
                                                                 }
                                                                 selectedMessage = msg
                                                             }
@@ -1491,6 +2000,7 @@ fun ChatScreen(
                                                     }
                                                 }
 
+                                                if (!plainCircle) {
                                                 Spacer(modifier = Modifier.width(12.dp))
 
                                                 Row(
@@ -1517,10 +2027,23 @@ fun ChatScreen(
                                                         ).format(ts)
                                                     } ?: "--:--"
 
+                                                    val effectEmoji = msg.messageEffect?.let { MessageEffects.registry[it]?.emoji }
+                                                    if (effectEmoji != null) {
+                                                        MessageEffectBadge(
+                                                            emoji = effectEmoji,
+                                                            background = secondaryTextColor.copy(alpha = 0.16f),
+                                                            onClick = {
+                                                                activeEffectKey = msg.messageEffect
+                                                                chatVM.replayMessageEffect(chatId, msg)
+                                                            }
+                                                        )
+                                                        Spacer(Modifier.width(6.dp))
+                                                    }
+
                                                     if (msg.messageState == MessageState.SCHEDULED) {
                                                         Icon(
                                                             imageVector = Icons.Outlined.Schedule,
-                                                            contentDescription = "Запланировано",
+                                                            contentDescription = stringResource(R.string.scheduled_indicator),
                                                             tint = secondaryTextColor,
                                                             modifier = Modifier.size(12.dp)
                                                         )
@@ -1529,7 +2052,7 @@ fun ChatScreen(
                                                     if (msg.ttlSeconds > 0) {
                                                         Icon(
                                                             imageVector = Icons.Outlined.Timer,
-                                                            contentDescription = "Исчезающее сообщение",
+                                                            contentDescription = stringResource(R.string.disappearing_message_indicator),
                                                             tint = secondaryTextColor,
                                                             modifier = Modifier.size(12.dp)
                                                         )
@@ -1538,9 +2061,19 @@ fun ChatScreen(
                                                     if (msg.isSilent) {
                                                         Icon(
                                                             imageVector = Icons.Outlined.NotificationsOff,
-                                                            contentDescription = "Без звука",
+                                                            contentDescription = stringResource(R.string.silent_indicator),
                                                             tint = secondaryTextColor,
                                                             modifier = Modifier.size(12.dp)
+                                                        )
+                                                        Spacer(Modifier.width(3.dp))
+                                                    }
+
+                                                    if (msg.isEdited && msg.messageState != MessageState.SCHEDULED) {
+                                                        Text(
+                                                            text = stringResource(R.string.edited_label),
+                                                            fontSize = 11.sp,
+                                                            color = secondaryTextColor,
+                                                            fontStyle = FontStyle.Italic
                                                         )
                                                         Spacer(Modifier.width(3.dp))
                                                     }
@@ -1586,65 +2119,62 @@ fun ChatScreen(
                                                             2 -> Icons.Default.DoneAll
                                                             else -> Icons.Default.Done
                                                         }
-                                                        Icon(
-                                                            imageVector = statusIcon,
-                                                            contentDescription = null,
-                                                            tint = if (messageStyle != null) secondaryTextColor else (if (msg.status == 2) MayasTheme.GlowSky else textSecondaryColor),
-                                                            modifier = Modifier.size(15.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-
-                                        if (msg.reactions.isNotEmpty()) {
-                                            val groupedReactions = msg.reactions.values.groupBy { it }.mapValues { it.value.size }
-                                            Row(
-                                                modifier = Modifier
-                                                    .padding(top = 2.dp, start = if (isMe) 0.dp else 40.dp, end = if (isMe) 14.dp else 0.dp)
-                                                    .background(surfaceColor.copy(alpha = 0.8f), RoundedCornerShape(12.dp))
-                                                    .border(1.dp, textPrimaryColor.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
-                                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                groupedReactions.forEach { (emoji, count) ->
-                                                    val isMyReaction = msg.reactions[myUid] == emoji
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier = Modifier
-                                                            .clip(RoundedCornerShape(8.dp))
-                                                            .background(if (isMyReaction) accentColor.copy(alpha = 0.2f) else Color.Transparent)
-                                                            .clickable {
-                                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                                chatVM.toggleReaction(chatId, msg.id, emoji)
-                                                            }
-                                                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                                                    ) {
-                                                        Text(emoji, fontSize = 14.sp)
-                                                        if (count > 0) {
-                                                            Spacer(Modifier.width(3.dp))
-                                                            Text(
-                                                                count.toString(),
-                                                                fontSize = 11.sp,
-                                                                color = if (isMyReaction) accentColor else textPrimaryColor,
-                                                                fontWeight = FontWeight.Bold
+                                                        AnimatedContent(
+                                                            targetState = statusIcon,
+                                                            transitionSpec = {
+                                                                (scaleIn(initialScale = 0.6f, animationSpec = tween(220)) + fadeIn(animationSpec = tween(220)))
+                                                                    .togetherWith(fadeOut(animationSpec = tween(120)))
+                                                            },
+                                                            label = "messageStatusIcon"
+                                                        ) { icon ->
+                                                            Icon(
+                                                                imageVector = icon,
+                                                                contentDescription = null,
+                                                                tint = if (messageStyle != null) secondaryTextColor else (if (msg.status == 2) MayasTheme.GlowSky else textSecondaryColor),
+                                                                modifier = Modifier.size(15.dp)
                                                             )
                                                         }
                                                     }
                                                 }
+                                                }
+                                            }
+                                                if (msg.reactions.isNotEmpty()) {
+                                                    val chipsSecondary = FrameStyles.registry[messageStyle]?.textColor?.copy(alpha = 0.6f) ?: if (isMe) Color.White.copy(alpha = 0.7f) else timeColor
+                                                    MessageReactionChips(
+                                                        message = msg,
+                                                        myUid = myUid,
+                                                        accent = accentColor,
+                                                        contentColor = chipsSecondary,
+                                                        chipBackground = chipsSecondary.copy(alpha = 0.16f),
+                                                        profileOf = { uid -> chatVM.reactorProfile(uid) },
+                                                        onToggle = { emoji -> handleReactionToggle(msg.id, emoji) },
+                                                        onShowReactors = { emoji -> reactorsFor = msg.id to emoji },
+                                                        modifier = Modifier.padding(top = 6.dp)
+                                                    )
+                                                }
                                             }
                                         }
+
                                     }
 
-                                    DropdownMenu(
-                                        expanded = selectedMessage?.id == msg.id,
-                                        onDismissRequest = { selectedMessage = null },
-                                        modifier = Modifier.background(surfaceColor)
-                                    ) {
+                                    if (selectedMessage?.id == msg.id) {
+                                        MessageActionsOverlay(
+                                            bounds = bubbleBounds[msg.id],
+                                            isMine = isMe,
+                                            surfaceColor = surfaceColor,
+                                            accent = MayasTheme.GlowPurple,
+                                            selectedReactions = msg.reactionsOf(myUid),
+                                            topInsetPx = overlayTopInsetPx,
+                                            bottomInsetPx = overlayBottomInsetPx,
+                                            onReaction = { emoji ->
+                                                handleReactionToggle(msg.id, emoji)
+                                                selectedMessage = null
+                                            },
+                                            onDismiss = { selectedMessage = null }
+                                        ) {
                                         if (msg.messageState == MessageState.SCHEDULED && msg.senderId == myUid) {
                                             DropdownMenuItem(
-                                                text = { Text("Отменить отправку", color = MayasTheme.ErrorRed) },
+                                                text = { Text(stringResource(R.string.cancel_send_action), color = MayasTheme.ErrorRed) },
                                                 leadingIcon = {
                                                     Icon(
                                                         Icons.Outlined.Schedule,
@@ -1660,7 +2190,7 @@ fun ChatScreen(
                                             HorizontalDivider(color = textPrimaryColor.copy(0.1f))
                                         }
                                         DropdownMenuItem(
-                                            text = { Text("Ответить", color = textPrimaryColor) },
+                                            text = { Text(stringResource(R.string.reply), color = textPrimaryColor) },
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.AutoMirrored.Outlined.ArrowBack,
@@ -1673,34 +2203,27 @@ fun ChatScreen(
                                                 selectedMessage = null
                                             }
                                         )
-                                        val quickReactions = listOf("👍", "❤️", "😂", "😮", "😢", "🔥")
-                                        Row(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            quickReactions.forEach { emoji ->
-                                                val isSelected = msg.reactions[myUid] == emoji
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(32.dp)
-                                                        .clip(CircleShape)
-                                                        .background(if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.2f) else Color.Transparent)
-                                                        .clickable {
-                                                            chatVM.toggleReaction(chatId, msg.id, emoji)
-                                                            selectedMessage = null
-                                                        },
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Text(emoji, fontSize = 20.sp)
+                                        if (isMe && msg.type == MessageType.TEXT && msg.messageState != MessageState.SCHEDULED) {
+                                            DropdownMenuItem(
+                                                text = { Text(stringResource(R.string.edit_action), color = textPrimaryColor) },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        Icons.Outlined.Edit,
+                                                        null,
+                                                        tint = textSecondaryColor
+                                                    )
+                                                },
+                                                onClick = {
+                                                    editingMessage = msg
+                                                    replyMessage = null
+                                                    input = msg.text.orEmpty()
+                                                    selectedMessage = null
                                                 }
-                                            }
+                                            )
                                         }
-                                        HorizontalDivider(color = textPrimaryColor.copy(0.1f))
-
+                                        val textCopiedText = stringResource(R.string.text_copied)
                                         DropdownMenuItem(
-                                            text = { Text("Копировать", color = textPrimaryColor) },
+                                            text = { Text(stringResource(R.string.copy), color = textPrimaryColor) },
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.Outlined.ContentCopy,
@@ -1716,14 +2239,14 @@ fun ChatScreen(
                                                 clipboardManager.setPrimaryClip(clip)
                                                 Toast.makeText(
                                                     context,
-                                                    "Текст скопирован",
+                                                    textCopiedText,
                                                     Toast.LENGTH_SHORT
                                                 ).show()
                                                 selectedMessage = null
                                             }
                                         )
                                         DropdownMenuItem(
-                                            text = { Text("Поделиться", color = textPrimaryColor) },
+                                            text = { Text(stringResource(R.string.share), color = textPrimaryColor) },
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.Outlined.Share,
@@ -1736,8 +2259,9 @@ fun ChatScreen(
                                                 selectedMessage = null
                                             }
                                         )
+                                        val messagePinnedText = stringResource(R.string.message_pinned)
                                         DropdownMenuItem(
-                                            text = { Text("Закрепить", color = textPrimaryColor) },
+                                            text = { Text(stringResource(R.string.pin_action), color = textPrimaryColor) },
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.Outlined.PushPin,
@@ -1749,14 +2273,16 @@ fun ChatScreen(
                                                 chatVM.pinMessage(chatId, msg)
                                                 Toast.makeText(
                                                     context,
-                                                    "Сообщение закреплено",
+                                                    messagePinnedText,
                                                     Toast.LENGTH_SHORT
                                                 ).show()
                                                 selectedMessage = null
                                             }
                                         )
+                                        val forwardedToSavedText = stringResource(R.string.forwarded_to_saved)
+                                        val messageDeletedText = stringResource(R.string.message_deleted)
                                         DropdownMenuItem(
-                                            text = { Text("Переслать в Избранное", color = textPrimaryColor) },
+                                            text = { Text(stringResource(R.string.forward_to_saved), color = textPrimaryColor) },
                                             leadingIcon = {
                                                 Icon(
                                                     Icons.Outlined.Bookmark,
@@ -1773,7 +2299,7 @@ fun ChatScreen(
                                                         chatVM.forwardMessage(msg, savedChatId)
                                                         Toast.makeText(
                                                             context,
-                                                            "Переслано в Избранное",
+                                                            forwardedToSavedText,
                                                             Toast.LENGTH_SHORT
                                                         ).show()
                                                     }
@@ -1785,7 +2311,7 @@ fun ChatScreen(
                                             DropdownMenuItem(
                                                 text = {
                                                     Text(
-                                                        "Удалить",
+                                                        stringResource(R.string.delete),
                                                         color = MayasTheme.ErrorRed
                                                     )
                                                 },
@@ -1800,13 +2326,14 @@ fun ChatScreen(
                                                     chatVM.deleteMessage(chatId, msg.id)
                                                     Toast.makeText(
                                                         context,
-                                                        "Сообщение удалено",
+                                                        messageDeletedText,
                                                         Toast.LENGTH_SHORT
                                                     ).show()
                                                     selectedMessage = null
                                                 }
                                             )
                                         }
+                                                                            }
                                     }
                                 }
                             }
@@ -1834,7 +2361,7 @@ fun ChatScreen(
                                     )
                                     Spacer(Modifier.width(12.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        val replyName = if (reply.senderId == myUid) "Вы"
+                                        val replyName = if (reply.senderId == myUid) youLabel
                                         else if (reply.senderName == "Система" || reply.senderName == "Mayas") "Система"
                                         else if (chatVM.isGroupChat) reply.senderName
                                         else chatTitle
@@ -1844,8 +2371,8 @@ fun ChatScreen(
                                             color = MayasTheme.GlowPurple,
                                             fontWeight = FontWeight.Bold
                                         )
-                                        Text(
-                                            text = if (!reply.text.isNullOrBlank()) reply.text else "📷 Фотография",
+                                        MayasText(
+                                            text = if (!reply.text.isNullOrBlank()) reply.text else if (reply.mediaUrls.isNotEmpty()) albumMessageFallback else if (reply.circleVideoUrl != null) circleVideoMessageFallback else photoMessageFallback,
                                             fontSize = 13.sp,
                                             maxLines = 1,
                                             color = textSecondaryColor,
@@ -1869,6 +2396,61 @@ fun ChatScreen(
                                     color = textPrimaryColor.copy(0.1f)
                                 )
                             }
+                        }
+
+                        AnimatedVisibility(
+                            visible = editingMessage != null,
+                            enter = expandVertically(animationSpec = tween(200)) + fadeIn(),
+                            exit = shrinkVertically(animationSpec = tween(200)) + fadeOut()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(surfaceColor)
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Outlined.Edit,
+                                    null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MayasTheme.GlowPurple
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.edit_action),
+                                        fontSize = 11.sp,
+                                        color = MayasTheme.GlowPurple,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = editingMessage?.text.orEmpty(),
+                                        fontSize = 13.sp,
+                                        maxLines = 1,
+                                        color = textSecondaryColor,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        editingMessage = null
+                                        input = ""
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = textSecondaryColor
+                                    )
+                                }
+                            }
+                            HorizontalDivider(
+                                thickness = 1.dp,
+                                color = textPrimaryColor.copy(0.1f)
+                            )
                         }
 
                         AnimatedVisibility(visible = showEmojiPicker) {
@@ -1899,8 +2481,8 @@ fun ChatScreen(
                                             )
                                             Spacer(Modifier.width(4.dp))
                                             Text(
-                                                if (pendingTimerOverrideSec != null) "Таймер для сообщения: ${formatTimerDuration(effectiveTimerSec)}"
-                                                else "Таймер чата: ${formatTimerDuration(effectiveTimerSec)}",
+                                                if (pendingTimerOverrideSec != null) stringResource(R.string.timer_for_message, formatTimerDuration(effectiveTimerSec))
+                                                else stringResource(R.string.timer_for_chat, formatTimerDuration(effectiveTimerSec)),
                                                 fontSize = 12.sp,
                                                 color = MayasTheme.Accent
                                             )
@@ -1925,6 +2507,19 @@ fun ChatScreen(
                                             .navigationBarsPadding(),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        if (voiceHold) {
+                                            VoiceRecordingBar(
+                                                seconds = chatVM.recordingDuration,
+                                                locked = voiceLocked,
+                                                slideDx = voiceSlideDx,
+                                                onCancel = { finishVoice(false) },
+                                                onSend = { finishVoice(true) },
+                                                accent = MayasTheme.ErrorRed,
+                                                textColor = textPrimaryColor,
+                                                hintColor = textSecondaryColor,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        } else {
                                         IconButton(onClick = { showEmojiPicker = !showEmojiPicker }) {
                                             Icon(
                                                 if (showEmojiPicker) Icons.Default.Keyboard else Icons.Outlined.EmojiEmotions,
@@ -1939,7 +2534,7 @@ fun ChatScreen(
                                             modifier = Modifier.weight(1f),
                                             placeholder = {
                                                 Text(
-                                                    "Сообщение..",
+                                                    if (editingMessage != null) stringResource(R.string.edit_message_hint) else stringResource(R.string.message_hint),
                                                     color = textSecondaryColor
                                                 )
                                             },
@@ -1956,8 +2551,13 @@ fun ChatScreen(
                                             )
                                         )
 
-                                        IconButton(onClick = { galleryLauncher.launch("image/*") }) {
-                                            Icon(Icons.Default.Image, null, tint = textSecondaryColor)
+                                        IconButton(onClick = { showAttachSheet = true }) {
+                                            Icon(
+                                                Icons.Default.AttachFile,
+                                                stringResource(R.string.attach_open),
+                                                tint = textSecondaryColor
+                                            )
+                                        }
                                         }
 
                                         AnimatedContent<Boolean>(
@@ -1969,22 +2569,40 @@ fun ChatScreen(
                                             }
                                         ) { isSending ->
                                             if (isSending) {
-                                                fun doSend(silent: Boolean) {
+                                                fun doSend(silent: Boolean, effect: String? = null) {
+                                                    val editTarget = editingMessage
+                                                    if (editTarget != null) {
+                                                        val textToSave = input
+                                                        chatVM.editMessage(
+                                                            chatId = chatId,
+                                                            messageId = editTarget.id,
+                                                            newText = textToSave,
+                                                            onError = { reason ->
+                                                                val message = if (reason == "forbidden") editForbiddenText else editFailedText
+                                                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        )
+                                                        input = ""
+                                                        editingMessage = null
+                                                        return
+                                                    }
                                                     chatVM.sendMessage(
                                                         chatId = chatId,
                                                         text = input,
-                                                        replyText = if (!replyMessage?.text.isNullOrBlank()) replyMessage?.text else if (replyMessage?.mediaUrl != null) "📷 Фотография" else if (replyMessage?.voiceUrl != null) "🎤 Голосовое сообщение" else null,
+                                                        replyText = if (!replyMessage?.text.isNullOrBlank()) replyMessage?.text else if (!replyMessage?.mediaUrls.isNullOrEmpty()) albumMessageFallback else if (replyMessage?.mediaUrl != null) photoMessageFallback else if (replyMessage?.circleVideoUrl != null) circleVideoMessageFallback else if (replyMessage?.voiceUrl != null) voiceMessageFallback else null,
                                                         replyName = if (replyMessage == null) null
-                                                        else if (replyMessage?.senderId == myUid) "Вы"
+                                                        else if (replyMessage?.senderId == myUid) youLabel
                                                         else if (replyMessage?.senderName == "Система" || replyMessage?.senderName == "Mayas") "Система"
                                                         else if (chatVM.isGroupChat) replyMessage?.senderName
                                                         else chatTitle,
                                                         timerOverrideSec = pendingTimerOverrideSec,
-                                                        silent = silent
+                                                        silent = silent,
+                                                        effect = effect
                                                     )
                                                     input = ""
                                                     replyMessage = null
                                                     pendingTimerOverrideSec = null
+                                                    chatVM.clearDraftNow(chatId)
                                                 }
 
                                                 Box {
@@ -2017,7 +2635,7 @@ fun ChatScreen(
                                                         DropdownMenuItem(
                                                             text = {
                                                                 Text(
-                                                                    if (pendingTimerOverrideSec != null) "Таймер: ${formatTimerDuration(pendingTimerOverrideSec!!)}" else "Таймер сообщения",
+                                                                    if (pendingTimerOverrideSec != null) stringResource(R.string.timer_menu_label_active, formatTimerDuration(pendingTimerOverrideSec!!)) else stringResource(R.string.timer_message_label_inactive),
                                                                     color = textPrimaryColor
                                                                 )
                                                             },
@@ -2028,7 +2646,7 @@ fun ChatScreen(
                                                             }
                                                         )
                                                         DropdownMenuItem(
-                                                            text = { Text("Отправить без звука", color = textPrimaryColor) },
+                                                            text = { Text(stringResource(R.string.send_silently_action), color = textPrimaryColor) },
                                                             leadingIcon = { Icon(Icons.Outlined.NotificationsOff, null, tint = MayasTheme.Accent) },
                                                             onClick = {
                                                                 showSendOptionsMenu = false
@@ -2036,95 +2654,74 @@ fun ChatScreen(
                                                             }
                                                         )
                                                         DropdownMenuItem(
-                                                            text = { Text("Отправить позже", color = textPrimaryColor) },
+                                                            text = { Text(stringResource(R.string.send_later_action), color = textPrimaryColor) },
                                                             leadingIcon = { Icon(Icons.Outlined.Schedule, null, tint = MayasTheme.Accent) },
                                                             onClick = {
                                                                 showSendOptionsMenu = false
                                                                 showScheduleDialog = true
                                                             }
                                                         )
+                                                        HorizontalDivider(thickness = 1.dp, color = textPrimaryColor.copy(0.08f))
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                                                                .fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                        ) {
+                                                            MessageEffects.registry.forEach { (key, spec) ->
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .clip(CircleShape)
+                                                                        .background(MayasTheme.SurfaceVariant.copy(alpha = 0.4f))
+                                                                        .clickable {
+                                                                            showSendOptionsMenu = false
+                                                                            doSend(silent = false, effect = key)
+                                                                        }
+                                                                        .padding(8.dp),
+                                                                    contentAlignment = Alignment.Center
+                                                                ) {
+                                                                    EmojiGlyph(spec.emoji, fontSize = 18.sp)
+                                                                }
+                                                            }
+                                                        }
                                                     }
+                                                }
+                                            } else if (voiceLocked) {
+                                                IconButton(onClick = { finishVoice(true) }) {
+                                                    Icon(
+                                                        Icons.AutoMirrored.Filled.Send,
+                                                        stringResource(R.string.voice_send),
+                                                        tint = MayasTheme.Accent
+                                                    )
                                                 }
                                             } else {
-                                                val isRecording = chatVM.isRecording
-                                                val recordingScale by animateFloatAsState(
-                                                    targetValue = if (isRecording) 1.2f else 1f,
-                                                    animationSpec = if (isRecording) {
-                                                        infiniteRepeatable(
-                                                            animation = tween(800),
-                                                            repeatMode = RepeatMode.Reverse
-                                                        )
-                                                    } else {
-                                                        tween(200)
+                                                RecordModeButton(
+                                                    mode = recordMode,
+                                                    recording = voiceHold,
+                                                    idleTint = textSecondaryColor,
+                                                    activeColor = MayasTheme.ErrorRed,
+                                                    onToggleMode = {
+                                                        recordMode = if (recordMode == RecordMode.VOICE) RecordMode.VIDEO else RecordMode.VOICE
+                                                        RecordModePrefs.save(context, recordMode)
+                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                        Toast.makeText(
+                                                            context,
+                                                            if (recordMode == RecordMode.VIDEO) recordModeVideoText else recordModeVoiceText,
+                                                            Toast.LENGTH_SHORT
+                                                        ).show()
                                                     },
-                                                    label = "micPulse"
+                                                    onHoldStart = {
+                                                        if (recordMode == RecordMode.VOICE) startVoiceHold() else startVideoHold()
+                                                    },
+                                                    onHoldMove = { dx, _ -> voiceSlideDx = dx },
+                                                    onHoldRelease = { release ->
+                                                        when (release) {
+                                                            RecordRelease.SEND -> finishVoice(true)
+                                                            RecordRelease.CANCEL -> finishVoice(false)
+                                                            RecordRelease.LOCK -> voiceLocked = true
+                                                        }
+                                                    }
                                                 )
-
-                                                val recorder = remember { VoiceRecorder(context) }
-                                                DisposableEffect(Unit) {
-                                                    onDispose {
-                                                        recorder.stop()
-                                                    }
-                                                }
-                                                val recordPermissionLauncher = rememberLauncherForActivityResult(
-                                                    ActivityResultContracts.RequestPermission()
-                                                ) { isGranted ->
-                                                    if (isGranted) {
-
-                                                    }
-                                                }
-
-                                                IconButton(
-                                                    onClick = {
-                                                        if (ContextCompat.checkSelfPermission(
-                                                                context,
-                                                                android.Manifest.permission.RECORD_AUDIO
-                                                            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                                                        ) {
-                                                            recordPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                                                            return@IconButton
-                                                        }
-
-                                                        if (!isRecording) {
-                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                            recorder.start()
-                                                            chatVM.startRecording()
-                                                        } else {
-                                                            val audioFile = recorder.stop()
-                                                            val bytes = audioFile?.readBytes()
-                                                            chatVM.stopRecording(
-                                                                chatId = chatId,
-                                                                audioBytes = bytes,
-                                                                replyText = if (!replyMessage?.text.isNullOrBlank()) replyMessage?.text else if (replyMessage?.mediaUrl != null) "📷 Фотография" else if (replyMessage?.voiceUrl != null) "🎤 Голосовое сообщение" else null,
-                                                                replyName = if (replyMessage == null) null
-                                                                else if (replyMessage?.senderId == myUid) "Вы"
-                                                                else if (replyMessage?.senderName == "Система" || replyMessage?.senderName == "Mayas") "Система"
-                                                                else if (chatVM.isGroupChat) replyMessage?.senderName
-                                                                else chatTitle
-                                                            )
-                                                            replyMessage = null
-                                                        }
-                                                    },
-                                                    modifier = Modifier.graphicsLayer {
-                                                        scaleX = recordingScale
-                                                        scaleY = recordingScale
-                                                    }
-                                                ) {
-                                                    Icon(
-                                                        Icons.Default.Mic,
-                                                        null,
-                                                        tint = if (isRecording) MayasTheme.ErrorRed else textSecondaryColor
-                                                    )
-                                                }
-
-                                                if (isRecording) {
-                                                    Text(
-                                                        "${chatVM.recordingDuration}s",
-                                                        color = MayasTheme.ErrorRed,
-                                                        fontSize = 12.sp,
-                                                        modifier = Modifier.padding(start = 4.dp)
-                                                    )
-                                                }
                                             }
                                         }
                                     }
@@ -2138,6 +2735,14 @@ fun ChatScreen(
                         }
                     }
                 }
+
+                ReactionLimitToast(
+                    visible = showReactionLimit,
+                    accent = MayasTheme.GlowGold,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(start = 24.dp, end = 24.dp, bottom = 96.dp)
+                )
 
                 val showScrollDown by remember {
                     derivedStateOf { listState.firstVisibleItemIndex > 3 }
@@ -2166,19 +2771,20 @@ fun ChatScreen(
 
         if (showReportDialog) {
             var reportText by remember { mutableStateOf("") }
+            val reportSentText = stringResource(R.string.report_sent)
             AlertDialog(
                 onDismissRequest = { showReportDialog = false },
                 containerColor = surfaceColor,
-                title = { Text("Пожаловаться на пользователя", color = textPrimaryColor) },
+                title = { Text(stringResource(R.string.report_user_title), color = textPrimaryColor) },
                 text = {
                     Column {
-                        Text("Опишите причину:", color = textSecondaryColor, fontSize = 14.sp)
+                        Text(stringResource(R.string.report_reason_label), color = textSecondaryColor, fontSize = 14.sp)
                         Spacer(Modifier.height(12.dp))
                         OutlinedTextField(
                             value = reportText,
                             onValueChange = { reportText = it },
                             modifier = Modifier.fillMaxWidth().height(100.dp),
-                            placeholder = { Text("Спам, оскорбления и т.д.") },
+                            placeholder = { Text(stringResource(R.string.report_reason_hint)) },
                             shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = MayasTheme.GlowPurple,
@@ -2193,31 +2799,32 @@ fun ChatScreen(
                     Button(
                         onClick = {
                             chatVM.reportUser(myUid, partnerUid, chatId, reportText) {
-                                Toast.makeText(context, "Жалоба отправлена", Toast.LENGTH_SHORT)
+                                Toast.makeText(context, reportSentText, Toast.LENGTH_SHORT)
                                     .show()
                                 showReportDialog = false
                                 reportText = ""
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.GlowPurple)
-                    ) { Text("Отправить") }
+                    ) { Text(stringResource(com.dan1eidtj.mayas.ui.R.string.send)) }
                 },
                 dismissButton = {
                     TextButton(onClick = { showReportDialog = false }) {
-                        Text("Отмена", color = textSecondaryColor)
+                        Text(stringResource(com.dan1eidtj.mayas.ui.R.string.cancel), color = textSecondaryColor)
                     }
                 }
             )
         }
 
         if (showClearChatConfirm) {
+            val chatClearedText = stringResource(R.string.chat_cleared)
             AlertDialog(
                 onDismissRequest = { showClearChatConfirm = false },
                 containerColor = surfaceColor,
-                title = { Text("Очистить чат?", color = textPrimaryColor) },
+                title = { Text(stringResource(R.string.clear_chat_confirm_title), color = textPrimaryColor) },
                 text = {
                     Text(
-                        "Все сообщения будут удалены без возможности восстановления.",
+                        stringResource(R.string.clear_chat_confirm_desc),
                         color = textSecondaryColor
                     )
                 },
@@ -2226,26 +2833,27 @@ fun ChatScreen(
                         onClick = {
                             showClearChatConfirm = false
                             chatVM.clearChat(chatId) {
-                                Toast.makeText(context, "Чат очищен", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, chatClearedText, Toast.LENGTH_SHORT).show()
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.ErrorRed)
-                    ) { Text("Очистить") }
+                    ) { Text(stringResource(R.string.clear)) }
                 },
                 dismissButton = {
                     TextButton(onClick = { showClearChatConfirm = false }) {
-                        Text("Отмена", color = textSecondaryColor)
+                        Text(stringResource(com.dan1eidtj.mayas.ui.R.string.cancel), color = textSecondaryColor)
                     }
                 }
             )
         }
 
         if (showBlockUserConfirm) {
+            val userBlockedText = stringResource(R.string.user_blocked)
             BlockUserConfirmDialog(
                 onConfirm = {
                     showBlockUserConfirm = false
                     chatVM.blockUser(myUid ?: "", partnerUid) {
-                        Toast.makeText(context, "Пользователь заблокирован", Toast.LENGTH_SHORT)
+                        Toast.makeText(context, userBlockedText, Toast.LENGTH_SHORT)
                             .show()
                         onBack()
                     }
@@ -2290,8 +2898,8 @@ fun ChatScreen(
 
         if (showChatTimerPicker) {
             MessageTimerPickerDialog(
-                title = "Таймер исчезающих сообщений",
-                subtitle = "Новые сообщения в этом чате будут удаляться автоматически",
+                title = stringResource(R.string.disappearing_timer_bare_label),
+                subtitle = stringResource(R.string.disappearing_timer_dialog_desc),
                 currentSec = chatVM.chatDisappearingTimerSec,
                 surfaceColor = surfaceColor,
                 textPrimaryColor = textPrimaryColor,
@@ -2306,8 +2914,8 @@ fun ChatScreen(
 
         if (showMessageTimerPicker) {
             MessageTimerPickerDialog(
-                title = "Таймер для этого сообщения",
-                subtitle = "Действует только на следующее отправленное сообщение",
+                title = stringResource(R.string.per_message_timer_title),
+                subtitle = stringResource(R.string.per_message_timer_desc),
                 currentSec = pendingTimerOverrideSec ?: chatVM.chatDisappearingTimerSec,
                 surfaceColor = surfaceColor,
                 textPrimaryColor = textPrimaryColor,
@@ -2327,13 +2935,31 @@ fun ChatScreen(
                 textSecondaryColor = textSecondaryColor,
                 onDismiss = { showScheduleDialog = false },
                 onConfirm = { scheduledDate ->
+                    val editTarget = editingMessage
+                    if (editTarget != null) {
+                        if (input.isNotBlank()) {
+                            chatVM.editMessage(
+                                chatId = chatId,
+                                messageId = editTarget.id,
+                                newText = input,
+                                onError = { reason ->
+                                    val message = if (reason == "forbidden") editForbiddenText else editFailedText
+                                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                            input = ""
+                            editingMessage = null
+                        }
+                        showScheduleDialog = false
+                        return@ScheduleSendDialog
+                    }
                     if (input.isNotBlank()) {
                         chatVM.sendMessage(
                             chatId = chatId,
                             text = input,
-                            replyText = if (!replyMessage?.text.isNullOrBlank()) replyMessage?.text else if (replyMessage?.mediaUrl != null) "📷 Фотография" else if (replyMessage?.voiceUrl != null) "🎤 Голосовое сообщение" else null,
+                            replyText = if (!replyMessage?.text.isNullOrBlank()) replyMessage?.text else if (!replyMessage?.mediaUrls.isNullOrEmpty()) albumMessageFallback else if (replyMessage?.mediaUrl != null) photoMessageFallback else if (replyMessage?.circleVideoUrl != null) circleVideoMessageFallback else if (replyMessage?.voiceUrl != null) voiceMessageFallback else null,
                             replyName = if (replyMessage == null) null
-                            else if (replyMessage?.senderId == myUid) "Вы"
+                            else if (replyMessage?.senderId == myUid) youLabel
                             else if (replyMessage?.senderName == "Система" || replyMessage?.senderName == "Mayas") "Система"
                             else if (chatVM.isGroupChat) replyMessage?.senderName
                             else chatTitle,
@@ -2343,6 +2969,7 @@ fun ChatScreen(
                         input = ""
                         replyMessage = null
                         pendingTimerOverrideSec = null
+                        chatVM.clearDraftNow(chatId)
                     }
                     showScheduleDialog = false
                 }
@@ -2353,6 +2980,75 @@ fun ChatScreen(
             FullScreenImageViewer(
                 imageUrl = url,
                 onDismiss = { fullScreenImageUrl = null }
+            )
+        }
+
+        activeEffectKey?.let { key ->
+            MessageEffectOverlay(
+                effectKey = key,
+                modifier = Modifier.fillMaxSize(),
+                onFinished = { activeEffectKey = null }
+            )
+        }
+
+        if (showAttachSheet) {
+            AttachmentSheet(
+                containerColor = surfaceColor,
+                contentColor = textPrimaryColor,
+                onPickGallery = {
+                    showAttachSheet = false
+                    galleryLauncher.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
+                    )
+                },
+                onRecordVideoMessage = {
+                    showAttachSheet = false
+                    openCircleRecorder(false)
+                },
+                onDismiss = { showAttachSheet = false }
+            )
+        }
+
+        reactorsFor?.let { (messageId, emoji) ->
+            val target = messages.find { it.id == messageId }
+            if (target == null || target.reactions.isEmpty()) {
+                reactorsFor = null
+            } else {
+                ReactorsSheet(
+                    message = target,
+                    initialEmoji = emoji,
+                    myUid = myUid,
+                    profileOf = { uid -> chatVM.reactorProfile(uid) },
+                    containerColor = surfaceColor,
+                    textColor = textPrimaryColor,
+                    secondaryColor = textSecondaryColor,
+                    accent = MayasTheme.GlowPurple,
+                    onDismiss = { reactorsFor = null }
+                )
+            }
+        }
+
+        fullScreenVideoKey?.let { key ->
+            FullScreenVideoDialog(mediaKey = key, onDismiss = { fullScreenVideoKey = null })
+        }
+
+        if (showVideoCircleRecorder) {
+            VideoCircleRecorderDialog(
+                autoStart = autoStartCircle,
+                onSend = { file, durationSec ->
+                    chatVM.sendCircleVideoMessage(
+                        chatId = chatId,
+                        videoFile = file,
+                        durationSec = durationSec,
+                        replyText = replyTextOf(),
+                        replyName = replyNameOf()
+                    )
+                    replyMessage = null
+                },
+                onDismiss = {
+                    showVideoCircleRecorder = false
+                    autoStartCircle = false
+                }
             )
         }
     }
@@ -2375,10 +3071,10 @@ fun BlockUserConfirmDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = containerColor,
-        title = { Text("Заблокировать пользователя?", color = titleColor) },
+        title = { Text(stringResource(R.string.block_user_confirm_title), color = titleColor) },
         text = {
             Text(
-                "Вы больше не будете получать сообщения от этого пользователя.",
+                stringResource(R.string.block_user_confirm_desc),
                 color = textColor
             )
         },
@@ -2386,11 +3082,11 @@ fun BlockUserConfirmDialog(
             Button(
                 onClick = onConfirm,
                 colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.ErrorRed)
-            ) { Text("Заблокировать") }
+            ) { Text(stringResource(R.string.block_user)) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Отмена", color = textColor)
+                Text(stringResource(com.dan1eidtj.mayas.ui.R.string.cancel), color = textColor)
             }
         }
     )
@@ -2419,14 +3115,14 @@ fun PinnedMessagesSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "Закреплённые сообщения",
+                    stringResource(R.string.pinned_messages_title),
                     color = MayasTheme.TextPrimary,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 if (pinnedMessages.size > 1) {
                     TextButton(onClick = onUnpinAll) {
-                        Text("Открепить все", color = MayasTheme.ErrorRed, fontSize = 13.sp)
+                        Text(stringResource(R.string.unpin_all_action), color = MayasTheme.ErrorRed, fontSize = 13.sp)
                     }
                 }
             }
@@ -2455,7 +3151,7 @@ fun PinnedMessagesSheet(
                                 )
                             }
                             Text(
-                                pinned.text ?: if (pinned.mediaUrl != null) "📷 Фотография" else "",
+                                pinned.text ?: if (pinned.mediaUrl != null) stringResource(R.string.photo_message) else "",
                                 fontSize = 13.sp,
                                 maxLines = 1,
                                 color = MayasTheme.TextSecondary,
@@ -2485,12 +3181,12 @@ fun ThemePickerDialog(
 ) {
     val context = LocalContext.current
     val themeNames = mapOf(
-        ChatThemeId.DEFAULT to "Обычная",
-        ChatThemeId.PURPLE to "Фиолетовая",
-        ChatThemeId.BLUE to "Голубая",
-        ChatThemeId.RED to "Красная",
-        ChatThemeId.GOLD to "Золотая",
-        ChatThemeId.PINK to "Розовая"
+        ChatThemeId.DEFAULT to stringResource(R.string.chat_theme_default),
+        ChatThemeId.PURPLE to stringResource(R.string.chat_theme_purple),
+        ChatThemeId.BLUE to stringResource(R.string.chat_theme_blue),
+        ChatThemeId.RED to stringResource(R.string.chat_theme_red),
+        ChatThemeId.GOLD to stringResource(R.string.chat_theme_gold),
+        ChatThemeId.PINK to stringResource(R.string.chat_theme_pink)
     )
     val themes = listOf(
         ChatThemeId.DEFAULT to MayasTheme.BubbleOther,
@@ -2517,13 +3213,14 @@ fun ThemePickerDialog(
                 .padding(bottom = 24.dp)
         ) {
             Text(
-                "Тема чата",
+                stringResource(R.string.chat_theme_title),
                 color = MayasTheme.TextPrimary,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(bottom = 20.dp)
             )
 
+            val themeLockedText = stringResource(R.string.theme_locked_desc)
             themes.chunked(3).forEach { rowThemes ->
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
@@ -2548,7 +3245,7 @@ fun ThemePickerDialog(
                                     )
                                     .clickable {
                                         if (isLocked) {
-                                            Toast.makeText(context, "Эта тема доступна только в Mayas+", Toast.LENGTH_SHORT).show()
+                                            Toast.makeText(context, themeLockedText, Toast.LENGTH_SHORT).show()
                                         } else {
                                             onSelect(name)
                                         }
@@ -2606,7 +3303,7 @@ fun MessageTimerPickerDialog(
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            if (seconds == MessageTimerPreset.OFF) "Выключено" else formatTimerDuration(seconds),
+                            if (seconds == MessageTimerPreset.OFF) stringResource(R.string.timer_disabled_label) else formatTimerDuration(seconds),
                             color = textPrimaryColor
                         )
                         if (currentSec == seconds) {
@@ -2617,7 +3314,7 @@ fun MessageTimerPickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) { Text(stringResource(com.dan1eidtj.mayas.ui.R.string.cancel)) }
         }
     )
 }
@@ -2638,32 +3335,33 @@ fun ScheduleSendDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = surfaceColor,
-        title = { Text("Отправить позже", color = textPrimaryColor) },
+        title = { Text(stringResource(R.string.send_later_action), color = textPrimaryColor) },
         text = {
             Column {
                 Text(
-                    "Сообщение уйдёт автоматически в выбранное время",
+                    stringResource(R.string.scheduled_send_desc),
                     color = textSecondaryColor,
                     fontSize = 13.sp,
                     modifier = Modifier.padding(bottom = 12.dp)
                 )
 
-                Text("Через сколько дней", color = textSecondaryColor, fontSize = 12.sp)
+                Text(stringResource(R.string.days_from_now_label), color = textSecondaryColor, fontSize = 12.sp)
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    val todayLabel = stringResource(R.string.today_label)
                     listOf(0, 1, 2, 3, 7).forEach { d ->
                         FilterChip(
                             selected = daysAhead == d,
                             onClick = { daysAhead = d },
-                            label = { Text(if (d == 0) "Сегодня" else "+$d") }
+                            label = { Text(if (d == 0) todayLabel else "+$d") }
                         )
                     }
                 }
 
                 Spacer(Modifier.height(12.dp))
-                Text("Время", color = textSecondaryColor, fontSize = 12.sp)
+                Text(stringResource(R.string.time_label), color = textSecondaryColor, fontSize = 12.sp)
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -2674,7 +3372,7 @@ fun ScheduleSendDialog(
                         onValueChange = { v -> v.toIntOrNull()?.let { if (it in 0..23) hours = it } },
                         modifier = Modifier.width(70.dp),
                         singleLine = true,
-                        label = { Text("Ч") }
+                        label = { Text(stringResource(R.string.hour_abbrev)) }
                     )
                     Text("  :  ", color = textPrimaryColor)
                     OutlinedTextField(
@@ -2682,7 +3380,7 @@ fun ScheduleSendDialog(
                         onValueChange = { v -> v.toIntOrNull()?.let { if (it in 0..59) minutes = it } },
                         modifier = Modifier.width(70.dp),
                         singleLine = true,
-                        label = { Text("М") }
+                        label = { Text(stringResource(R.string.minute_abbrev)) }
                     )
                 }
             }
@@ -2703,72 +3401,17 @@ fun ScheduleSendDialog(
                     date = target.time
                 }
                 onConfirm(date)
-            }) { Text("Запланировать") }
+            }) { Text(stringResource(R.string.schedule_action)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) { Text(stringResource(com.dan1eidtj.mayas.ui.R.string.cancel)) }
         }
     )
 }
 
 @Composable
 fun EmojiPicker(onEmojiSelected: (String) -> Unit) {
-    val emojis = listOf(
-
-        "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "🥲", "🥹", "😊",
-        "😇", "🙂", "🙃", "😉", "😌", "😍", "🥰", "😘", "😗", "😙", "😚",
-        "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥸", "🤩", "🥳",
-        "😏", "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫", "😩",
-        "🥺", "😢", "😭", "😮‍💨", "😤", "😠", "😡", "🤬", "🤯", "😳", "🥵", "🥶",
-        "😱", "😨", "😰", "😥", "😓", "🫣", "🤗", "🫡", "🤔", "🫣", "🤭", "🤫", "🤥",
-        "😶", "😶‍🌫️", "😐", "😑", "😬", "🫨", "🫠", "🙄", "😯", "😦", "😧", "😮", "😲",
-        "🥱", "😴", "🤤", "😪", "😮‍💨", "😵", "😵‍💫", "🫥", "🤐", "🥴", "🤢", "🤮", "🤧",
-        "😷", "🤒", "🤕", "🤑", "🤠", "😈", "👿", "👹", "👺", "🤡", "💩", "👻", "💀", "☠️",
-        "👽", "👾", "🤖", "🎃", "😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾",
-
-
-        "👋", "🤚", "🖐️", "✋", "🖖", "👌", "🤌", "🤏", "✌️", "🤞", "🫰",
-        "🤟", "🤘", "🤙", "👈", "👉", "👆", "🖕", "👇", "☝️", "👍", "👎",
-        "✊", "👊", "🤛", "🤜", "👏", "🙌", "👐", "🤲", "🤝", "🙏", "✍️",
-        "💅", "🤳", "💪", "🦾", "🦿", "🦵", "🦶", "👂", "🦻", "👃", "🧠",
-        "🫀", "🫁", "🦷", "🦴", "👀", "👁️", "👅", "👄", "💋", "🩸",
-
-
-        "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❤️‍🔥", "❤️‍🩹",
-        "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "👑", "👒", "🎩", "🎓",
-        "🧢", "⛑️", "📿", "💄", "💍", "💼", "🎒", "🧳", "👓", "🕶️", "🥽", "🥼", "🦺", "👔",
-        "👕", "👖", "🧣", "🧤", "🧥", "🧦", "👗", "👘", "🥻", "🩱", "🩲", "🩳", "👙",
-
-
-        "🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐻‍❄️", "🐨", "🐯", "🦁", "🐮",
-        "🐷", "🐽", "🐸", "🐵", "🙈", "🙉", "🙊", "🐒", "🐔", "🐧", "🐦", "🐤", "🐣", "🐥",
-        "🦆", "🦅", "🦉", "🦤", "🪶", "🦩", "🦚", "🦜", "🐊", "🐢", "🦎", "🐍", "🐲", "🐉", "🦕",
-        "🦖", "🐳", "🐋", "🐬", "🦭", "🐟", "🐠", "🐡", "🦈", "🐙", "🐚", "🪸", "🐌", "🦋", "🐛",
-        "🐜", "🐝", "🪲", "🐞", "🦗", "🕷️", "🕸️", "🦂", "🦟", "🪰", "🪱", "🦠", "💐", "🌸", "💮",
-        "🪷", "🌹", "🥀", "🌺", "🌻", "🌼", "🌷", "🌱", "🪴", "🌲", "🌳", "🌴", "🌵", "🌾", "🌿",
-        "☘️", "🍀", "🍁", "🍂", "🍃", "🍄", "🌰", "🦀", "🦞", "🦐", "🦑",
-
-
-        "🍏", "🍎", "🍐", "🍊", "🍋", "🍌", "🍉", "🍇", "🍓", "🫐", "🍈", "🍒", "🍑", "🥭", "🍍",
-        "🥥", "🥝", "🍅", "🍆", "🥑", "🥦", "🥬", "🥒", "🌶️", "🫑", "🌽", "🥕", "🫒", "🧄", "🧅",
-        "🥔", "🍠", "🥐", "🥯", "🍞", "🥖", "🥨", "🥞", "🧇", "🧀", "🍖", "🥩", "🍗", "🍔", "🍟",
-        "🍕", "🌭", "🥪", "🌮", "🌯", "🫔", "🥙", "🧆", "🥚", "🍳", "🥘", "🍲", "🫕", "🥣", "🥗",
-        "🍿", "🧈", "🧂", "🥫", "🍱", "🍘", "🍙", "🍚", "🍛", "🍜", "🍝", "🍣", "🍤", "🥮", "🍡",
-        "🥟", "🥠", "🥡", "🍦", "🍧", "🍨", "🍩", "🍪", "🎂", "🍰", "🧁", "🥧", "🍫", "🍬", "🍭",
-        "🍮", "🍯", "🍼", "🥛", "☕", "🫖", "🍵", "🍶", "🍾", "🍷", "🍸", "🍹", "🍺", "🍻", "🥂", "🥃",
-        "🫗", "🥤", "🧋", "🧃", "🧉", "🧊",
-
-
-        "🌍", "🌎", "🌏", "🌐", "🗺️", "🗾", "🧭", "🏔️", "⛰️", "🌋", "🗻", "🏕️", "🏖️", "🏜️",
-        "🏝️", "🏞️", "🏟️", "🏛️", "🏗️", "🧱", "🪨", "🪵", "🛖", "🏘️", "🏚️", "🏠", "🏡", "🏢", "🏣",
-        "🏤", "🏥", "🏦", "🏨", "🏩", "🏪", "🏫", "🏬", "🏭", "🏯", "🏰", "💒", "🗼", "🗽",
-        "⛪", "🕌", "🛕", "🕍", "⛩️", "🕋", "⛲", "⛺", "🌁", "🌃", "🏙️", "🌄", "🌅", "🌆",
-        "🌇", "🌉", "🌌", "🎠", "🎡", "🎢", "🚂", "🚃", "🚄", "🚅", "🚆", "🚇", "🚈", "🚉",
-        "🚊", "🦽", "🦼", "🚲", "🛵", "🏍️", "🛺", "🚨", "🚔", "🚍", "🚘", "🚖", "🚡", "🚠",
-        "🚟", "🚃", "🌌", "🎈", "🎉", "🎊", "🎇", "🎆", "🧨", "✨", "🌟", "⭐", "🌙", "🌛",
-        "🌜", "🌚", "🌕", "☀️", "🌤️", "⛅", "🌥️", "☁️", "🌦️", "🌧️", "⛈️", "🌩️", "❄️", "☃️",
-        "⛄", "🌬️", "💨", "🌪️", "🌫️", "🌊", "💧", "💦", "☔", "⚡", "🔥", "💥"
-    )
+    val emojis = EmojiCatalog.all
     Card(
         modifier = Modifier.fillMaxWidth().height(250.dp),
 
@@ -2780,7 +3423,7 @@ fun EmojiPicker(onEmojiSelected: (String) -> Unit) {
                 Box(
                     Modifier.size(45.dp).clickable { onEmojiSelected(emoji) },
                     contentAlignment = Alignment.Center
-                ) { Text(emoji, fontSize = 24.sp) }
+                ) { EmojiGlyph(emoji, fontSize = 24.sp) }
             }
         }
     }

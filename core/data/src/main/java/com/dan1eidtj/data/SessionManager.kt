@@ -20,7 +20,9 @@ data class UserSession(
     val email: String,
     val name: String,
     val avatarUrl: String = "",
-    val lastActiveAt: Long = 0L
+    val lastActiveAt: Long = 0L,
+    val username: String? = null,
+    val createdAt: Long = 0L
 )
 
 class SessionManager(private val context: Context) {

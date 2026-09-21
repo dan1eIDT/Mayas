@@ -187,22 +187,18 @@ fun UserAvatarView(
         getGlowColorByName(profileGlow)
     }
 
+    val avatarContext = androidx.compose.ui.platform.LocalContext.current
     val resolvedAvatarUrl by produceState<String?>(
-        initialValue = null,
+        initialValue = if (useCustomAvatar) com.dan1eidtj.mayas.storage.MediaFileCache.cachedModel(avatarContext, avatarUrl) else null,
         key1 = avatarUrl,
         key2 = useCustomAvatar
     ) {
         value = when {
             !useCustomAvatar -> null
             avatarUrl.isNullOrBlank() -> null
-            avatarUrl.startsWith("http://") ||
-                    avatarUrl.startsWith("https://") -> avatarUrl
-            else -> {
-                runCatching {
-                    com.dan1eidtj.mayas.storage.B2MediaClient
-                        .resolveDownloadUrl(avatarUrl)
-                }.getOrNull()
-            }
+            else -> runCatching {
+                com.dan1eidtj.mayas.storage.MediaFileCache.resolveModel(avatarContext, avatarUrl)
+            }.getOrNull()
         }
     }
 

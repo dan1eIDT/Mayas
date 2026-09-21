@@ -80,7 +80,7 @@ class NotificationReplyReceiver : BroadcastReceiver() {
         )
 
         val me = Person.Builder()
-            .setName(FirebaseAuth.getInstance().currentUser?.displayName ?: "Я")
+            .setName(FirebaseAuth.getInstance().currentUser?.displayName ?: context.getString(com.dan1eidtj.chats.R.string.me))
             .build()
         val sender = Person.Builder().setName(senderName).build()
 

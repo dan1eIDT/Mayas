@@ -43,6 +43,8 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.Brush
@@ -285,17 +287,37 @@ fun MessageBubbleContainer(
     normalPadding: PaddingValues,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
+    onDoubleClick: (() -> Unit)? = null,
+    onScreenBounds: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
+    plain: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val density = LocalDensity.current
     val frameSpec = FrameStyles.registry[messageStyle]
+    val boundsModifier = if (onScreenBounds != null) {
+        Modifier.onGloballyPositioned { coordinates ->
+            if (coordinates.isAttached) onScreenBounds(coordinates.boundsInWindow())
+        }
+    } else {
+        Modifier
+    }
+
+    if (plain) {
+        Box(
+            modifier = boundsModifier
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick, onDoubleClick = onDoubleClick)
+        ) {
+            content()
+        }
+        return
+    }
 
     if (frameSpec != null) {
         val frameBitmap = ImageBitmap.imageResource(id = frameSpec.drawableRes)
 
 
 
-        Box {
+        Box(modifier = boundsModifier) {
             Box(
                 modifier = Modifier
                     .widthIn(max = 280.dp)
@@ -304,7 +326,7 @@ fun MessageBubbleContainer(
                         minHeight = with(density) { (frameSpec.insets.top + frameSpec.insets.bottom).toDp() }
                     )
                     .ninePatchBackground(frameBitmap, frameSpec.insets)
-                    .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                    .combinedClickable(onClick = onClick, onLongClick = onLongClick, onDoubleClick = onDoubleClick)
                     .padding(with(density) { frameSpec.contentPaddingPx.toDp() })
             ) {
                 content()
@@ -354,10 +376,10 @@ fun MessageBubbleContainer(
         }
     } else {
         Box(
-            modifier = Modifier
+            modifier = boundsModifier
                 .widthIn(max = 280.dp)
                 .clip(bubbleShape)
-                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick, onDoubleClick = onDoubleClick)
                 .then(messageModifier)
                 .padding(normalPadding)
         ) {

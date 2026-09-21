@@ -1,8 +1,8 @@
 package com.dan1eidtj.mayas
 
-import android.content.Context
+import android.app.Application
 import android.util.Log
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
@@ -12,7 +12,7 @@ import com.dan1eidtj.data.buyShopItemViaBackend
 import com.dan1eidtj.data.BuyItemResult
 import java.util.concurrent.TimeUnit
 
-class MonetizationVM : ViewModel() {
+class MonetizationVM(application: Application) : AndroidViewModel(application) {
     private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
     private val uid get() = auth.currentUser?.uid ?: ""
@@ -111,9 +111,5 @@ class MonetizationVM : ViewModel() {
         }.addOnFailureListener {
             onResult("Ошибка сети")
         }
-    }
-
-    fun getApplication(): Context {
-        return TODO("Provide the return value")
     }
 }

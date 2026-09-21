@@ -156,3 +156,13 @@ val LightMayasColorScheme = MayasColorScheme(
 
 
 val LocalMayasColorScheme = staticCompositionLocalOf { DarkMayasColorScheme }
+
+private fun MayasColorScheme.matchesStandard(other: MayasColorScheme): Boolean =
+    background == other.background &&
+        surface == other.surface &&
+        accent == other.accent &&
+        bubbleMine == other.bubbleMine &&
+        bubbleOther == other.bubbleOther
+
+fun MayasColorScheme.isStandardScheme(): Boolean =
+    matchesStandard(DarkMayasColorScheme) || matchesStandard(LightMayasColorScheme)

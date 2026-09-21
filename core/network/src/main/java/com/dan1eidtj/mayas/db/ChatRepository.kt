@@ -10,9 +10,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.tasks.await
 
 class ChatRepository(context: Context) {
-    private val database = MayasDatabase.getDatabase(context)
-    private val chatDao = database.chatDao()
-    private val messageDao = database.messageDao()
+    private val appContext = context.applicationContext
+    private val database: MayasDatabase get() = MayasDatabase.getDatabase(appContext)
+    private val chatDao: ChatDao get() = database.chatDao()
+    private val messageDao: MessageDao get() = database.messageDao()
     private val firestore = FirebaseFirestore.getInstance()
 
 
@@ -83,7 +84,8 @@ class ChatRepository(context: Context) {
                         partnerVerifiedBy = existing?.partnerVerifiedBy,
                         partnerRank = existing?.partnerRank ?: 0,
                         typingText = null,
-                        isSavedMessages = isSavedMessages
+                        isSavedMessages = isSavedMessages,
+                        draftText = doc.getString("draft_$userId")
                     )
                 } catch (e: Exception) {
                     Log.e("ChatRepository", "Ошибка конвертации чата ${doc.id}", e)
@@ -177,9 +179,16 @@ class ChatRepository(context: Context) {
                         status = status,
                         readBy = readBy,
                         mediaUrl = doc.getString("mediaUrl"),
+                        mediaUrls = (doc.get("mediaUrls") as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
+                        mediaTypes = (doc.get("mediaTypes") as? List<*>)?.filterIsInstance<String>() ?: emptyList(),
                         isPremium = doc.getBoolean("isPremium") ?: false,
                         messageStyle = doc.getString("messageStyle"),
-                        forwardedFromName = doc.getString("forwardedFromName")
+                        messageEffect = doc.getString("messageEffect"),
+                        circleVideoUrl = doc.getString("circleVideoUrl"),
+                        circleVideoDuration = (doc.getLong("circleVideoDuration") ?: 0L).toInt(),
+                        forwardedFromName = doc.getString("forwardedFromName"),
+                        isEdited = doc.getBoolean("isEdited") ?: false,
+                        editedAt = doc.getTimestamp("editedAt")?.toDate()?.time
                     )
                 } catch (e: Exception) {
                     Log.e("ChatRepository", "Ошибка конвертации сообщения ${doc.id}", e)
@@ -212,5 +221,62 @@ class ChatRepository(context: Context) {
     }
     suspend fun clearAll() {
         chatDao.clearAllChats()
+        messageDao.clearAllMessages()
     }
+
+    suspend fun persistChats(chats: List<ChatEntity>) {
+        try {
+            chatDao.replaceAllChats(chats)
+        } catch (e: Exception) {
+            Log.e("ChatRepository", "Не удалось сохранить список чатов в Room", e)
+        }
+    }
+
+    suspend fun upsertChats(chats: List<ChatEntity>) {
+        try {
+            chatDao.insertChats(chats)
+        } catch (e: Exception) {
+            Log.e("ChatRepository", "Не удалось обновить кэш списка чатов", e)
+        }
+    }
+
+    suspend fun pruneChats(activeChatIds: List<String>) {
+        try {
+            chatDao.deleteChatsNotIn(activeChatIds)
+        } catch (e: Exception) {
+            Log.e("ChatRepository", "Не удалось почистить кэш списка чатов", e)
+        }
+    }
+
+    suspend fun clearChatsCache() {
+        try {
+            chatDao.clearAllChats()
+        } catch (e: Exception) {
+            Log.e("ChatRepository", "Не удалось очистить кэш списка чатов", e)
+        }
+    }
+
+    suspend fun loadCachedChats(): List<ChatEntity> =
+        try {
+            chatDao.getChatsOnce()
+        } catch (e: Exception) {
+            Log.e("ChatRepository", "Не удалось прочитать кэш списка чатов", e)
+            emptyList()
+        }
+
+    suspend fun persistMessages(chatId: String, messages: List<MessageEntity>) {
+        try {
+            messageDao.replaceChatMessages(chatId, messages)
+        } catch (e: Exception) {
+            Log.e("ChatRepository", "Не удалось сохранить сообщения $chatId в Room", e)
+        }
+    }
+
+    suspend fun loadCachedMessages(chatId: String, limit: Int): List<MessageEntity> =
+        try {
+            messageDao.getLatestMessages(chatId, limit).sortedBy { it.timestamp }
+        } catch (e: Exception) {
+            Log.e("ChatRepository", "Не удалось прочитать кэш сообщений $chatId", e)
+            emptyList()
+        }
 }

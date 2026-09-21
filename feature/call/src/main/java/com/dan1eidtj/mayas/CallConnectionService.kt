@@ -1,4 +1,4 @@
-
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas
 
 import android.app.Notification
@@ -14,6 +14,7 @@ import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import androidx.core.graphics.drawable.IconCompat
+import com.dan1eidtj.mayas.feature.call.R
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -231,8 +232,8 @@ class CallConnectionService : Service() {
         )
 
 
-        val muteText = if (callManager.isMuted.value) "Вкл. микр." else "Выкл. микр."
-        val speakerText = if (callManager.isSpeakerOn.value) "Динамик" else "Наушник"
+        val muteText = if (callManager.isMuted.value) getString(R.string.mic_on) else getString(R.string.mic_off)
+        val speakerText = if (callManager.isSpeakerOn.value) getString(R.string.speaker) else getString(R.string.earpiece)
 
         val builder = NotificationCompat.Builder(this, CallNotifications.CHANNEL_ID_CALLS)
             .setSmallIcon(android.R.drawable.ic_menu_call)
@@ -293,7 +294,7 @@ class CallConnectionService : Service() {
 
     private fun buildFallbackNotification(): Notification =
         NotificationCompat.Builder(this, CallNotifications.CHANNEL_ID_CALLS)
-            .setContentTitle("Входящий звонок")
+            .setContentTitle(getString(R.string.incoming_call))
             .setSmallIcon(android.R.drawable.ic_menu_call)
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setOngoing(true)
@@ -368,7 +369,7 @@ class CallConnectionService : Service() {
         notificationManager.createNotificationChannel(
             NotificationChannel(
                 CallNotifications.CHANNEL_ID_CALLS,
-                "Звонки",
+                getString(R.string.calls),
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 setBypassDnd(true)

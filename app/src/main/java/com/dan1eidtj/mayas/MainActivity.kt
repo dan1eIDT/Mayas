@@ -10,11 +10,18 @@ import android.content.pm.PackageManager
 import com.dan1eidtj.mayas.core.ui.theme.MayasAppTheme
 import com.dan1eidtj.mayas.core.ui.theme.MayasColorScheme
 import com.dan1eidtj.mayas.core.ui.theme.DarkMayasColorScheme
+import com.dan1eidtj.mayas.core.ui.theme.isStandardScheme
 import com.dan1eidtj.mayas.core.ui.theme.LightMayasColorScheme
 import com.dan1eidtj.mayas.core.ui.theme.ThemeEditorScreen
 import androidx.compose.foundation.isSystemInDarkTheme
 import android.os.Build
+import android.content.res.Configuration
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.WindowCompat
 import android.view.Gravity
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -31,6 +38,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -46,6 +54,8 @@ import com.dan1eidtj.mayas.feature.ChatScreen
 import com.dan1eidtj.mayas.feature.ChatVM
 import com.dan1eidtj.mayas.feature.JoinInviteFlow
 import com.dan1eidtj.mayas.feature.chats.ChatListScreen.ChatListScreen
+import com.dan1eidtj.mayas.feature.chats.ChatListScreen.ChatListViewModel
+import com.dan1eidtj.mayas.feature.chats.ChatListScreen.GlobalSearchScreen
 import com.dan1eidtj.mayas.NotificationsScreen
 import com.dan1eidtj.mayas.ads.AdsManager
 import com.dan1eidtj.mayas.core_ui.Screen
@@ -73,26 +83,58 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission()
     ) { isGranted: Boolean ->
         if (isGranted) {
-            Toast.makeText(this, "Уведомления включены!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.notifications_enabled_toast), Toast.LENGTH_SHORT).show()
         } else {
-            Toast.makeText(this, "Уведомления можно включить позже.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, getString(R.string.notifications_later_toast), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    @Volatile
+    private var contentReady = false
+
+    private fun applyLaunchTheme(scheme: MayasColorScheme) {
+        val color = scheme.background.toArgb()
+        val dark = scheme.background.luminance() < 0.5f
+
+        window.setBackgroundDrawable(ColorDrawable(color))
+        @Suppress("DEPRECATION")
+        window.statusBarColor = color
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = color
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        controller.isAppearanceLightStatusBars = !dark
+        controller.isAppearanceLightNavigationBars = !dark
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            splashScreen.setSplashScreenTheme(
+                if (dark) R.style.Theme_App_Starting_Dark else R.style.Theme_App_Starting_Light
+            )
         }
     }
 
     @RequiresApi(Build.VERSION_CODES.O)
     override fun onCreate(savedInstanceState: Bundle?) {
+        val launchSplash = installSplashScreen()
+        launchSplash.setKeepOnScreenCondition { !contentReady }
         super.onCreate(savedInstanceState)
+        window.decorView.postDelayed({ contentReady = true }, 3000L)
+
+        val systemNight = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val savedScheme = ThemePreferences.loadSelectedScheme(this)
+        val followSystemAtLaunch = ThemePreferences.loadFollowSystem(this)
+        val launchScheme = when {
+            savedScheme == null -> if (systemNight) DarkMayasColorScheme else LightMayasColorScheme
+            followSystemAtLaunch && savedScheme.isStandardScheme() ->
+                if (systemNight) DarkMayasColorScheme else LightMayasColorScheme
+            else -> savedScheme
+        }
+        applyLaunchTheme(launchScheme)
 
         checkAndRequestNotifications()
 
         handleIncomingIntent(intent)
 
-        AdsManager.initialize(this)
-
         setContent {
-            var isSplash by remember { mutableStateOf(true) }
-
-
             val themePrefsContext = LocalContext.current
             val systemDark = isSystemInDarkTheme()
             var currentColorScheme by remember {
@@ -104,6 +146,21 @@ class MainActivity : ComponentActivity() {
             var customThemes by remember {
                 mutableStateOf(ThemePreferences.loadCustomThemes(themePrefsContext))
             }
+            var followSystemTheme by remember {
+                mutableStateOf(ThemePreferences.loadFollowSystem(themePrefsContext))
+            }
+            val effectiveColorScheme =
+                if (followSystemTheme && currentColorScheme.isStandardScheme()) {
+                    if (systemDark) DarkMayasColorScheme else LightMayasColorScheme
+                } else {
+                    currentColorScheme
+                }
+            LaunchedEffect(followSystemTheme) {
+                ThemePreferences.saveFollowSystem(themePrefsContext, followSystemTheme)
+            }
+            LaunchedEffect(effectiveColorScheme) {
+                applyLaunchTheme(effectiveColorScheme)
+            }
 
             LaunchedEffect(currentColorScheme) {
                 ThemePreferences.saveSelectedScheme(themePrefsContext, currentColorScheme)
@@ -113,24 +170,23 @@ class MainActivity : ComponentActivity() {
             }
 
             MayasAppTheme(
-                colorScheme = currentColorScheme
+                colorScheme = effectiveColorScheme
             ) {
                 LaunchedEffect(Unit) {
-                    delay(1500)
-                    isSplash = false
+                    withFrameNanos { }
+                    contentReady = true
+                    AdsManager.initialize(this@MainActivity)
                 }
 
-                if (isSplash) {
-                    SplashScreen()
-                } else {
-                    MayasApp(
-                        callManager = callManager,
-                        currentColorScheme = currentColorScheme,
-                        onColorSchemeChange = { currentColorScheme = it },
-                        customThemes = customThemes,
-                        onCustomThemesChange = { customThemes = it }
-                    )
-                }
+                MayasApp(
+                    callManager = callManager,
+                    currentColorScheme = effectiveColorScheme,
+                    onColorSchemeChange = { currentColorScheme = it },
+                    followSystemTheme = followSystemTheme,
+                    onFollowSystemThemeChange = { followSystemTheme = it },
+                    customThemes = customThemes,
+                    onCustomThemesChange = { customThemes = it }
+                )
             }
         }
     }
@@ -205,12 +261,12 @@ class MainActivity : ComponentActivity() {
             .setTitle("!!!")
             .setMessage(getString(R.string.notif_text))
             .setCancelable(false)
-            .setPositiveButton("Включить") { _, _ ->
+            .setPositiveButton(getString(R.string.enable_action)) { _, _ ->
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
             }
-            .setNegativeButton("Не сейчас") { d, _ -> d.dismiss() }
+            .setNegativeButton(getString(R.string.not_now_action)) { d, _ -> d.dismiss() }
             .create()
 
         dialog.window?.setGravity(Gravity.BOTTOM)
@@ -224,6 +280,8 @@ fun MayasApp(
     callManager: CallManager,
     currentColorScheme: MayasColorScheme,
     onColorSchemeChange: (MayasColorScheme) -> Unit,
+    followSystemTheme: Boolean = false,
+    onFollowSystemThemeChange: (Boolean) -> Unit = {},
     customThemes: List<Pair<String, MayasColorScheme>>,
     onCustomThemesChange: (List<Pair<String, MayasColorScheme>>) -> Unit,
 ) {
@@ -274,30 +332,33 @@ fun MayasApp(
                 enterTransition = {
                     slideIntoContainer(
                         AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(400, easing = EaseInOutQuart)
-                    ) + fadeIn(animationSpec = tween(400))
+                        animationSpec = tween(260, easing = EaseInOutQuart)
+                    ) + fadeIn(animationSpec = tween(200))
                 },
                 exitTransition = {
                     slideOutOfContainer(
                         AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(400, easing = EaseInOutQuart)
-                    ) + fadeOut(animationSpec = tween(400))
+                        animationSpec = tween(260, easing = EaseInOutQuart)
+                    ) + fadeOut(animationSpec = tween(200))
                 },
                 popEnterTransition = {
                     slideIntoContainer(
                         AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(400, easing = EaseInOutQuart)
-                    ) + fadeIn(animationSpec = tween(400))
+                        animationSpec = tween(260, easing = EaseInOutQuart)
+                    ) + fadeIn(animationSpec = tween(200))
                 },
                 popExitTransition = {
                     slideOutOfContainer(
                         AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(400, easing = EaseInOutQuart)
-                    ) + fadeOut(animationSpec = tween(400))
+                        animationSpec = tween(260, easing = EaseInOutQuart)
+                    ) + fadeOut(animationSpec = tween(200))
                 }
             ) {
                 composable(Screen.Auth.route) {
-                    AuthScreen(vm)
+                    AuthScreen(
+                        vm = vm,
+                        onReturnToAccount = { navController.popBackStack() }
+                    )
                 }
 
                 composable(Screen.Chats.route) {
@@ -314,11 +375,40 @@ fun MayasApp(
                         },
                         onOpenUserSearch = { showUserSearchDialog = true },
                         onDismissUserSearch = { showUserSearchDialog = false },
+                        onOpenGlobalSearch = { navController.navigate(Screen.GlobalSearch.route) },
                         homeLayoutPrefs = homeScreenLayoutPrefs,
                         sidebarLayoutPrefs = sidebarLayoutPrefs,
                         onUpdateSidebarPrefs = { newPrefs ->
                             sidebarLayoutPrefs = newPrefs
                             LayoutPreferences.saveSidebarLayoutPrefs(layoutPrefsContext, newPrefs)
+                        }
+                    )
+                }
+
+                composable(Screen.GlobalSearch.route) {
+                    val myUid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
+                    val chatsEntry = remember { navController.getBackStackEntry(Screen.Chats.route) }
+                    val chatListVm: ChatListViewModel = viewModel(viewModelStoreOwner = chatsEntry)
+                    val localChats by chatListVm.chats.collectAsState()
+                    val mappedChats = remember(localChats) {
+                        localChats.map { entity ->
+                            mapOf(
+                                "chatId" to entity.chatId,
+                                "isGroup" to entity.isGroup,
+                                "groupName" to (entity.groupName ?: ""),
+                                "partnerName" to (entity.partnerName ?: "")
+                            )
+                        }
+                    }
+                    GlobalSearchScreen(
+                        myUid = myUid,
+                        localChats = mappedChats,
+                        onBack = { navController.popBackStack() },
+                        onOpenChat = { chatId, messageId ->
+                            navController.navigate(Screen.Chat.create(chatId, messageId))
+                        },
+                        onOpenProfile = { uid ->
+                            navController.navigate(Screen.Profile.create(uid, isGroup = false))
                         }
                     )
                 }
@@ -408,9 +498,7 @@ fun MayasApp(
                         onNavigateToPremium = { navController.navigate(Screen.Premium.route) },
                         onNavigateToCredits = { navController.navigate(Screen.Credits.route) },
                         onNavigateToAuth = {
-                            navController.navigate(Screen.Auth.route) {
-                                popUpTo(0)
-                            }
+                            navController.navigate(Screen.Auth.route)
                         },
                         onNavigateToCustomization = {
                             navController.navigate(Screen.Customization.route)
@@ -487,6 +575,8 @@ fun MayasApp(
                         currentScheme = currentColorScheme,
                         customThemes = customThemes,
                         onSelectScheme = { scheme -> onColorSchemeChange(scheme) },
+                        followSystem = followSystemTheme,
+                        onFollowSystemChange = onFollowSystemThemeChange,
                         onNavigateToEditor = { navController.navigate(Screen.ThemeEditor.create()) },
                         onEditCustomTheme = { name -> navController.navigate(Screen.ThemeEditor.create(name)) },
                         onBack = { navController.popBackStack() }
@@ -532,10 +622,12 @@ fun MayasApp(
                         ?.let { name -> customThemes.firstOrNull { it.first == name }?.second }
                         ?: currentColorScheme
 
+                    val defaultThemeNameTemplate = stringResource(R.string.theme_default_name)
+
                     ThemeEditorScreen(
                         initialScheme = initialScheme,
                         onSave = { scheme ->
-                            val name = themeName ?: "Тема ${customThemes.size + 1}"
+                            val name = themeName ?: String.format(defaultThemeNameTemplate, customThemes.size + 1)
                             onCustomThemesChange(customThemes.filterNot { it.first == name } + (name to scheme))
                             onColorSchemeChange(scheme)
                             navController.popBackStack()

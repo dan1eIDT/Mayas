@@ -14,10 +14,18 @@ object ThemePreferences {
     private const val PREFS_NAME = "mayas_theme_prefs"
     private const val KEY_SELECTED_THEME = "selected_theme"
     private const val KEY_CUSTOM_THEMES = "custom_themes"
+    private const val KEY_FOLLOW_SYSTEM = "follow_system_theme"
 
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+
+    fun saveFollowSystem(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_FOLLOW_SYSTEM, value).apply()
+    }
+
+    fun loadFollowSystem(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_FOLLOW_SYSTEM, false)
 
     fun saveSelectedScheme(context: Context, scheme: MayasColorScheme) {
         prefs(context).edit()
