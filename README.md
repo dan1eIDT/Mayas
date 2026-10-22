@@ -307,6 +307,7 @@ https://t.me/mayasIDT
 | Роль   | Автор                                   |
 | ------ | --------------------------------------- |
 | Главный    | [dan1eIDT](https://github.com/dan1eIDT) |
+| Главная (тестер)   | Cassie Sinclair~ |
 | Дизайн | valeriy_dobryi                          |
 | Идея   | VeewCr                                  |
 
