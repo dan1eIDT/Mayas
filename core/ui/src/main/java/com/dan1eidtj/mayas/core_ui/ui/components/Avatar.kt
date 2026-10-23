@@ -60,6 +60,12 @@ fun MayasAvatar(
         "neon" -> Brush.sweepGradient(MayasTheme.FrameNeon)
         "fire" -> Brush.sweepGradient(MayasTheme.FrameFire)
         "black" -> Brush.sweepGradient(MayasTheme.FrameBlack)
+        "sakura" -> Brush.sweepGradient(MayasTheme.FrameSakura)
+        "lilac" -> Brush.sweepGradient(MayasTheme.FrameLilac)
+        "mintpink" -> Brush.sweepGradient(MayasTheme.FrameMintPink)
+        "coffee" -> Brush.sweepGradient(MayasTheme.FrameCoffee)
+        "ice" -> Brush.sweepGradient(MayasTheme.FrameIce)
+        "pinkred" -> Brush.sweepGradient(MayasTheme.FramePinkRed)
         else -> Brush.sweepGradient(MayasTheme.FrameDefault)
     }
 

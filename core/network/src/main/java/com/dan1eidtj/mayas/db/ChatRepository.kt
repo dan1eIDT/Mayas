@@ -184,6 +184,7 @@ class ChatRepository(context: Context) {
                         isPremium = doc.getBoolean("isPremium") ?: false,
                         messageStyle = doc.getString("messageStyle"),
                         messageEffect = doc.getString("messageEffect"),
+                        animationId = doc.getString("animationId"),
                         circleVideoUrl = doc.getString("circleVideoUrl"),
                         circleVideoDuration = (doc.getLong("circleVideoDuration") ?: 0L).toInt(),
                         forwardedFromName = doc.getString("forwardedFromName"),

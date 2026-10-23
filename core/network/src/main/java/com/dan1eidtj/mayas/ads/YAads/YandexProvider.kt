@@ -26,9 +26,10 @@ enum class RewardedState {
 }
 
 private const val TAG = "YandexProvider"
+private const val RETRY_BASE_MS = 30_000L
+private const val RETRY_MAX_MS = 10 * 60_000L
 
 class YandexProvider : AdsProvider {
-
 
     private var rewardedAd: RewardedAd? = null
     private var rewardedLoader: RewardedAdLoader? = null
@@ -37,9 +38,17 @@ class YandexProvider : AdsProvider {
     var rewardedState: RewardedState = RewardedState.IDLE
         private set
 
-
     private var pendingReward: (() -> Unit)? = null
 
+    // Одна-единственная цепочка ретраев с экспоненциальной задержкой
+    private val handler = Handler(Looper.getMainLooper())
+    private var failedAttempts = 0
+    private var retryScheduled = false
+    private val retryRunnable = Runnable {
+        retryScheduled = false
+        Log.d(TAG, "Retrying rewarded load…")
+        loadRewarded()
+    }
 
     override fun initialize(activity: Activity) {
         if (initialized) return
@@ -52,7 +61,6 @@ class YandexProvider : AdsProvider {
         initialized = true
     }
 
-
     private fun setupRewardedLoader(activity: Activity) {
         rewardedLoader = RewardedAdLoader(activity).apply {
             setAdLoadListener(object : RewardedAdLoadListener {
@@ -61,18 +69,18 @@ class YandexProvider : AdsProvider {
                     Log.d(TAG, "Rewarded loaded ✅")
                     this@YandexProvider.rewardedAd = rewardedAd
                     rewardedState = RewardedState.READY
+                    failedAttempts = 0
                 }
 
                 override fun onAdFailedToLoad(adRequestError: AdRequestError) {
                     Log.e(TAG, "Rewarded load failed ❌ code=${adRequestError.code} msg=${adRequestError.description}")
-                    rewardedAd = null
+                    this@YandexProvider.rewardedAd = null
                     rewardedState = RewardedState.FAILED
-                    scheduleRetry(activity)
+                    scheduleRetry()
                 }
             })
         }
     }
-
 
     override fun loadRewarded() {
         if (rewardedAd != null) {
@@ -83,15 +91,22 @@ class YandexProvider : AdsProvider {
             Log.d(TAG, "loadRewarded skipped: already loading")
             return
         }
+        if (retryScheduled) {
+            Log.d(TAG, "loadRewarded skipped: retry already scheduled")
+            return
+        }
+        val loader = rewardedLoader ?: run {
+            Log.w(TAG, "loadRewarded called before initialize()")
+            return
+        }
 
         Log.d(TAG, "loadRewarded: requesting new ad…")
         rewardedState = RewardedState.LOADING
         val adRequestConfiguration = AdRequestConfiguration.Builder(YandexIds.REWARDED).build()
-        rewardedLoader?.loadAd(adRequestConfiguration)
+        loader.loadAd(adRequestConfiguration)
     }
 
-
-    override fun showRewarded(activity: Activity, onReward: () -> Unit, onError: (String) -> Unit) {
+    override fun showRewarded(activity: Activity, onReward: () -> Unit, onError: (String) -> Unit, onImpression: () -> Unit, onClosed: () -> Unit) {
         val ad = rewardedAd
         if (ad == null) {
             Log.w(TAG, "showRewarded called but no ad is ready")
@@ -122,7 +137,7 @@ class YandexProvider : AdsProvider {
                 Log.d(TAG, "Rewarded dismissed")
                 rewardedState = RewardedState.IDLE
                 cleanupRewardedAd()
-
+                onClosed()
                 loadRewarded()
             }
 
@@ -132,6 +147,7 @@ class YandexProvider : AdsProvider {
 
             override fun onAdImpression(impressionData: ImpressionData?) {
                 Log.d(TAG, "Rewarded impression")
+                onImpression()
             }
 
             override fun onRewarded(reward: Reward) {
@@ -144,32 +160,32 @@ class YandexProvider : AdsProvider {
         ad.show(activity)
     }
 
-
     fun isRewardedReady(): Boolean = rewardedState == RewardedState.READY
 
     override fun isRewardedAvailable(): Boolean = rewardedState == RewardedState.READY
-
 
     private fun cleanupRewardedAd() {
         rewardedAd?.setAdEventListener(null)
         rewardedAd = null
     }
 
-
-    private fun scheduleRetry(activity: Activity) {
-        Handler(Looper.getMainLooper()).postDelayed({
-            Log.d(TAG, "Retrying rewarded load…")
-            loadRewarded()
-        }, 30_000L)
+    private fun scheduleRetry() {
+        if (retryScheduled) return
+        val delay = minOf(RETRY_BASE_MS shl failedAttempts.coerceAtMost(5), RETRY_MAX_MS)
+        failedAttempts++
+        retryScheduled = true
+        Log.d(TAG, "Next rewarded retry in ${delay / 1000}s (attempt $failedAttempts)")
+        handler.postDelayed(retryRunnable, delay)
     }
 
-
-    override fun loadInterstitial() {  }
-    override fun showInterstitial(activity: Activity) {  }
+    override fun loadInterstitial() { }
+    override fun showInterstitial(activity: Activity, onImpression: () -> Unit) { }
     override fun loadBanner(container: ViewGroup) { }
 
-
     override fun destroy() {
+        handler.removeCallbacksAndMessages(null)
+        retryScheduled = false
+        failedAttempts = 0
         rewardedLoader?.setAdLoadListener(null)
         rewardedLoader = null
         cleanupRewardedAd()

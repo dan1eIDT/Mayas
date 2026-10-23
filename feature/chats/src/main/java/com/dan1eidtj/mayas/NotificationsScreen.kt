@@ -2,6 +2,7 @@
 
 package com.dan1eidtj.mayas
 
+import com.dan1eidtj.chats.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -45,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,21 +71,21 @@ fun NotificationsScreen(
         containerColor = MayasTheme.Background,
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Уведомления", color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold) },
+                title = { Text(stringResource(R.string.notifications), color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Назад", tint = MayasTheme.TextPrimary)
+                        Icon(Icons.Default.ArrowBack, contentDescription = stringResource(com.dan1eidtj.mayas.ui.R.string.back), tint = MayasTheme.TextPrimary)
                     }
                 },
                 actions = {
                     if (notifications.any { !it.isRead }) {
                         IconButton(onClick = { vm.markAllAsRead() }) {
-                            Icon(Icons.Default.DoneAll, contentDescription = "Прочитать всё", tint = MayasTheme.TextSecondary)
+                            Icon(Icons.Default.DoneAll, contentDescription = stringResource(R.string.mark_all_read), tint = MayasTheme.TextSecondary)
                         }
                     }
                     if (notifications.isNotEmpty()) {
                         IconButton(onClick = { vm.clearAll() }) {
-                            Icon(Icons.Default.DeleteSweep, contentDescription = "Очистить всё", tint = MayasTheme.TextSecondary)
+                            Icon(Icons.Default.DeleteSweep, contentDescription = stringResource(R.string.clear_all), tint = MayasTheme.TextSecondary)
                         }
                     }
                 },
@@ -165,10 +167,10 @@ private fun EmptyNotificationsState() {
             )
         }
         Spacer(Modifier.height(12.dp))
-        Text("Пока тихо", color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+        Text(stringResource(R.string.empty_notifications_title), color = MayasTheme.TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(4.dp))
         Text(
-            "Пропущенные звонки, системные штуки и акции\nбудут появляться здесь",
+            stringResource(R.string.empty_notifications_desc),
             color = MayasTheme.TextSecondary,
             fontSize = 13.sp
         )
@@ -232,7 +234,7 @@ private fun NotificationRow(
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                text = formatNotificationTime(item.createdAtMillis),
+                text = formatNotificationTime(item.createdAtMillis, stringResource(R.string.yesterday)),
                 color = MayasTheme.TextSecondary.copy(alpha = 0.7f),
                 fontSize = 11.sp
             )
@@ -250,7 +252,7 @@ private fun NotificationRow(
     }
 }
 
-private fun formatNotificationTime(millis: Long): String {
+private fun formatNotificationTime(millis: Long, yesterdayLabel: String): String {
     if (millis <= 0L) return ""
     val date = Date(millis)
     val now = Calendar.getInstance()
@@ -262,9 +264,9 @@ private fun formatNotificationTime(millis: Long): String {
             SimpleDateFormat("HH:mm", Locale.getDefault()).format(date)
         }
         now.get(Calendar.DATE) - then.get(Calendar.DATE) == 1 &&
-                now.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> "вчера, ${SimpleDateFormat("HH:mm", Locale.getDefault()).format(date)}"
+                now.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> "$yesterdayLabel, ${SimpleDateFormat("HH:mm", Locale.getDefault()).format(date)}"
         now.get(Calendar.YEAR) == then.get(Calendar.YEAR) -> {
-            SimpleDateFormat("d MMM, HH:mm", Locale("ru")).format(date)
+            SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()).format(date)
         }
         else -> SimpleDateFormat("dd.MM.yy", Locale.getDefault()).format(date)
     }

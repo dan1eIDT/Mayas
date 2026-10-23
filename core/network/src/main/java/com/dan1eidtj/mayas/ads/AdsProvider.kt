@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas.ads
 
 import android.app.Activity
@@ -14,12 +15,16 @@ interface AdsProvider {
     fun showRewarded(
         activity: Activity,
         onReward: () -> Unit,
-        onError: (String) -> Unit = {}
+        onError: (String) -> Unit = {},
+        onImpression: () -> Unit = {},
+        onClosed: () -> Unit = {}
     )
 
     fun loadInterstitial()
 
-    fun showInterstitial(activity: Activity)
+    fun isInterstitialAvailable(): Boolean = false
+
+    fun showInterstitial(activity: Activity, onImpression: () -> Unit = {})
 
     fun loadBanner(container: ViewGroup)
 

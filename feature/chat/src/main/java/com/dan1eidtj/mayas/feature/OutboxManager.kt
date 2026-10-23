@@ -33,6 +33,15 @@ import java.util.UUID
 object OutboxManager {
 
     private const val TAG = "OutboxManager"
+    private const val DELIVERY_BLOCKED = 0
+    private const val DELIVERY_CREATED = 1
+    private const val DELIVERY_ALREADY_EXISTS = 2
+
+    private class BlockedDirectMessageException : IllegalStateException(
+        "Отправка отменена: один из пользователей заблокировал собеседника"
+    )
+
+    private data class DeliveryResult(val status: Int, val directPeerUid: String?)
     private const val MAX_ATTEMPTS = 5
     private const val COMMIT_TIMEOUT_MS = 15_000L
     private const val DIR_NAME = "outbox"
@@ -184,6 +193,10 @@ object OutboxManager {
                 } catch (e: CancellationException) {
                     store.setState(item.id, OutboxEntity.STATE_PENDING, item.attempts)
                     throw e
+                } catch (e: BlockedDirectMessageException) {
+                    Log.w(TAG, "Сообщение ${item.id} отклонено политикой блокировки")
+                    store.setError(item.id, e.message ?: "Отправка запрещена блокировкой")
+                    store.setState(item.id, OutboxEntity.STATE_FAILED, item.attempts)
                 } catch (e: Exception) {
                     val offline = e is IOException || e is FirebaseNetworkException || e.cause is IOException
                     Log.e(TAG, "Не удалось отправить ${item.kind} ${item.id}, offline=$offline", e)
@@ -210,6 +223,14 @@ object OutboxManager {
     }
 
     private suspend fun deliver(context: Context, uid: String, item: OutboxEntity) {
+        val db = FirebaseFirestore.getInstance()
+        val chatRef = db.collection("chats").document(item.chatId)
+
+        // Avoid uploading content if a direct-chat block is already present.
+        if (!DirectMessagePolicy.canSendNow(db, chatRef, uid)) {
+            throw BlockedDirectMessageException()
+        }
+
         val client = B2MediaClient()
         val filesArray = JSONArray(item.filesJson)
         val keys = mutableListOf<String>()
@@ -243,34 +264,53 @@ object OutboxManager {
         data["timestamp"] = FieldValue.serverTimestamp()
         data["readBy"] = listOf(uid)
 
-        val db = FirebaseFirestore.getInstance()
-        val chatRef = db.collection("chats").document(item.chatId)
-        val messageRef = chatRef.collection("messages").document()
+        // A deterministic document ID makes retries idempotent if a commit succeeds on
+        // the server but the acknowledgement times out on the client.
+        val messageRef = chatRef.collection("messages").document("outbox_${item.id}")
+        val result = withTimeoutOrNull(COMMIT_TIMEOUT_MS) {
+            db.runTransaction { transaction ->
+                val chatSnapshot = transaction.get(chatRef)
+                val existingMessage = transaction.get(messageRef)
+                if (!chatSnapshot.exists()) {
+                    return@runTransaction DeliveryResult(DELIVERY_BLOCKED, null)
+                }
+                val directPeerUid = DirectMessagePolicy.peerUid(chatSnapshot, uid)
+                if (existingMessage.exists()) {
+                    return@runTransaction DeliveryResult(DELIVERY_ALREADY_EXISTS, directPeerUid)
+                }
+                if (!DirectMessagePolicy.canSendInTransaction(transaction, db, chatSnapshot, uid)) {
+                    return@runTransaction DeliveryResult(DELIVERY_BLOCKED, null)
+                }
 
-        val batch = db.batch()
-        batch.set(messageRef, data)
-        batch.update(
-            chatRef,
-            mapOf(
-                "lastMessage" to item.previewText,
-                "lastSenderId" to uid,
-                "updatedAt" to FieldValue.serverTimestamp()
-            )
-        )
-        batch.update(db.collection("users").document(uid), "messagesSent", FieldValue.increment(1))
-        if (!item.isGroup && item.partnerUid.isNotBlank()) {
-            batch.update(chatRef, "unreadCount_${item.partnerUid}", FieldValue.increment(1))
+                transaction.set(messageRef, data)
+                transaction.update(
+                    chatRef,
+                    mapOf(
+                        "lastMessage" to item.previewText,
+                        "lastSenderId" to uid,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+                if (directPeerUid != null) {
+                    transaction.update(chatRef, "unreadCount_$directPeerUid", FieldValue.increment(1))
+                }
+                DeliveryResult(DELIVERY_CREATED, directPeerUid)
+            }.await()
+        } ?: throw IOException("Истекло время ожидания подтверждения отправки сообщения")
+
+        if (result.status == DELIVERY_BLOCKED) throw BlockedDirectMessageException()
+        if (result.status == DELIVERY_CREATED || result.status == DELIVERY_ALREADY_EXISTS) {
+            runCatching { BackendApi.recordMessageSent(item.chatId, messageRef.id) }
+                .onFailure { Log.w(TAG, "Не удалось записать серверную статистику сообщения", it) }
         }
-
-        withTimeoutOrNull(COMMIT_TIMEOUT_MS) { batch.commit().await() }
-
-        if (!item.isGroup && item.partnerUid.isNotBlank()) {
+        if ((result.status == DELIVERY_CREATED || result.status == DELIVERY_ALREADY_EXISTS) && result.directPeerUid != null) {
             try {
-                val token = db.collection("users").document(item.partnerUid).get().await().getString("fcmToken")
+                val token = db.collection("users").document(result.directPeerUid).get().await().getString("fcmToken")
                 if (token != null) {
                     BackendApi.notify(
                         chatId = item.chatId,
                         senderId = uid,
+                        receiverUid = result.directPeerUid,
                         token = token,
                         senderName = data["senderName"] as? String ?: "",
                         text = item.previewText,

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="credits_handle_thanks">All and you!</string>
+    <string name="credits_handle_testing">Cassie Sinclair~</string>
+    <string name="credits_handle_dev">@dan1eIDT</string>
+    <string name="credits_handle_design">@valeriy_dobryy</string>
+    <string name="credits_handle_idea">@VeewCr</string>
+    <string name="credits_role_thanks">Thanks</string>
+    <string name="credits_role_testing">Testing</string>
+    <string name="credits_app_name">MAYAS</string>
+    <!-- Common / shared across modules -->
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
+    <string name="send">Send</string>
+    <string name="loading">Loading...</string>
+    <string name="back">Back</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+
+    <!-- CreditsScreen -->
+    <string name="credits_role_idea">Idea</string>
+    <string name="credits_role_design">Design</string>
+    <string name="credits_role_dev">Development</string>
+    <!-- Easter egg line, typed out on the credits screen. Feel free to write your own
+         English version here instead of a literal translation. -->
+    <string name="credits_typed_line">Well, that escalated.</string>
+    <string name="app_icon_content_description">App icon</string>
+
+    <!-- EmailVerificationRequiredDialog -->
+    <string name="verify_email_title">Verify your email to make calls!</string>
+    <string name="verify_email_message">We sent you an email when you signed up. Verify it via the link inside — and calls will be unlocked.</string>
+    <string name="verify_email_confirm_button">Verify email</string>
+    <string name="verify_email_later_button">Later</string>
+
+    <!-- SplashScreen: event banner text, day/month-triggered -->
+    <string name="event_dan1eyt_bday">Happy birthday, dan1eYT!</string>
+    <string name="event_dan1e_bday">Happy birthday, dan1e!</string>
+    <string name="event_victory_day">VICTORY DAY!</string>
+    <string name="event_summer">SUMMER!</string>
+    <!-- Easter egg: intentionally "February 8", not "March 8" — matches the RU string.
+         Swap in your own joke/date here if you'd like an English-only easter egg. -->
+    <string name="event_8_march">February 8th.</string>
+    <string name="event_new_year">HAPPY NEW YEAR!</string>
+    <string name="event_x_day">Day X</string>
+    <string name="event_try_tg">Also give TG a try!</string>
+
+    <!-- Shop purchase errors: shared between feature:auth (AuthVM) and feature:profile (MonetizationVM) -->
+    <string name="error_item_not_found">Item not found</string>
+    <string name="error_item_unavailable">This item isn\'t available right now</string>
+    <string name="error_already_owned">Already purchased</string>
+    <string name="app_name_caps_splash">mayas</string>
+    <string name="image_editor_title">Crop image</string>
+    <string name="image_editor_load_failed">Could not open the image. Choose another one.</string>
+    <string name="image_editor_gesture_hint">Drag to move; use two fingers to zoom</string>
+    <string name="image_editor_filter_original">Original</string>
+    <string name="image_editor_filter_warm">Warm</string>
+    <string name="image_editor_filter_mono">B&amp;W</string>
+    <string name="image_editor_apply">Apply</string>
+    <string name="image_editor_cancel">Cancel</string>
+    <string name="image_editor_save_failed">Could not save the edited image. Please try again.</string>
+</resources>

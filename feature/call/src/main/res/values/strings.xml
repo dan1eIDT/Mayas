@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="calls">Звонки</string>
+    <string name="incoming_call">Входящий звонок</string>
+    <string name="outgoing_call">Вызов...</string>
+    <string name="connecting">Соединение...</string>
+    <string name="ringing">Гудки...</string>
+    <string name="call_rejected">Звонок отклонён</string>
+    <string name="rejected_by_partner">Отклонено собеседником</string>
+    <string name="call_ended">Звонок завершён</string>
+    <string name="video_call_status">Видеозвонок · %1$s</string>
+    <string name="speaker">Динамик</string>
+    <string name="earpiece">Наушник</string>
+    <string name="mic_on">Вкл. микр.</string>
+    <string name="mic_off">Выкл. микр.</string>
+    <string name="end_call">Завершить звонок</string>
+    <string name="microphone">Микрофон</string>
+    <string name="speakerphone">Громкая связь</string>
+    <string name="accept">Принять</string>
+    <string name="decline">Отклонить</string>
+
+    <!-- CallManager -->
+    <string name="unknown_caller">Неизвестный</string>
+    <string name="error_call_connected_desync">Звонок соединён, но статус не синхронизировался с сервером.</string>
+    <string name="error_call_connect_failed">Не удалось подключиться к звонку. Проверьте соединение и попробуйте снова.</string>
+    <string name="error_call_push_wrapper">⚠️ %1$s\n\nПопросите собеседника открыть приложение или свяжитесь другим способом.</string>
+
+    <!-- CallPushNotifier -->
+    <string name="error_peer_no_notifications">У собеседника нет активного подключения к уведомлениям</string>
+    <string name="error_identity_confirm_failed">Не удалось подтвердить личность для отправки звонка. Попробуйте перезайти в приложение.</string>
+    <string name="error_notify_server_unavailable">Сервер уведомлений недоступен</string>
+    <string name="error_call_push_undelivered">Не удалось доставить уведомление о звонке. Возможно, собеседник не получит вызов.</string>
+    <string name="error_call_notify_failed">Ошибка отправки уведомления о звонке</string>
+</resources>

@@ -4,6 +4,8 @@
 package com.dan1eidtj.mayas.core_ui.ui.components
 
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
@@ -47,8 +49,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -56,18 +59,22 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 import com.dan1eidtj.mayas.core.ui.theme.*
+import com.dan1eidtj.mayas.ui.R
+import androidx.compose.ui.res.stringResource
 import com.dan1eidtj.mayas.core_ui.utils.InstallSourceProvider
 import com.dan1eidtj.mayas.core_ui.utils.label
 
 private val IconPurple = Color(0xFF9C6ADE)
 private val IconBlue = Color(0xFF5AC8FA)
 
-private data class CreditEntry(val role: String, val handle: String)
+private data class CreditEntry(val roleRes: Int, val handleRes: Int)
 
 private val CREDITS = listOf(
-    CreditEntry("Идея", "@VeewCr"),
-    CreditEntry("Дизайн", "@valeriy_dobryy"),
-    CreditEntry("Разработка", "@dan1eIDT")
+    CreditEntry(R.string.credits_role_idea, R.string.credits_handle_idea),
+    CreditEntry(R.string.credits_role_design, R.string.credits_handle_design),
+    CreditEntry(R.string.credits_role_dev, R.string.credits_handle_dev),
+    CreditEntry(R.string.credits_role_testing, R.string.credits_handle_testing),
+    CreditEntry(R.string.credits_role_thanks, R.string.credits_handle_thanks)
 )
 
 @Composable
@@ -92,10 +99,19 @@ fun CreditsScreen(onBack: () -> Unit, icon: Painter? = null) {
 
     val installSource = remember(context) { InstallSourceProvider.detect(context) }
 
-    val logoResId = remember(context) {
-        context.resources.getIdentifier("ic_logo", "drawable", context.packageName)
+    val effectiveIcon: Painter? = remember(context, icon) {
+        icon ?: runCatching {
+            val drawable = context.packageManager.getApplicationIcon(context.packageName)
+            val bitmapSize = 192
+            val bitmap = Bitmap.createBitmap(bitmapSize, bitmapSize, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val oldBounds = drawable.bounds
+            drawable.setBounds(0, 0, bitmapSize, bitmapSize)
+            drawable.draw(canvas)
+            drawable.bounds = oldBounds
+            BitmapPainter(bitmap.asImageBitmap())
+        }.getOrNull()
     }
-    val effectiveIcon: Painter? = icon ?: if (logoResId != 0) painterResource(id = logoResId) else null
 
     val infinite = rememberInfiniteTransition(label = "InfiniteTransition")
 
@@ -114,7 +130,7 @@ fun CreditsScreen(onBack: () -> Unit, icon: Painter? = null) {
     )
 
     var visibleText by remember { mutableStateOf("") }
-    val fullText = "Дошутился."
+    val fullText = androidx.compose.ui.res.stringResource(R.string.credits_typed_line)
 
     LaunchedEffect(Unit) {
         fullText.forEachIndexed { i, _ ->
@@ -167,7 +183,7 @@ fun CreditsScreen(onBack: () -> Unit, icon: Painter? = null) {
                     if (effectiveIcon != null) {
                         Image(
                             painter = effectiveIcon,
-                            contentDescription = "Иконка приложения",
+                            contentDescription = androidx.compose.ui.res.stringResource(R.string.app_icon_content_description),
                             modifier = Modifier.size(72.dp)
                         )
                     } else {
@@ -186,7 +202,7 @@ fun CreditsScreen(onBack: () -> Unit, icon: Painter? = null) {
             Spacer(Modifier.height(20.dp))
 
             Text(
-                "МАЯС",
+                stringResource(R.string.credits_app_name),
                 fontSize = 32.sp,
                 letterSpacing = 6.sp,
                 color = Color.White,
@@ -241,14 +257,14 @@ fun CreditsScreen(onBack: () -> Unit, icon: Painter? = null) {
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    entry.role.uppercase(),
+                                    androidx.compose.ui.res.stringResource(entry.roleRes).uppercase(),
                                     fontSize = 12.sp,
                                     letterSpacing = 2.sp,
                                     color = IconBlue
                                 )
                             }
                             Spacer(Modifier.height(2.dp))
-                            Text(entry.handle, color = Color.White, fontSize = 17.sp)
+                            Text(androidx.compose.ui.res.stringResource(entry.handleRes), color = Color.White, fontSize = 17.sp)
                         }
                     }
                 }
@@ -296,7 +312,7 @@ fun CreditsScreen(onBack: () -> Unit, icon: Painter? = null) {
                         .padding(vertical = 12.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("Назад", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text(androidx.compose.ui.res.stringResource(R.string.back), color = Color.White, fontWeight = FontWeight.SemiBold)
                 }
             }
         }

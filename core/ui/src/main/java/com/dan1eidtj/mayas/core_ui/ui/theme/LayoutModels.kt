@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 dan1eIDT */
 package com.dan1eidtj.mayas.core.ui.theme
 
 /**
@@ -16,7 +17,11 @@ data class HomeScreenLayoutPrefs(
     val avatarPosition: HorizontalSlot = HorizontalSlot.START,
     val compactList: Boolean = false,
     val showSearchField: Boolean = true,
-    val showAddFriendButton: Boolean = true
+    val showAddFriendButton: Boolean = true,
+    val showStories: Boolean = true,
+    val compactBottomBar: Boolean = false,
+    val showBottomBarStatus: Boolean = true,
+    val showBottomBarNotifications: Boolean = true
 )
 
 data class SidebarCustomLink(
@@ -35,5 +40,9 @@ data class SidebarLayoutPrefs(
     val showAppSection: Boolean = true,
     val customLinks: List<SidebarCustomLink> = emptyList(),
     val showPinnedChats: Boolean = true,
-    val pinnedChatIds: List<String> = emptyList()
-)
+    val pinnedChatIds: List<String> = emptyList(),
+    val hiddenStandardFolderIds: Set<String> = emptySet(),
+    val showMuteAllButton: Boolean = true,
+) {
+
+}

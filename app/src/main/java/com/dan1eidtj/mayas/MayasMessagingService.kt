@@ -63,6 +63,9 @@ class MayasMessagingService : FirebaseMessagingService() {
         val senderName = data["senderName"] ?: "MAYAS"
         val text = data["text"] ?: getString(R.string.message_generic)
         val isGroup = data["isGroup"] == "true"
+        val isChannel = data["isChannel"] == "true"
+        val allowsInlineReply = data["isDirect"]?.toBooleanStrictOrNull()
+            ?: (!isGroup && !isChannel)
 
         if (isGroup && !NotificationPrefs.groupMessagesEnabled(applicationContext)) return
 
@@ -77,7 +80,10 @@ class MayasMessagingService : FirebaseMessagingService() {
             senderId = senderId,
             senderName = senderName,
             text = text,
-            timestampMs = System.currentTimeMillis()
+            timestampMs = System.currentTimeMillis(),
+            isGroup = isGroup,
+            isChannel = isChannel,
+            allowsInlineReply = allowsInlineReply
         )
     }
 
@@ -89,6 +95,9 @@ class MayasMessagingService : FirebaseMessagingService() {
         senderName: String,
         text: String,
         timestampMs: Long,
+        isGroup: Boolean,
+        isChannel: Boolean,
+        allowsInlineReply: Boolean
     ) {
         if (!MayasNotifications.canPostNotifications(this)) return
 
@@ -112,8 +121,11 @@ class MayasMessagingService : FirebaseMessagingService() {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setGroup(MayasNotifications.GROUP_KEY_MESSAGES)
-            .addAction(buildReplyAction(chatId, notificationId, senderName))
-            .addAction(buildMarkReadAction(chatId, notificationId))
+
+        if (allowsInlineReply && !isGroup && !isChannel) {
+            builder.addAction(buildReplyAction(chatId, notificationId, senderName))
+        }
+        builder.addAction(buildMarkReadAction(chatId, notificationId))
 
         if (showPreview) {
             val sender = Person.Builder().setName(senderName).setKey(senderId.ifBlank { senderName }).build()
@@ -131,7 +143,7 @@ class MayasMessagingService : FirebaseMessagingService() {
 
             val messagingStyle = NotificationCompat.MessagingStyle(me)
             messagingStyle.conversationTitle = senderName
-            messagingStyle.isGroupConversation = false
+            messagingStyle.isGroupConversation = isGroup
 
             history.forEach { stored ->
                 if (stored.mine) {

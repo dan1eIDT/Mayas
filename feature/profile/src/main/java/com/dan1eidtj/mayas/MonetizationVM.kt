@@ -5,49 +5,18 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FieldValue
-import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import com.dan1eidtj.data.BackendApi
 import com.dan1eidtj.data.buyShopItemViaBackend
+import com.dan1eidtj.data.refreshBalanceAndInventory
 import com.dan1eidtj.data.BuyItemResult
-import java.util.concurrent.TimeUnit
 
 class MonetizationVM(application: Application) : AndroidViewModel(application) {
-    private val db = FirebaseFirestore.getInstance()
     private val auth = FirebaseAuth.getInstance()
     private val uid get() = auth.currentUser?.uid ?: ""
 
-    private val AD_LIMIT = 5
-    private val AD_REWARD = 10
-    private val RESET_INTERVAL_MS = TimeUnit.DAYS.toMillis(1)
-
-    private var isWatchingAd = false
-
-    fun watchAd(currentWatched: Int, lastTimestamp: Long, onLimit: () -> Unit) {
-        if (uid.isEmpty()) return
-        if (isWatchingAd) return
-        isWatchingAd = true
-
-        val currentTime = System.currentTimeMillis()
-        val actualWatched = if (currentTime - lastTimestamp > RESET_INTERVAL_MS) 0 else currentWatched
-
-        if (actualWatched < AD_LIMIT) {
-            val updates = mapOf(
-                "balance" to FieldValue.increment(AD_REWARD.toLong()),
-                "dailyAdsWatched" to (actualWatched + 1),
-                "lastAdWatchTimestamp" to currentTime
-            )
-            db.collection("users").document(uid).update(updates)
-                .addOnSuccessListener { isWatchingAd = false }
-                .addOnFailureListener { e ->
-                    Log.e("MonetizationVM", "Ошибка начисления за рекламу", e)
-                    isWatchingAd = false
-                }
-        } else {
-            isWatchingAd = false
-            onLimit()
-        }
-    }
+    private val purchasingItems = mutableSetOf<String>()
 
     fun buyItem(
         itemId: String,
@@ -57,59 +26,82 @@ class MonetizationVM(application: Application) : AndroidViewModel(application) {
         onOutOfSeason: () -> Unit = {},
         onError: (String) -> Unit = {}
     ) {
-        if (uid.isEmpty()) return
+        if (uid.isEmpty()) {
+            onError("Не авторизован")
+            return
+        }
+        if (itemId.isBlank()) {
+            onError("Некорректный идентификатор товара")
+            return
+        }
+        if (!purchasingItems.add(itemId)) return
 
         viewModelScope.launch {
-            when (val result = buyShopItemViaBackend(itemId)) {
-                is BuyItemResult.Success -> onSuccess(result.newBalance)
-                BuyItemResult.LowBalance -> onLowBalance()
-                BuyItemResult.AlreadyOwned -> onAlreadyOwned()
-                BuyItemResult.OutOfSeason -> onOutOfSeason()
-                BuyItemResult.ItemNotFound -> onError("Товар не найден")
-                is BuyItemResult.Error -> {
-                    Log.e("MonetizationVM", "Ошибка покупки: ${result.message}")
-                    onError(result.message)
+            try {
+                when (val result = buyShopItemViaBackend(itemId)) {
+                    is BuyItemResult.Success -> onSuccess(result.newBalance)
+                    BuyItemResult.LowBalance -> onLowBalance()
+                    BuyItemResult.AlreadyOwned -> onAlreadyOwned()
+                    BuyItemResult.OutOfSeason -> onOutOfSeason()
+                    BuyItemResult.ItemNotFound -> onError("Товар не найден")
+                    is BuyItemResult.Error -> {
+                        Log.e("MonetizationVM", "Ошибка покупки: ${result.message}")
+                        if (!result.outcomeUnknown) {
+                            onError(result.message)
+                        } else {
+                            val fresh = refreshBalanceAndInventory()
+                            val balance = fresh?.balance
+                            when {
+                                fresh == null -> onError("Не удалось подтвердить покупку. Проверь баланс и инвентарь, прежде чем пробовать снова.")
+                                itemId in fresh.ownedItems && balance != null -> onSuccess(balance.toInt())
+                                itemId in fresh.ownedItems -> onAlreadyOwned()
+                                else -> onError(result.message)
+                            }
+                        }
+                    }
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("MonetizationVM", "Не удалось выполнить покупку $itemId", e)
+                onError(e.localizedMessage?.takeIf { it.isNotBlank() } ?: "Не удалось выполнить покупку. Проверь подключение и попробуй ещё раз.")
+            } finally {
+                purchasingItems.remove(itemId)
             }
         }
     }
 
     fun redeemPromoCode(code: String, onResult: (String) -> Unit) {
-        if (uid.isEmpty()) return
-
-        db.collection("promo_codes").document(code).get().addOnSuccessListener { doc ->
-            if (doc.exists()) {
-                val isActive = doc.getBoolean("active") ?: false
-                val usesLeft = doc.getLong("usesLeft")?.toInt() ?: 0
-                val type = doc.getString("type") ?: ""
-                val value = doc.getLong("value")?.toInt() ?: 0
-
-                if (isActive && (usesLeft > 0 || usesLeft == -1)) {
-                    val batch = db.batch()
-                    val userRef = db.collection("users").document(uid)
-
-                    if (type == "premium") {
-                        batch.update(userRef, "isPremium", true)
-                    } else if (type == "balance") {
-                        batch.update(userRef, "balance", FieldValue.increment(value.toLong()))
-                    }
-
-                    if (usesLeft != -1) {
-                        batch.update(doc.reference, "usesLeft", FieldValue.increment(-1))
-                        if (usesLeft == 1) batch.update(doc.reference, "active", false)
-                    }
-
-                    batch.commit()
-                        .addOnSuccessListener { onResult("Промокод успешно активирован!") }
-                        .addOnFailureListener { onResult("Ошибка при активации кода") }
-                } else {
-                    onResult("Промокод недействителен или истек")
+        if (uid.isEmpty()) {
+            onResult("Не авторизован")
+            return
+        }
+        val cleanCode = code.trim()
+        if (cleanCode.isEmpty()) {
+            onResult("Введите промокод")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val result = BackendApi.redeemPromoCode(cleanCode)
+                when (result.type) {
+                    "balance" -> onResult("Промокод активирован: +${result.credited} монет")
+                    "premium" -> onResult("Промокод успешно активирован!")
+                    else -> onResult("Промокод активирован")
                 }
-            } else {
-                onResult("Промокод не найден")
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("MonetizationVM", "Ошибка серверной активации промокода", e)
+                val message = when (e.message?.substringBefore(' ')) {
+                    "PROMO_NOT_FOUND" -> "Промокод не найден"
+                    "PROMO_INACTIVE" -> "Промокод недействителен или истёк"
+                    "PROMO_ALREADY_REDEEMED" -> "Этот промокод уже использован в аккаунте"
+                    "INVALID_PROMO_TYPE", "INVALID_PROMO_VALUE" -> "Промокод настроен неверно"
+                    else -> "Не удалось активировать промокод. Проверь подключение и попробуй ещё раз."
+                }
+                onResult(message)
             }
-        }.addOnFailureListener {
-            onResult("Ошибка сети")
         }
     }
 }

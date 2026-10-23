@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- AuthScreen -->
+    <string name="welcome_back">С возвращением!</string>
+    <string name="create_account">Создайте новый аккаунт</string>
+    <string name="username_no_at">Юзернейм (без @)</string>
+    <string name="password">Пароль</string>
+    <string name="name_label">Имя</string>
+    <string name="hide_password">Скрыть пароль</string>
+    <string name="show_password">Показать пароль</string>
+    <string name="forgot_password">Забыли пароль?</string>
+    <string name="login">Войти</string>
+    <string name="register">Зарегистрироваться</string>
+    <string name="app_name_caps">МАЯС</string>
+
+    <!-- Auth: account / password reset flow (was "Misc" in the old combined file) -->
+    <string name="email_label">Email</string>
+    <string name="no_account_create">Нет аккаунта? Создать</string>
+    <string name="already_have_account">Уже есть? Войти</string>
+    <string name="password_reset">Сброс пароля</string>
+    <string name="reset_password_desc">Введите Email, на который придёт письмо со ссылкой для сброса пароля.</string>
+    <string name="reset_email_sent">Письмо для сброса пароля отправлено на %1$s</string>
+
+    <!-- AuthVM errors -->
+    <string name="error_invalid_email">Некорректный формат Email</string>
+    <string name="error_wrong_credentials">Неверный Email или пароль</string>
+    <string name="error_user_not_found">Пользователь с таким Email не найден</string>
+    <string name="error_user_disabled">Этот аккаунт заблокирован</string>
+    <string name="error_account_not_found">Аккаунт не найден</string>
+    <string name="error_email_in_use">Этот Email уже используется</string>
+    <string name="error_weak_password">Пароль слишком простой, придумайте другой</string>
+    <string name="error_too_many_requests">Слишком много попыток. Попробуйте позже</string>
+    <string name="error_no_internet">Нет подключения к интернету</string>
+    <string name="error_unknown">Что-то пошло не так. Попробуйте ещё раз</string>
+    <string name="error_enter_email">Введите Email!</string>
+    <string name="error_user_not_created">Пользователь не создан</string>
+    <string name="error_profile_save_failed">Ошибка сохранения профиля</string>
+    <string name="error_profile_update_failed">Ошибка обновления профиля</string>
+    <string name="error_password_min_length">Пароль мин. 6 символов</string>
+    <string name="error_enter_name">Введите имя</string>
+    <string name="error_username_no_spaces">Юзернейм без пробелов</string>
+    <string name="error_username_taken_at">Юзернейм @%1$s уже занят!</string>
+    <string name="error_search_failed">Ошибка поиска: %1$s</string>
+    <string name="error_insufficient_balance">Недостаточно монет!</string>
+    <string name="error_db_failed">Ошибка базы данных</string>
+    <string name="error_upload_failed">Ошибка загрузки</string>
+    <string name="error_delete_reauth">Ошибка удаления. Для этой операции может потребоваться недавний вход в аккаунт.</string>
+    <string name="error_wrong_old_password">Неверный старый пароль</string>
+    <string name="error_update_email_failed">Ошибка обновления Email</string>
+    <string name="error_update_password_failed">Ошибка обновления пароля</string>
+    <string name="error_wrong_password">Неверный пароль</string>
+
+    <!-- AuthVM: new, kept distinct from the similarly worded errors above -->
+    <string name="error_invalid_email_short">Некорректный Email</string>
+    <string name="error_generic_short">Ошибка</string>
+    <string name="error_user_search_not_found">Пользователь не найден</string>
+    <string name="unknown_device">Неизвестное устройство</string>
+    <string name="error_phone_check_failed">Ошибка проверки номера</string>
+    <string name="error_phone_save_failed">Ошибка сохранения номера</string>
+    <string name="error_phone_read_failed">Ошибка чтения текущего номера</string>
+    <string name="verify_email_link_sent">Письмо отправлено на %1$s</string>
+    <string name="error_phone_invalid">Похоже, номер введён некорректно</string>
+    <string name="error_email_not_verified">Почта ещё не подтверждена. Проверь письмо (и папку Спам)</string>
+    <string name="error_phone_already_linked">Этот номер уже привязан к другому аккаунту</string>
+
+    <!-- AuthScreen -->
+    <string name="app_title_mixed_case">Маяс</string>
+    <string name="tos_prefix">Я прочёл(а) </string>
+    <string name="tos_link_text">Пользовательское соглашение Маяс</string>
+    <string name="age_consent_notice">Продолжая, вы подтверждаете, что у вас есть согласие законного представителя на использование приложения, либо что вам уже исполнилось 14 лет.</string>
+    <string name="verify_email_screen_title">Подтверди почту</string>
+    <string name="verify_email_instruction">Мы отправили письмо на %1$s. Перейди по ссылке в письме, потом нажми \"Я подтвердил\".</string>
+    <string name="verify_email_fallback">твой email</string>
+    <string name="i_confirmed_button">Я подтвердил</string>
+    <string name="resend_email_button">Отправить письмо ещё раз</string>
+    <string name="logout_from_account_button">Выйти из аккаунта</string>
+    <string name="auth_return_to_account">Вернуться в аккаунт %1$s</string>
+    <string name="auth_same_account">Этот аккаунт уже открыт</string>
+    <string name="auth_account_limit_reached">Достигнут лимит аккаунтов. Удалите один из них, чтобы добавить новый</string>
+    <string name="error_reauthentication_required">Требуется повторно войти в аккаунт</string>
+    <string name="error_reauthentication_email_missing">У аккаунта нет Email для повторной авторизации</string>
+</resources>

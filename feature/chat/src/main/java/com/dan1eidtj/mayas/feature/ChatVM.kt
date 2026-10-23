@@ -16,13 +16,16 @@ import com.dan1eidtj.mayas.storage.B2MediaClient
 import com.dan1eidtj.mayas.storage.MediaFileCache
 import java.io.File
 import com.dan1eidtj.data.FirestoreListenerCoordinator
+import com.dan1eidtj.data.MuteState
 import com.dan1eidtj.mayas.core_ui.utils.formatLastSeen
+import com.dan1eidtj.mayas.core_ui.ui.components.MessageEffect
 import com.dan1eidtj.mayas.core_ui.ui.components.MessageEffects
 import com.dan1eidtj.mayas.db.ChatRepository
 import com.dan1eidtj.mayas.db.OutboxEntity
 import com.dan1eidtj.mayas.db.OutboxStore
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.Exclude
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
@@ -30,6 +33,8 @@ import com.google.firebase.firestore.PropertyName
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.ServerTimestamp
 import com.google.firebase.firestore.SetOptions
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -56,6 +61,7 @@ data class Message(
     val isPremium: Boolean = false,
     val messageStyle: String? = null,
     val messageEffect: String? = null,
+    val animationId: String? = null,
     val status: Int = 1,
     val reactions: Map<String, String> = emptyMap(),
     val voiceUrl: String? = null,
@@ -86,6 +92,11 @@ data class Message(
 
     @get:PropertyName("isSilent")
     val isSilent: Boolean = false,
+
+    // Заполняется только для локальных сообщений Mesh; обычные сообщения Firestore оставляют поле пустым.
+    val transport: String? = null,
+    // Local-only trust metadata; legacy Mesh history remains false/unverified and is not persisted to Firestore.
+    @get:Exclude val meshIdentityVerified: Boolean? = null,
 
     @get:PropertyName("isRead")
     val isRead: Boolean = false,
@@ -230,6 +241,15 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     var messages by mutableStateOf<List<Message>>(emptyList())
         private set
 
+    var pendingMessages by mutableStateOf<List<Message>>(emptyList())
+        private set
+
+    private fun removePendingMessage(chatId: String, messageId: String) {
+        if (currentChatId == chatId) {
+            pendingMessages = pendingMessages.filterNot { it.id == messageId }
+        }
+    }
+
     var lastSeenText by mutableStateOf("Загрузка...")
         private set
 
@@ -239,8 +259,17 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     var partnerUid by mutableStateOf("")
         private set
 
+    private var blockedUserIds by mutableStateOf<Set<String>>(emptySet())
+    private var partnerHasBlockedMe by mutableStateOf(false)
+
+    val isDirectMessageBlocked: Boolean
+        get() = !isGroupChat && chatType == "DIRECT" && partnerUid.isNotBlank() &&
+                (partnerUid in blockedUserIds || partnerHasBlockedMe)
+
     var isGroupChat by mutableStateOf(false)
     var chatType by mutableStateOf("DIRECT")
+    var isPublicChannel by mutableStateOf(false)
+        private set
     var chatAdmins by mutableStateOf<List<String>>(emptyList())
     var chatOwnerId by mutableStateOf<String?>(null)
     var chatAdminPermissions by mutableStateOf<Map<String, Map<String, Boolean>>>(emptyMap())
@@ -296,6 +325,9 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
     val canPostInChat: Boolean
         get() = chatType != "CHANNEL" || hasChatPermission(AdminPermission.CAN_POST)
+
+    val canSendMessageInChat: Boolean
+        get() = canPostInChat && !isDirectMessageBlocked
 
     var partnerName by mutableStateOf("Загрузка...")
         private set
@@ -360,6 +392,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
 
     private var userListenerChatId: String? = null
+    private val typingStateByChat = mutableMapOf<String, Boolean>()
 
     var partnerUseCustomAvatar by mutableStateOf(true)
         private set
@@ -391,7 +424,16 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     var myIsPremium by mutableStateOf(false)
         private set
 
+    var myNotMayasUntilMillis by mutableStateOf(0L)
+        private set
+
     var myMessageStyle by mutableStateOf<String?>(null)
+        private set
+
+    var myEffectId by mutableStateOf<String?>(null)
+        private set
+
+    var myAnimationId by mutableStateOf<String?>(null)
         private set
 
     var myVerifiedIcon by mutableStateOf("verified")
@@ -432,10 +474,14 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         private set
 
     private var searchJob: Job? = null
+    private var activeSearchQuery: String = ""
+    private var activeSearchChatId: String? = null
 
     fun searchMessages(chatId: String, query: String) {
         searchJob?.cancel()
         val needle = query.trim()
+        activeSearchQuery = needle
+        activeSearchChatId = chatId
         if (needle.isEmpty()) {
             searchResults = emptyList()
             isSearching = false
@@ -444,32 +490,31 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         isSearching = true
 
         searchJob = viewModelScope.launch {
-            val local = withContext(Dispatchers.Default) {
-                messages.filter { it.text?.contains(needle, ignoreCase = true) == true }
+            delay(180)
+            if (currentChatId != chatId || activeSearchChatId != chatId || activeSearchQuery != needle) {
+                return@launch
             }
-            searchResults = local.sortedByDescending { it.timestamp?.time ?: 0L }
-            isSearching = false
 
-            db.collection("chats/$chatId/messages")
-                .whereGreaterThanOrEqualTo("text", needle)
-                .whereLessThanOrEqualTo("text", needle + "\uf8ff")
-                .get()
-                .addOnSuccessListener { snap ->
-                    val remote = snap.documents.mapNotNull {
-                        it.toObject(Message::class.java)?.copy(id = it.id)
-                    }
-                    searchResults = (searchResults + remote)
-                        .distinctBy { it.id }
-                        .sortedByDescending { it.timestamp?.time ?: 0L }
-                    isSearching = false
-                }
-                .addOnFailureListener {
-                    isSearching = false
-                }
+            val results = withContext(Dispatchers.Default) {
+                messages.asSequence()
+                    .filter { message -> message.text?.contains(needle, ignoreCase = true) == true }
+                    .distinctBy { it.id }
+                    .sortedByDescending { it.timestamp?.time ?: 0L }
+                    .toList()
+            }
+
+            if (currentChatId == chatId && activeSearchChatId == chatId && activeSearchQuery == needle) {
+                searchResults = results
+                isSearching = false
+            }
         }
     }
 
     fun clearSearch() {
+        searchJob?.cancel()
+        searchJob = null
+        activeSearchQuery = ""
+        activeSearchChatId = null
         searchResults = emptyList()
         isSearching = false
     }
@@ -607,12 +652,23 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) { OutboxManager.cancel(getApplication(), id) }
     }
 
+    private fun equippedMessageEffect(): String? = when (myEffectId) {
+        "confetti" -> MessageEffect.CONFETTI
+        "hearts" -> MessageEffect.HEART
+        "snow" -> MessageEffect.SNOW
+        "fireworks" -> MessageEffect.FIREWORKS
+        "sparkles" -> MessageEffect.SPARKLES
+        else -> null
+    }
+
     private fun baseMessageFields(replyText: String?, replyName: String?): MutableMap<String, Any?> {
         val fields = mutableMapOf<String, Any?>(
             "senderName" to myName,
             "isPremium" to myIsPremium,
             "messageStyle" to myMessageStyle
         )
+        myAnimationId?.let { fields["animationId"] = it }
+        equippedMessageEffect()?.let { fields["messageEffect"] = it }
         if (replyText != null && replyName != null) {
             fields["replyToText"] = replyText
             fields["replyToName"] = replyName
@@ -658,6 +714,8 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         val uid = firebaseAuth.currentUser?.uid
         if (uid != listeningUid) {
             stopAllListeners()
+            typingStateByChat.clear()
+            blockedUserIds = emptySet()
             if (uid != null) {
                 listeningUid = uid
                 attachMyProfileListener(uid)
@@ -668,7 +726,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
     init {
         auth.addAuthStateListener(authStateListener)
-        FirestoreListenerCoordinator.register(teardown)
+        FirestoreListenerCoordinator.register(teardown, persistent = true)
         myUid?.let { uid ->
             listeningUid = uid
             attachMyProfileListener(uid)
@@ -685,11 +743,22 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 }
                 if (doc != null && doc.exists()) {
                     myName = doc.getString("name") ?: doc.getString("username") ?: "Вы"
+                    blockedUserIds = (doc.get("blocked") as? List<*>)
+                        ?.mapNotNull { it as? String }
+                        ?.toSet()
+                        ?: emptySet()
                     myIsPremium = doc.getBoolean("isPremium") ?: false
+                    myNotMayasUntilMillis = doc.getTimestamp("notMayasUntil")?.toDate()?.time ?: 0L
                     myVerifiedIcon = doc.getString("verifiedIcon") ?: "verified"
                     myVerification = com.dan1eidtj.data.VerificationInfo.fromMap(doc.data)
                     myRank = com.dan1eidtj.data.Rank.fromMap(doc.data)
                     myMessageStyle = doc.getString("messageStyle")
+                    myEffectId = doc.getString("effectId")
+                    myAnimationId = doc.getString("animationId")
+                } else {
+                    blockedUserIds = emptySet()
+                    myIsPremium = false
+                    myNotMayasUntilMillis = 0L
                 }
             }
     }
@@ -700,6 +769,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         pinnedMessagesListener?.remove(); pinnedMessagesListener = null
         userListener?.remove(); userListener = null
         userListenerChatId = null
+        partnerHasBlockedMe = false
         myProfileListener?.remove(); myProfileListener = null
         listeningUid = null
     }
@@ -787,6 +857,8 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
     }
 
     private var persistMessagesJob: Job? = null
+    private val readReceiptInFlight = mutableSetOf<String>()
+    private val viewedReceiptInFlight = mutableSetOf<String>()
 
     private fun persistMessages(chatId: String, list: List<Message>) {
         persistMessagesJob?.cancel()
@@ -797,18 +869,84 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private var messageWindow = MESSAGE_PAGE_SIZE
+    private var hasMoreMessages = true
+    private var isLoadingOlderMessages = false
+
+    private fun startMessagesListener(chatId: String, uid: String) {
+        messagesListener?.remove()
+        messagesListener = db.collection("chats/$chatId/messages")
+            .orderBy("timestamp", Query.Direction.ASCENDING)
+            .limitToLast(messageWindow.toLong())
+            .addSnapshotListener { snap, error ->
+                if (currentChatId != chatId) return@addSnapshotListener
+                if (error != null) {
+                    Log.e("ChatVM", "Ошибка снапшота сообщений", error)
+                    return@addSnapshotListener
+                }
+                if (snap != null) {
+                    val list = snap.documents.mapNotNull { doc ->
+                        val m = doc.toObject(Message::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)?.copy(id = doc.id)
+                        if (m != null) {
+                            val status = if (m.readBy.size > 1) 2 else 1
+                            m.copy(status = status)
+                        } else null
+                    }
+                    val newestIncoming = list.lastOrNull()
+                    if (messages.isNotEmpty() && newestIncoming != null &&
+                        newestIncoming.senderId != uid &&
+                        messages.none { it.id == newestIncoming.id }
+                    ) {
+                        playSound(messageReceivedSoundId)
+                    }
+                    hasMoreMessages = list.size >= messageWindow
+                    isLoadingOlderMessages = false
+                    messages = list
+                    val confirmedIds = list.asSequence().map { it.id }.toHashSet()
+                    pendingMessages = pendingMessages.filterNot { it.id in confirmedIds }
+                    messagesLoaded = true
+                    persistMessages(chatId, list)
+                    if (activeSearchChatId == chatId && activeSearchQuery.isNotBlank()) {
+                        searchMessages(chatId, activeSearchQuery)
+                    }
+                    if (chatType == "CHANNEL") {
+                        markAsViewed(chatId, list, uid)
+                    } else {
+                        markAsRead(chatId, list, uid)
+                    }
+
+
+                }
+            }
+    }
+
+    fun loadOlderMessages(chatId: String) {
+        val uid = myUid ?: return
+        if (currentChatId != chatId || !hasMoreMessages || isLoadingOlderMessages) return
+        isLoadingOlderMessages = true
+        messageWindow += MESSAGE_PAGE_SIZE
+        startMessagesListener(chatId, uid)
+    }
+
     fun observeChat(chatId: String) {
         val uid = myUid ?: return
         if (currentChatId != chatId) {
+            clearSearch()
             draftAppliedForChatId = null
             draftSaveJob?.cancel()
         }
         if (currentChatId != chatId) {
+            isPublicChannel = false
+            chatType = "DIRECT"
             effectReplayBaselineSet = false
             lastHandledReplayId = null
             effectReplayEvent = null
             messagesLoaded = false
             messages = emptyList()
+            pendingMessages = emptyList()
+            messageWindow = MESSAGE_PAGE_SIZE
+            hasMoreMessages = true
+            isLoadingOlderMessages = false
         }
         currentChatId = chatId
         observeOutbox(chatId)
@@ -821,40 +959,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        messagesListener?.remove()
-        messagesListener = db.collection("chats/$chatId/messages")
-            .orderBy("timestamp", Query.Direction.ASCENDING)
-            .addSnapshotListener { snap, error ->
-                if (error != null) {
-                    Log.e("ChatVM", "Ошибка снапшота сообщений", error)
-                    return@addSnapshotListener
-                }
-                if (snap != null) {
-                    val list = snap.documents.mapNotNull { doc ->
-                        val m = doc.toObject(Message::class.java)?.copy(id = doc.id)
-                        if (m != null) {
-                            val status = if (m.readBy.size > 1) 2 else 1
-                            m.copy(status = status)
-                        } else null
-                    }
-                    if (messages.isNotEmpty() && list.size > messages.size) {
-                        val last = list.last()
-                        if (last.senderId != uid) {
-                            playSound(messageReceivedSoundId)
-                        }
-                    }
-                    messages = list
-                    messagesLoaded = true
-                    persistMessages(chatId, list)
-                    if (chatType == "CHANNEL") {
-                        markAsViewed(chatId, list, uid)
-                    } else {
-                        markAsRead(chatId, list, uid)
-                    }
-
-
-                }
-            }
+        startMessagesListener(chatId, uid)
 
         pinnedMessagesListener?.remove()
         pinnedMessagesListener = db.collection("chats").document(chatId)
@@ -905,6 +1010,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                     val isGroupField = doc.getBoolean("isGroup") ?: false
                     isGroupChat = type == "GROUP" || type == "CHANNEL" || isGroupField
                     chatType = type
+                    isPublicChannel = type == "CHANNEL" && (doc.getBoolean("isPublic") ?: false)
 
                     @Suppress("UNCHECKED_CAST")
                     chatAdmins = (doc.get("admins") as? List<*>)?.map { it.toString() } ?: emptyList()
@@ -943,6 +1049,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
 
         if (targetUid != null && userListenerChatId != chatId) {
+            partnerHasBlockedMe = false
             userListener?.remove()
             userListenerChatId = chatId
 
@@ -953,10 +1060,19 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                         return@addSnapshotListener
                     }
                     if (doc != null && doc.exists() && !isGroupChat) {
+                        val partnerBlocked = doc.get("blocked") as? List<*>
+                        partnerHasBlockedMe = partnerBlocked?.contains(uid) == true
                         // Настройки приватности собеседника (privacy_last_seen, privacy_photo).
                         // Это всегда чужой профиль (мы в его личном чате), поэтому без
                         // isMyProfile-исключения, в отличие от ProfileScreen.
-                        val lastSeenAllowed = (doc.getString("privacy_last_seen") ?: "all") == "all"
+                        val lastSeenMode = doc.getString("privacy_last_seen") ?: "all"
+                        val hiddenLastSeenFrom = (doc.get("privacy_last_seen_hidden_from") as? List<*>)
+                            ?.filterIsInstance<String>()?.toSet().orEmpty()
+                        val lastSeenAllowed = when (lastSeenMode) {
+                            "custom" -> uid !in hiddenLastSeenFrom
+                            "all" -> true
+                            else -> false
+                        }
                         val photoAllowed = (doc.getString("privacy_photo") ?: "all") == "all"
 
                         val lastSeen = if (lastSeenAllowed) doc.getTimestamp("lastSeen") else null
@@ -981,9 +1097,12 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
 
                         partnerNameColor = doc.getString("nameColor") ?: "gold"
+                    } else if (doc == null || !doc.exists()) {
+                        partnerHasBlockedMe = false
                     }
                 }
         }
+        if (targetUid == null) partnerHasBlockedMe = false
     }
 
     fun clearUnreadCount(chatId: String) {
@@ -1011,12 +1130,28 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
         effect: String? = null,
 
-        scheduledFor: Date? = null
+        scheduledFor: Date? = null,
+        onSuccess: (() -> Unit)? = null,
+        onError: ((String) -> Unit)? = null
     ) {
         if (text.isBlank()) return
-        if (!canPostInChat) return
+        if (isDirectMessageBlocked) {
+            onError?.invoke("blocked")
+            return
+        }
+        if (!canPostInChat) {
+            onError?.invoke("forbidden")
+            return
+        }
+        @Suppress("NAME_SHADOWING")
+        val text = com.dan1eidtj.data.plugins.PluginManager.transformOutgoingText(text)
 
-        val uid = myUid ?: return
+        val uid = myUid ?: run {
+            onError?.invoke("not_authenticated")
+            return
+        }
+        val sendingIsGroupChat = isGroupChat
+        val sendingPartnerUid = partnerUid
         val isScheduled = scheduledFor != null && scheduledFor.after(Date())
         val effectiveTimerSec = timerOverrideSec ?: chatDisappearingTimerSec
 
@@ -1029,9 +1164,11 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             "messageStyle" to myMessageStyle,
             "isSilent" to silent
         )
+        myAnimationId?.let { messageData["animationId"] = it }
 
-        if (effect != null && MessageEffects.registry.containsKey(effect)) {
-            messageData["messageEffect"] = effect
+        val effectiveEffect = effect ?: equippedMessageEffect()
+        if (effectiveEffect != null && MessageEffects.registry.containsKey(effectiveEffect)) {
+            messageData["messageEffect"] = effectiveEffect
         }
 
         if (isScheduled) {
@@ -1058,53 +1195,76 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
         val chatRef = db.collection("chats").document(chatId)
         val msgRef = chatRef.collection("messages").document()
-        val userRef = db.collection("users").document(uid)
-
-        val batch = db.batch()
-
-        batch.set(msgRef, messageData)
-
-
-
-
-        if (!isScheduled) {
-            batch.update(
-                chatRef,
-                mapOf(
-                    "lastMessage" to text,
-                    "lastSenderId" to uid,
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            )
-
-            batch.update(
-                userRef,
-                "messagesSent",
-                FieldValue.increment(1)
-            )
-
-            if (!isGroupChat && partnerUid.isNotBlank()) {
-                batch.update(
-                    chatRef,
-                    "unreadCount_$partnerUid",
-                    FieldValue.increment(1)
-                )
-            }
+        val optimisticExpireAt = if (!isScheduled && effectiveTimerSec > 0) {
+            Date(System.currentTimeMillis() + effectiveTimerSec * 1000)
+        } else null
+        val optimisticMessage = Message(
+            id = msgRef.id,
+            senderId = uid,
+            senderName = myName,
+            text = text,
+            timestamp = scheduledFor?.takeIf { isScheduled } ?: Date(),
+            readBy = listOf(uid),
+            replyToText = replyText,
+            replyToName = replyName,
+            isPremium = myIsPremium,
+            messageStyle = myMessageStyle,
+            messageEffect = effectiveEffect?.takeIf { MessageEffects.registry.containsKey(it) },
+            animationId = myAnimationId,
+            status = 0,
+            ttlSeconds = if (!isScheduled) effectiveTimerSec else 0L,
+            expireAt = optimisticExpireAt,
+            isSilent = silent,
+            scheduledFor = scheduledFor?.takeIf { isScheduled },
+            messageState = if (isScheduled) MessageState.SCHEDULED else MessageState.SENT
+        )
+        if (currentChatId == chatId) {
+            pendingMessages = pendingMessages.filterNot { it.id == msgRef.id } + optimisticMessage
         }
-
+        val batch = db.batch()
+        batch.set(msgRef, messageData)
+        if (!isScheduled) {
+            val chatUpdates = mutableMapOf<String, Any>(
+                "lastMessage" to text,
+                "lastSenderId" to uid,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (!sendingIsGroupChat && sendingPartnerUid.isNotBlank()) {
+                chatUpdates["unreadCount_$sendingPartnerUid"] = FieldValue.increment(1)
+            }
+            batch.update(chatRef, chatUpdates)
+        }
         batch.commit()
             .addOnSuccessListener {
                 if (!isScheduled) {
-                    playSound(messageSentSoundId)
-
-                    if (!isGroupChat && partnerUid.isNotBlank()) {
-                        sendPushNotification(chatId, uid, partnerUid, text, silent)
+                    viewModelScope.launch(Dispatchers.IO) {
+                        runCatching { BackendApi.recordMessageSent(chatId, msgRef.id) }
+                            .onFailure { Log.w("ChatVM", "Не удалось записать серверную статистику сообщения", it) }
+                    }
+                    if (!sendingIsGroupChat && sendingPartnerUid.isNotBlank()) {
+                        sendPushNotification(chatId, uid, sendingPartnerUid, text, silent)
+                    } else if (sendingIsGroupChat) {
+                        sendChatFanOutPush(chatId, text, silent)
                     }
                 }
             }
-            .addOnFailureListener {
-                Log.e("ChatVM", "Ошибка отправки", it)
+            .addOnFailureListener { error ->
+                removePendingMessage(chatId, msgRef.id)
+                Log.e("ChatVM", "Ошибка отправки", error)
+                onError?.invoke("send_failed")
             }
+        if (!isScheduled) playSound(messageSentSoundId)
+        onSuccess?.invoke()
+    }
+
+    private fun sendChatFanOutPush(chatId: String, messageText: String, silent: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                BackendApi.notifyChat(chatId = chatId, text = messageText, silent = silent)
+            } catch (e: Exception) {
+                Log.e("ChatVM", "Chat fan-out push failed", e)
+            }
+        }
     }
 
 
@@ -1141,7 +1301,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         replyText: String?,
         replyName: String?
     ) {
-        if (myUid == null || !canPostInChat || auth.currentUser == null) return
+        if (myUid == null || !canSendMessageInChat || auth.currentUser == null) return
         val fields = baseMessageFields(replyText, replyName)
         fields["text"] = text.ifBlank { null }
         val preview = if (text.isNotBlank()) text else getApplication<Application>().getString(com.dan1eidtj.chat.R.string.photo_message)
@@ -1170,7 +1330,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         replyText: String?,
         replyName: String?
     ) {
-        if (myUid == null || !canPostInChat || items.isEmpty() || auth.currentUser == null) return
+        if (myUid == null || !canSendMessageInChat || items.isEmpty() || auth.currentUser == null) return
         val fields = baseMessageFields(replyText, replyName)
         fields["text"] = text.ifBlank { null }
         fields["type"] = MessageType.ALBUM
@@ -1314,18 +1474,31 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         val chatRef = db.collection("chats").document(targetChatId)
         val msgRef = chatRef.collection("messages").document()
 
-        val batch = db.batch()
-        batch.set(msgRef, messageData)
-        batch.update(
-            chatRef,
-            mapOf(
-                "lastMessage" to previewText,
-                "lastSenderId" to uid,
-                "updatedAt" to FieldValue.serverTimestamp()
+        db.runTransaction { transaction ->
+            val chatSnapshot = transaction.get(chatRef)
+            if (!DirectMessagePolicy.canSendInTransaction(transaction, db, chatSnapshot, uid)) {
+                return@runTransaction false
+            }
+            transaction.set(msgRef, messageData)
+            transaction.update(
+                chatRef,
+                mapOf(
+                    "lastMessage" to previewText,
+                    "lastSenderId" to uid,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
             )
-        )
-        batch.commit()
-            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка пересылки сообщения", e) }
+            true
+        }.addOnSuccessListener { allowed ->
+            if (!allowed) {
+                Log.w("ChatVM", "Пересылка отклонена: получатель заблокирован")
+            } else {
+                viewModelScope.launch(Dispatchers.IO) {
+                    runCatching { BackendApi.recordMessageSent(targetChatId, msgRef.id) }
+                        .onFailure { Log.w("ChatVM", "Не удалось записать статистику пересылки", it) }
+                }
+            }
+        }.addOnFailureListener { e -> Log.e("ChatVM", "Ошибка пересылки сообщения", e) }
     }
 
     fun createGroupChat(
@@ -1401,7 +1574,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         val uid = myUid ?: return
         if (title.isBlank()) return
 
-        val cleanUsername = username?.lowercase()?.trim()?.takeIf { it.isNotBlank() }
+        val cleanUsername = username?.lowercase()?.trim()?.removePrefix("@")?.takeIf { it.isNotBlank() }
         if (isPublic && cleanUsername.isNullOrBlank()) {
             onError("У публичного канала должен быть @username")
             return
@@ -1418,7 +1591,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 "description" to description.trim(),
                 "ownerId" to uid,
                 "admins" to listOf(uid),
-                "isPublic" to isPublic,
+                "isPublic" to false,
                 "participants" to listOf(uid),
                 "members" to listOf(uid),
                 "pinnedMessage" to null,
@@ -1426,7 +1599,6 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 "lastSenderId" to "system",
                 "updatedAt" to FieldValue.serverTimestamp()
             )
-            if (cleanUsername != null) channelData["username"] = cleanUsername
             if (!channelAvatar.isNullOrBlank()) channelData["groupAvatar"] = channelAvatar
 
             db.collection("chats").document(newChatId)
@@ -1434,22 +1606,44 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 .addOnSuccessListener {
                     viewModelScope.launch {
                         try {
+                            if (cleanUsername != null) {
+                                BackendApi.changeChannelUsername(newChatId, cleanUsername, isPublic)
+                            }
+                        } catch (e: Exception) {
+                            Log.e("ChatVM", "Не удалось зарезервировать username канала", e)
+                            // If the server committed but the response was lost, clearing by chatId
+                            // releases the claim before deleting the provisional channel.
+                            if (cleanUsername != null) {
+                                runCatching { BackendApi.changeChannelUsername(newChatId, "", false) }
+                                    .onFailure { cleanupError -> Log.e("ChatVM", "Не удалось очистить резерв username", cleanupError) }
+                            }
+                            db.collection("chats").document(newChatId).delete()
+                            val message = when (e.message?.substringBefore(' ')) {
+                                "USERNAME_TAKEN" -> "Юзернейм @$cleanUsername уже занят"
+                                "INVALID_USERNAME" -> "Некорректный username канала"
+                                else -> e.localizedMessage ?: "Ошибка создания канала"
+                            }
+                            onError(message)
+                            return@launch
+                        }
+
+                        try {
                             addUserChatIndex(uid, newChatId)
                         } catch (e: Exception) {
                             Log.e("ChatVM", "Ошибка создания userChats канала", e)
                         }
+                        val systemMessage = mapOf(
+                            "type" to MessageType.SYSTEM,
+                            "text" to "Канал \"$title\" создан",
+                            "senderId" to "system",
+                            "senderName" to "Система",
+                            "timestamp" to FieldValue.serverTimestamp(),
+                            "readBy" to listOf(uid)
+                        )
+                        runCatching { db.collection("chats/$newChatId/messages").add(systemMessage).await() }
+                            .onFailure { Log.e("ChatVM", "Не удалось добавить системное сообщение о создании канала", it) }
+                        onSuccess(newChatId)
                     }
-
-                    val systemMessage = mapOf(
-                        "type" to MessageType.SYSTEM,
-                        "text" to "Канал \"$title\" создан",
-                        "senderId" to "system",
-                        "senderName" to "Система",
-                        "timestamp" to FieldValue.serverTimestamp(),
-                        "readBy" to listOf(uid)
-                    )
-                    db.collection("chats/$newChatId/messages").add(systemMessage)
-                    onSuccess(newChatId)
                 }
                 .addOnFailureListener { e ->
                     Log.e("ChatVM", "Ошибка создания канала", e)
@@ -1469,13 +1663,18 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
 
     fun checkChannelUsername(username: String, excludeChatId: String? = null, onResult: (Boolean) -> Unit) {
-        val clean = username.lowercase().trim()
+        val clean = username.lowercase().trim().removePrefix("@")
+        if (!Regex("^[a-z0-9_]{5,32}$").matches(clean)) {
+            onResult(false)
+            return
+        }
         var channelDone = false
         var userDone = false
+        var claimDone = false
         var isTaken = false
 
         fun finish() {
-            if (channelDone && userDone) onResult(!isTaken)
+            if (channelDone && userDone && claimDone) onResult(!isTaken)
         }
 
         db.collection("chats")
@@ -1487,7 +1686,12 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 channelDone = true
                 finish()
             }
-            .addOnFailureListener { channelDone = true; finish() }
+            .addOnFailureListener { e ->
+                android.util.Log.e("ChatVM", "Не удалось проверить username каналов", e)
+                isTaken = true
+                channelDone = true
+                finish()
+            }
 
         db.collection("users")
             .whereEqualTo("username", clean)
@@ -1498,7 +1702,29 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                 userDone = true
                 finish()
             }
-            .addOnFailureListener { userDone = true; finish() }
+            .addOnFailureListener { e ->
+                android.util.Log.e("ChatVM", "Не удалось проверить username пользователей", e)
+                isTaken = true
+                userDone = true
+                finish()
+            }
+
+        db.collection("usernameClaims").document(clean).get()
+            .addOnSuccessListener { snap ->
+                // The current channel may retain its own CHANNEL claim; all other claims block it.
+                if (snap.exists()) {
+                    val sameChannelClaim = snap.getString("kind") == "CHANNEL" && snap.getString("chatId") == excludeChatId
+                    if (!sameChannelClaim) isTaken = true
+                }
+                claimDone = true
+                finish()
+            }
+            .addOnFailureListener { e ->
+                android.util.Log.e("ChatVM", "Не удалось проверить usernameClaims", e)
+                isTaken = true
+                claimDone = true
+                finish()
+            }
     }
 
     fun updateChannelUsername(
@@ -1508,29 +1734,28 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
-        val cleanUsername = newUsername.lowercase().trim().takeIf { it.isNotBlank() }
-        if (makePublic && cleanUsername.isNullOrBlank()) {
+        val cleanUsername = newUsername.lowercase().trim().removePrefix("@").takeIf { it.isNotBlank() }.orEmpty()
+        if (makePublic && cleanUsername.isBlank()) {
             onError("У публичного канала должен быть @username")
             return
         }
-
-        fun write() {
-            val updates = mutableMapOf<String, Any?>("isPublic" to makePublic)
-            updates["username"] = cleanUsername
-            db.collection("chats").document(chatId)
-                .update(updates)
-                .addOnSuccessListener { onSuccess() }
-                .addOnFailureListener { e -> onError(e.localizedMessage ?: "Ошибка сохранения") }
-        }
-
-        if (cleanUsername != null) {
-            checkChannelUsername(cleanUsername, excludeChatId = chatId) { isAvailable ->
-                if (isAvailable) write() else onError("Юзернейм @$cleanUsername уже занят")
+        viewModelScope.launch {
+            try {
+                BackendApi.changeChannelUsername(chatId, cleanUsername, makePublic)
+                onSuccess()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("ChatVM", "Не удалось изменить username канала через backend", e)
+                onError(when (e.message?.substringBefore(' ')) {
+                    "USERNAME_TAKEN" -> "Юзернейм @$cleanUsername уже занят"
+                    "INVALID_USERNAME" -> "Некорректный username канала"
+                    else -> e.localizedMessage ?: "Ошибка сохранения"
+                })
             }
-        } else {
-            write()
         }
     }
+
 
 
     object AdminPermission {
@@ -1719,11 +1944,13 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         if (receiverUid.isBlank()) return
 
         db.collection("users").document(receiverUid).get().addOnSuccessListener { doc ->
+            // Получатель заглушил этот чат (вручную или массовым режимом) — push не шлём.
+            if (MuteState.from(doc).isMuted(chatId)) return@addOnSuccessListener
             val token = doc.getString("fcmToken") ?: return@addOnSuccessListener
 
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    BackendApi.notify(chatId = chatId, senderId = senderId, token = token, senderName = myName, text = messageText, silent = silent)
+                    BackendApi.notify(chatId = chatId, senderId = senderId, receiverUid = receiverUid, token = token, senderName = myName, text = messageText, silent = silent)
                 } catch (e: Exception) {
                     Log.e("ChatVM", "Push notification failed", e)
                 }
@@ -1763,9 +1990,14 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         val msgRef = chatRef.collection("messages").document(messageId)
 
         db.runTransaction { tx ->
+            val chatSnapshot = tx.get(chatRef)
             val snapshot = tx.get(msgRef)
             if (!snapshot.exists()) throw IllegalStateException("not_found")
             if (snapshot.getString("senderId") != myUid) throw IllegalStateException("forbidden")
+            val uid = myUid ?: throw IllegalStateException("not_authenticated")
+            if (!DirectMessagePolicy.canSendInTransaction(tx, db, chatSnapshot, uid)) {
+                throw IllegalStateException("blocked")
+            }
 
             tx.update(
                 msgRef,
@@ -1811,6 +2043,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
 
     val reactorProfiles = mutableStateMapOf<String, ReactorProfile>()
     private val requestedReactorProfiles = mutableSetOf<String>()
+    private val pendingReactionRequests = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun reactorProfile(uid: String): ReactorProfile? {
         if (uid == partnerUid && !isGroupChat) {
@@ -1840,6 +2073,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             if (doc.get("pushEnabled")?.toString() == "false" || doc.get("notifReactions")?.toString() == "false") {
                 return@addOnSuccessListener
             }
+            if (MuteState.from(doc).isMuted(chatId)) return@addOnSuccessListener
             val token = doc.getString("fcmToken") ?: return@addOnSuccessListener
             val text = getApplication<Application>().getString(com.dan1eidtj.chat.R.string.reaction_push_text, emoji)
             viewModelScope.launch(Dispatchers.IO) {
@@ -1847,6 +2081,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
                     BackendApi.notify(
                         chatId = chatId,
                         senderId = me,
+                        receiverUid = receiver,
                         token = token,
                         senderName = myName,
                         text = text,
@@ -1859,45 +2094,51 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun toggleReaction(chatId: String, messageId: String, emoji: String): ReactionResult {
-        val uid = myUid ?: return ReactionResult.FAILED
-        val msg = messages.find { it.id == messageId } ?: return ReactionResult.FAILED
-        val current = Reactions.parse(msg.reactions[uid])
-        val ref = db.collection("chats/$chatId/messages").document(messageId)
-
-        if (current.contains(emoji)) {
-            val remaining = current - emoji
-            ref.update(
-                "reactions.$uid",
-                if (remaining.isEmpty()) FieldValue.delete() else Reactions.encode(remaining)
-            ).addOnFailureListener { e -> Log.e("ChatVM", "Не удалось снять реакцию", e) }
-            return ReactionResult.REMOVED
+    fun toggleReaction(
+        chatId: String,
+        messageId: String,
+        emoji: String,
+        onResult: (ReactionResult) -> Unit
+    ) {
+        val uid = myUid
+        if (uid.isNullOrBlank() || chatId.isBlank() || messageId.isBlank()) {
+            onResult(ReactionResult.FAILED)
+            return
         }
-
-        if (current.size >= Reactions.limitFor(myIsPremium)) {
-            return ReactionResult.LIMIT_REACHED
+        val message = messages.find { it.id == messageId }
+        if (message == null) {
+            onResult(ReactionResult.FAILED)
+            return
         }
+        val requestKey = "$chatId/$messageId/$uid/$emoji"
+        if (!pendingReactionRequests.add(requestKey)) return
 
-        ref.update("reactions.$uid", Reactions.encode(current + emoji))
-            .addOnSuccessListener {
-                notifyReaction(chatId, msg, emoji)
-                db.collection("reactionEvents").add(
-                    mapOf(
-                        "chatId" to chatId,
-                        "messageId" to messageId,
-                        "messageText" to (msg.text?.take(200) ?: ""),
-                        "emoji" to emoji,
-                        "reactorUid" to uid,
-                        "reactorName" to myName,
-                        "messageSenderId" to msg.senderId,
-                        "timestamp" to FieldValue.serverTimestamp()
-                    )
-                ).addOnFailureListener { e ->
-                    Log.e("ChatVM", "Не удалось залогировать реакцию", e)
+        viewModelScope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    BackendApi.toggleMessageReaction(chatId, messageId, emoji)
                 }
+                when (result.action) {
+                    "ADDED" -> {
+                        notifyReaction(chatId, message, emoji)
+                        onResult(ReactionResult.ADDED)
+                    }
+                    "REMOVED" -> onResult(ReactionResult.REMOVED)
+                    "LIMIT_REACHED" -> onResult(ReactionResult.LIMIT_REACHED)
+                    else -> {
+                        Log.e("ChatVM", "Сервер вернул неизвестное действие реакции: ${result.action}")
+                        onResult(ReactionResult.FAILED)
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("ChatVM", "Не удалось изменить реакцию через сервер", e)
+                onResult(ReactionResult.FAILED)
+            } finally {
+                pendingReactionRequests.remove(requestKey)
             }
-            .addOnFailureListener { e -> Log.e("ChatVM", "Не удалось поставить реакцию", e) }
-        return ReactionResult.ADDED
+        }
     }
 
     fun pinMessage(chatId: String, message: Message) {
@@ -2046,27 +2287,31 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         val msgRef = chatRef.collection("messages").document()
         val previewIcon = if (callType == "VIDEO") "📹" else "📞"
 
-        val batch = db.batch()
-        batch.set(msgRef, messageData)
-        batch.update(
-            chatRef,
-            mapOf(
-                "lastMessage" to "$previewIcon $text",
-                "lastSenderId" to uid,
-                "updatedAt" to FieldValue.serverTimestamp()
-            )
-        )
-        if (!isGroupChat && partnerUid.isNotBlank() && status == CallStatus.MISSED) {
-            batch.update(chatRef, "unreadCount_$partnerUid", FieldValue.increment(1))
-        }
-
-        batch.commit()
-            .addOnSuccessListener {
-                if (!isGroupChat && partnerUid.isNotBlank() && status == CallStatus.MISSED) {
-                    sendPushNotification(chatId, uid, partnerUid, text)
-                }
+        db.runTransaction { transaction ->
+            val chatSnapshot = transaction.get(chatRef)
+            if (!DirectMessagePolicy.canSendInTransaction(transaction, db, chatSnapshot, uid)) {
+                return@runTransaction false
             }
-            .addOnFailureListener { e -> Log.e("ChatVM", "Не удалось сохранить сообщение о звонке", e) }
+            transaction.set(msgRef, messageData)
+            transaction.update(
+                chatRef,
+                mapOf(
+                    "lastMessage" to "$previewIcon $text",
+                    "lastSenderId" to uid,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+            if (!isGroupChat && partnerUid.isNotBlank() && status == CallStatus.MISSED) {
+                transaction.update(chatRef, "unreadCount_$partnerUid", FieldValue.increment(1))
+            }
+            true
+        }.addOnSuccessListener { allowed ->
+            if (!allowed) {
+                Log.w("ChatVM", "Сообщение о звонке отклонено: получатель заблокирован")
+            } else if (!isGroupChat && partnerUid.isNotBlank() && status == CallStatus.MISSED) {
+                sendPushNotification(chatId, uid, partnerUid, text)
+            }
+        }.addOnFailureListener { e -> Log.e("ChatVM", "Не удалось сохранить сообщение о звонке", e) }
     }
 
     fun setChatTheme(chatId: String, theme: String) {
@@ -2109,110 +2354,222 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
             .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка очистки чата", e) }
     }
 
-    fun blockUser(myUid: String, partnerUid: String, onSuccess: () -> Unit) {
+    fun blockUser(
+        myUid: String,
+        partnerUid: String,
+        onSuccess: () -> Unit,
+        onFailure: (Exception) -> Unit = {}
+    ) {
+        if (myUid.isBlank() || partnerUid.isBlank() || myUid == partnerUid) {
+            onFailure(IllegalArgumentException("Invalid user ids for block action"))
+            return
+        }
         db.collection("users").document(myUid)
             .set(mapOf("blocked" to FieldValue.arrayUnion(partnerUid)), SetOptions.merge())
-            .addOnSuccessListener { onSuccess() }
-            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка блокировки пользователя", e) }
+            .addOnSuccessListener {
+                blockedUserIds = blockedUserIds + partnerUid
+                onSuccess()
+            }
+            .addOnFailureListener { e ->
+                Log.e("ChatVM", "Ошибка блокировки пользователя", e)
+                onFailure(e)
+            }
     }
 
-    fun unblockUser(myUid: String, partnerUid: String, onSuccess: () -> Unit) {
+    fun unblockUser(
+        myUid: String,
+        partnerUid: String,
+        onSuccess: () -> Unit,
+        onFailure: (Exception) -> Unit = {}
+    ) {
+        if (myUid.isBlank() || partnerUid.isBlank() || myUid == partnerUid) {
+            onFailure(IllegalArgumentException("Invalid user ids for unblock action"))
+            return
+        }
         db.collection("users").document(myUid)
-            .update("blocked", FieldValue.arrayRemove(partnerUid))
-            .addOnSuccessListener { onSuccess() }
-            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка разблокировки пользователя", e) }
+            .set(mapOf("blocked" to FieldValue.arrayRemove(partnerUid)), SetOptions.merge())
+            .addOnSuccessListener {
+                blockedUserIds = blockedUserIds - partnerUid
+                onSuccess()
+            }
+            .addOnFailureListener { e ->
+                Log.e("ChatVM", "Ошибка разблокировки пользователя", e)
+                onFailure(e)
+            }
     }
 
     private fun markAsRead(chatId: String, list: List<Message>, uid: String) {
-        val unread = list.filter { it.senderId != uid && !it.readBy.contains(uid) }
-        if (unread.isEmpty()) return
-
-        val batch = db.batch()
-        unread.forEach { msg ->
-            val ref = db.collection("chats/$chatId/messages").document(msg.id)
-            batch.update(ref, "readBy", FieldValue.arrayUnion(uid))
-        }
-        batch.commit()
-            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка отметки прочтения", e) }
+        queueMessageReceiptUpdates(
+            chatId = chatId,
+            list = list.filter { it.senderId != uid && uid !in it.readBy },
+            uid = uid,
+            field = "readBy",
+            inFlight = readReceiptInFlight,
+            errorLabel = "Ошибка отметки прочтения"
+        )
     }
 
-
     private fun markAsViewed(chatId: String, list: List<Message>, uid: String) {
-        val unviewed = list.filter { it.senderId != uid && !it.viewedBy.contains(uid) }
-        if (unviewed.isEmpty()) return
+        queueMessageReceiptUpdates(
+            chatId = chatId,
+            list = list.filter { it.senderId != uid && uid !in it.viewedBy },
+            uid = uid,
+            field = "viewedBy",
+            inFlight = viewedReceiptInFlight,
+            errorLabel = "Ошибка отметки просмотра"
+        )
+    }
 
-        val batch = db.batch()
-        unviewed.forEach { msg ->
-            val ref = db.collection("chats/$chatId/messages").document(msg.id)
-            batch.update(ref, "viewedBy", FieldValue.arrayUnion(uid))
+    private fun queueMessageReceiptUpdates(
+        chatId: String,
+        list: List<Message>,
+        uid: String,
+        field: String,
+        inFlight: MutableSet<String>,
+        errorLabel: String
+    ) {
+        val selected = list.filter { message ->
+            synchronized(inFlight) { inFlight.add("$chatId/${message.id}") }
         }
-        batch.commit()
-            .addOnFailureListener { e -> Log.e("ChatVM", "Ошибка отметки просмотра", e) }
+        if (selected.isEmpty()) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                // Firestore rejects batches above 500 writes. Keep margin for future
+                // additions and avoid building a large batch on the main thread.
+                selected.chunked(450).forEach { chunk ->
+                    val batch = db.batch()
+                    chunk.forEach { message ->
+                        val ref = db.collection("chats/$chatId/messages").document(message.id)
+                        batch.update(ref, field, FieldValue.arrayUnion(uid))
+                    }
+                    batch.commit().await()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("ChatVM", errorLabel, e)
+            } finally {
+                withContext(NonCancellable + Dispatchers.Main.immediate) {
+                    synchronized(inFlight) {
+                        selected.forEach { message -> inFlight.remove("$chatId/${message.id}") }
+                    }
+                }
+            }
+        }
     }
 
     fun setTyping(chatId: String, isTyping: Boolean) {
         val uid = myUid ?: return
-        if (!isGroupChat) {
-            db.collection("users").document(uid)
-                .update("typing.$chatId", isTyping)
-        }
+        if (isGroupChat || typingStateByChat[chatId] == isTyping) return
+
+        // Text changes arrive on every keystroke. Only persist actual typing-state
+        // transitions, rather than issuing a Firestore write for every character.
+        typingStateByChat[chatId] = isTyping
+        db.collection("users").document(uid)
+            .update("typing.$chatId", isTyping)
+            .addOnFailureListener { error ->
+                if (typingStateByChat[chatId] == isTyping) typingStateByChat.remove(chatId)
+                Log.w("ChatVM", "Не удалось обновить typing для чата $chatId", error)
+            }
     }
 
-    fun deleteGroup(chatId: String, onSuccess: () -> Unit) {
+    fun deleteGroup(chatId: String, onSuccess: () -> Unit, onError: (String) -> Unit = {}) {
         db.collection("chats").document(chatId).get()
             .addOnSuccessListener { chatDoc ->
+                if (!chatDoc.exists()) {
+                    onSuccess()
+                    return@addOnSuccessListener
+                }
                 val participantIds = (chatDoc.get("participants") as? List<*>)
                     ?.filterIsInstance<String>()
                     ?.distinct()
                     ?: emptyList()
+                val isChannel = chatDoc.getString("type") == "CHANNEL"
+                val username = chatDoc.getString("username").orEmpty()
 
-                chatDoc.reference
-                    .collection("messages")
-                    .get()
-                    .addOnSuccessListener { snapshot ->
-                        val batch = db.batch()
-
-                        snapshot.documents.forEach { messageDoc ->
-                            batch.delete(messageDoc.reference)
+                // The server owns public username claims. Release a channel's claim before
+                // deleting the channel document, otherwise the name would remain orphaned.
+                if (isChannel && username.isNotBlank()) {
+                    viewModelScope.launch {
+                        try {
+                            BackendApi.changeChannelUsername(chatId, "", false)
+                            deleteGroupDocuments(chatDoc, chatId, participantIds, onSuccess, onError)
+                        } catch (e: Exception) {
+                            Log.e("ChatVM", "Не удалось освободить username перед удалением канала", e)
+                            onError(e.localizedMessage ?: "Не удалось освободить username канала")
                         }
-
-                        batch.commit()
-                            .addOnSuccessListener {
-                                chatDoc.reference.delete()
-                                    .addOnSuccessListener {
-                                        viewModelScope.launch {
-                                            participantIds.forEach { memberUid ->
-                                                try {
-                                                    removeUserChatIndex(memberUid, chatId)
-                                                } catch (e: Exception) {
-                                                    Log.e(
-                                                        "ChatVM",
-                                                        "Ошибка удаления userChats/$memberUid/$chatId",
-                                                        e
-                                                    )
-                                                }
-                                            }
-
-                                            repository.clearChatHistoryLocally(chatId)
-                                        }
-
-                                        onSuccess()
-                                    }
-                                    .addOnFailureListener { e ->
-                                        Log.e("ChatVM", "Ошибка удаления группы", e)
-                                    }
-                            }
-                            .addOnFailureListener { e ->
-                                Log.e("ChatVM", "Ошибка удаления сообщений группы", e)
-                            }
                     }
-                    .addOnFailureListener { e ->
-                        Log.e("ChatVM", "Ошибка чтения сообщений группы", e)
-                    }
+                } else {
+                    deleteGroupDocuments(chatDoc, chatId, participantIds, onSuccess, onError)
+                }
             }
             .addOnFailureListener { e ->
                 Log.e("ChatVM", "Ошибка чтения группы перед удалением", e)
+                onError(e.localizedMessage ?: "Ошибка чтения группы перед удалением")
             }
+    }
+
+    private fun deleteGroupDocuments(
+        chatDoc: DocumentSnapshot,
+        chatId: String,
+        participantIds: List<String>,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        chatDoc.reference.collection("messages").get()
+            .addOnSuccessListener { snapshot ->
+                val batch = db.batch()
+                snapshot.documents.forEach { messageDoc -> batch.delete(messageDoc.reference) }
+                batch.commit()
+                    .addOnSuccessListener {
+                        chatDoc.reference.delete()
+                            .addOnSuccessListener {
+                                viewModelScope.launch {
+                                    participantIds.forEach { memberUid ->
+                                        try {
+                                            removeUserChatIndex(memberUid, chatId)
+                                        } catch (e: Exception) {
+                                            Log.e("ChatVM", "Ошибка удаления userChats/$memberUid/$chatId", e)
+                                        }
+                                    }
+                                    repository.clearChatHistoryLocally(chatId)
+                                }
+                                onSuccess()
+                            }
+                            .addOnFailureListener { e ->
+                                Log.e("ChatVM", "Ошибка удаления группы", e)
+                                onError(e.localizedMessage ?: "Ошибка удаления группы")
+                            }
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("ChatVM", "Ошибка удаления сообщений группы", e)
+                        onError(e.localizedMessage ?: "Ошибка удаления сообщений группы")
+                    }
+            }
+            .addOnFailureListener { e ->
+                Log.e("ChatVM", "Ошибка чтения сообщений группы", e)
+                onError(e.localizedMessage ?: "Ошибка чтения сообщений группы")
+            }
+    }
+
+    fun subscribeToPublicChannel(chatId: String, myUid: String, onSuccess: () -> Unit, onError: (String) -> Unit = {}) {
+        db.collection("chats").document(chatId).update(
+            "participants", FieldValue.arrayUnion(myUid),
+            "members", FieldValue.arrayUnion(myUid),
+            "unreadCount_$myUid", 0
+        ).addOnSuccessListener {
+            viewModelScope.launch {
+                try {
+                    addUserChatIndex(myUid, chatId)
+                } catch (e: Exception) {
+                    Log.e("ChatVM", "Ошибка создания userChats индекса при подписке", e)
+                }
+                onSuccess()
+            }
+        }.addOnFailureListener { e ->
+            onError(e.message ?: "Не удалось подписаться")
+        }
     }
 
     fun leaveGroup(chatId: String, myUid: String, onSuccess: () -> Unit) {
@@ -2240,7 +2597,7 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         replyText: String?,
         replyName: String?
     ) {
-        if (durationSec < 1 || !canPostInChat || !videoFile.exists() || myUid == null || auth.currentUser == null) {
+        if (durationSec < 1 || !canSendMessageInChat || !videoFile.exists() || myUid == null || auth.currentUser == null) {
             videoFile.delete()
             return
         }
@@ -2337,7 +2694,13 @@ data class GroupMemberUi(
     val verification: com.dan1eidtj.data.VerificationInfo = com.dan1eidtj.data.VerificationInfo(),
     // Глобальный ранг юзера в приложении (rank в users/{uid}), НЕ путать с isOwner/
     // isAdmin/isModerator выше — те про права внутри конкретного чата.
-    val globalRank: com.dan1eidtj.data.Rank = com.dan1eidtj.data.Rank.USER
+    val globalRank: com.dan1eidtj.data.Rank = com.dan1eidtj.data.Rank.USER,
+    val memberTag: String? = null,
+    val emojiStatus: String? = null,
+    val statusTagDisplayMode: String = "BOTH",
+    val channelTagName: String? = null,
+    val channelTagLabel: String? = null,
+    val channelTagStyle: String = "violet"
 )
 
 
@@ -2366,7 +2729,10 @@ class GroupMembersVM(application: Application) : AndroidViewModel(application) {
         private set
     var canIInvite by mutableStateOf(false)
         private set
+    var canManageMemberTags by mutableStateOf(false)
+        private set
 
+    private var memberTags: Map<String, String> = emptyMap()
     private var chatListener: ListenerRegistration? = null
     private var ownerId: String = ""
     private var adminsList: List<String> = emptyList()
@@ -2393,6 +2759,11 @@ class GroupMembersVM(application: Application) : AndroidViewModel(application) {
                     ?: (doc.get("members") as? List<String>) ?: emptyList()
                 @Suppress("UNCHECKED_CAST")
                 bannedIds = (doc.get("bannedUids") as? List<String>) ?: emptyList()
+                @Suppress("UNCHECKED_CAST")
+                memberTags = (doc.get("memberTags") as? Map<*, *>)
+                    ?.mapNotNull { (tagUid, tagValue) ->
+                        if (tagUid is String && tagValue is String) tagUid to tagValue else null
+                    }?.toMap() ?: emptyMap()
                 inviteCode = doc.getString("inviteCode")
                 memberIds = participants
 
@@ -2401,6 +2772,7 @@ class GroupMembersVM(application: Application) : AndroidViewModel(application) {
                 isMyAdmin = isMyOwner || myUid in adminsList
                 canIBan = isMyOwner || myPerms[ChatVM.AdminPermission.CAN_BAN_USERS] == true
                 canIInvite = isMyOwner || myPerms[ChatVM.AdminPermission.CAN_INVITE_USERS] == true
+                canManageMemberTags = isMyOwner || myPerms[ChatVM.AdminPermission.CAN_EDIT_INFO] == true
 
                 loadProfiles(participants, bannedIds)
             }
@@ -2437,10 +2809,45 @@ class GroupMembersVM(application: Application) : AndroidViewModel(application) {
                 isAdmin = uid != ownerId && uid in adminsList && fullAdmin,
                 isModerator = uid != ownerId && uid in adminsList && !fullAdmin,
                 verification = com.dan1eidtj.data.VerificationInfo.fromMap(snap.data),
-                globalRank = com.dan1eidtj.data.Rank.fromMap(snap.data)
+                globalRank = com.dan1eidtj.data.Rank.fromMap(snap.data),
+                memberTag = memberTags[uid],
+                emojiStatus = snap.getString("emojiStatus"),
+                statusTagDisplayMode = when (snap.getString("statusTagDisplayMode")) {
+                    "STATUS_ONLY", "TAG_ONLY" -> snap.getString("statusTagDisplayMode") ?: "BOTH"
+                    else -> "BOTH"
+                },
+                channelTagName = (snap.get("activeChannelTag") as? Map<*, *>)?.get("name") as? String,
+                channelTagLabel = (snap.get("activeChannelTag") as? Map<*, *>)?.get("label") as? String,
+                channelTagStyle = ((snap.get("activeChannelTag") as? Map<*, *>)?.get("style") as? String)
+                    ?.lowercase(java.util.Locale.ROOT)
+                    ?.takeIf { it in setOf("violet", "blue", "green", "gold", "red") }
+                    ?: "violet"
             )
         } catch (e: Exception) {
             null
+        }
+    }
+
+    fun setMemberTag(chatId: String, uid: String, tag: String, onResult: (Boolean, String?) -> Unit) {
+        if (!canManageMemberTags) {
+            onResult(false, "MEMBER_TAG_FORBIDDEN")
+            return
+        }
+        viewModelScope.launch {
+            try {
+                BackendApi.setGroupMemberTag(chatId, uid, tag)
+                onResult(true, null)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("GroupMembersVM", "Не удалось изменить метку участника", e)
+                val message = when {
+                    e.message?.contains("MEMBER_TAG_FORBIDDEN") == true -> "MEMBER_TAG_FORBIDDEN"
+                    e.message?.contains("NOT_A_GROUP_MEMBER") == true -> "NOT_A_GROUP_MEMBER"
+                    else -> "MEMBER_TAG_SAVE_FAILED"
+                }
+                onResult(false, message)
+            }
         }
     }
 
@@ -2604,3 +3011,4 @@ class GroupMembersVM(application: Application) : AndroidViewModel(application) {
 private const val EFFECT_REPLAY_FRESH_MS = 30_000L
 private const val EFFECT_REPLAY_MIN_INTERVAL_MS = 1_500L
 private const val MESSAGE_CACHE_LIMIT = 300
+private const val MESSAGE_PAGE_SIZE = 120

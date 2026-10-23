@@ -125,7 +125,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
 
             Spacer(Modifier.height(16.dp))
 
-            Text("Маяс", fontSize = 34.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Text(stringResource(R.string.app_title_mixed_case), fontSize = 34.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
 
             Spacer(Modifier.height(4.dp))
 
@@ -136,7 +136,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
                 label = "subtitle"
             ) { isLogin ->
                 Text(
-                    text = if (isLogin) "С возвращением!" else "Создайте новый аккаунт",
+                    text = if (isLogin) stringResource(R.string.welcome_back) else stringResource(R.string.create_account),
                     fontSize = 14.sp,
                     color = MayasTheme.TextGrey
                 )
@@ -163,7 +163,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
                             OutlinedTextField(
                                 value = vm.nameInput,
                                 onValueChange = vm::onNameChange,
-                                label = { Text("Имя", color = MayasTheme.TextGrey) },
+                                label = { Text(stringResource(R.string.name_label), color = MayasTheme.TextGrey) },
                                 leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -182,7 +182,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
                             OutlinedTextField(
                                 value = vm.usernameInput,
                                 onValueChange = vm::onUsernameChange,
-                                label = { Text("Юзернейм (без @)", color = MayasTheme.TextGrey) },
+                                label = { Text(stringResource(R.string.username_no_at), color = MayasTheme.TextGrey) },
                                 leadingIcon = { Icon(Icons.Filled.AlternateEmail, contentDescription = null) },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -205,7 +205,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
                     OutlinedTextField(
                         value = vm.emailInput,
                         onValueChange = vm::onEmailChange,
-                        label = { Text("Email", color = MayasTheme.TextGrey) },
+                        label = { Text(stringResource(R.string.email_label), color = MayasTheme.TextGrey) },
                         leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -226,13 +226,13 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
                     OutlinedTextField(
                         value = vm.passInput,
                         onValueChange = vm::onPassChange,
-                        label = { Text("Пароль", color = MayasTheme.TextGrey) },
+                        label = { Text(stringResource(R.string.password), color = MayasTheme.TextGrey) },
                         leadingIcon = { Icon(Icons.Filled.Lock, contentDescription = null) },
                         trailingIcon = {
                             IconButton(onClick = { passwordVisible = !passwordVisible }) {
                                 Icon(
                                     imageVector = if (passwordVisible) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
-                                    contentDescription = if (passwordVisible) "Скрыть пароль" else "Показать пароль"
+                                    contentDescription = if (passwordVisible) stringResource(R.string.hide_password) else stringResource(R.string.show_password)
                                 )
                             }
                         },
@@ -268,7 +268,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
                                 showResetDialog = true
                             }) {
                                 Text(
-                                    text = "Забыли пароль?",
+                                    text = stringResource(R.string.forgot_password),
                                     color = MayasTheme.TextGrey,
                                     fontSize = 13.sp
                                 )
@@ -318,8 +318,10 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
                                     colors = CheckboxDefaults.colors(checkedColor = MayasTheme.RedAccent)
                                 )
 
+                                val tosPrefixText = stringResource(R.string.tos_prefix)
+                                val tosLinkText = stringResource(R.string.tos_link_text)
                                 val tosText = buildAnnotatedString {
-                                    append("Я прочёл(а) ")
+                                    append(tosPrefixText)
                                     pushStringAnnotation(tag = "TOS", annotation = MAYAS_TOS_URL)
                                     withStyle(
                                         SpanStyle(
@@ -327,7 +329,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
                                             textDecoration = TextDecoration.Underline
                                         )
                                     ) {
-                                        append("Пользовательское соглашение Маяс")
+                                        append(tosLinkText)
                                     }
                                     pop()
                                 }
@@ -347,7 +349,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
                             }
 
                             Text(
-                                text = "Продолжая, вы подтверждаете, что у вас есть согласие законного представителя на использование приложения, либо что вам уже исполнилось 14 лет.",
+                                text = stringResource(R.string.age_consent_notice),
                                 fontSize = 12.sp,
                                 lineHeight = 16.sp,
                                 color = MayasTheme.TextGrey,
@@ -384,7 +386,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
                                 label = "buttonText"
                             ) { isLogin ->
                                 Text(
-                                    text = if (isLogin) "Войти" else "Зарегистрироваться",
+                                    text = if (isLogin) stringResource(R.string.login) else stringResource(R.string.register),
                                     color = Color.White,
                                     fontWeight = FontWeight.SemiBold
                                 )
@@ -404,7 +406,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
                     label = "toggleText"
                 ) { isLogin ->
                     Text(
-                        text = if (isLogin) "Нет аккаунта? Создать" else "Уже есть? Войти",
+                        text = if (isLogin) stringResource(R.string.no_account_create) else stringResource(R.string.already_have_account),
                         color = MayasTheme.TextGrey
                     )
                 }
@@ -446,11 +448,11 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
     if (showResetDialog) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
-            title = { Text("Сброс пароля") },
+            title = { Text(stringResource(R.string.password_reset)) },
             text = {
                 Column {
                     Text(
-                        text = "Введите Email, на который придёт письмо со ссылкой для сброса пароля.",
+                        text = stringResource(R.string.reset_password_desc),
                         color = MayasTheme.TextGrey,
                         fontSize = 14.sp
                     )
@@ -458,7 +460,7 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
                     OutlinedTextField(
                         value = resetEmailInput,
                         onValueChange = { resetEmailInput = it },
-                        label = { Text("Email", color = MayasTheme.TextGrey) },
+                        label = { Text(stringResource(R.string.email_label), color = MayasTheme.TextGrey) },
                         leadingIcon = { Icon(Icons.Filled.Email, contentDescription = null) },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -484,12 +486,12 @@ fun AuthScreen(vm: AuthVM, onAuthSuccess: () -> Unit = {}, onReturnToAccount: ()
                     },
                     enabled = !vm.isResetLoading
                 ) {
-                    Text("Отправить", color = MayasTheme.RedAccent, fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(com.dan1eidtj.mayas.ui.R.string.send), color = MayasTheme.RedAccent, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showResetDialog = false }) {
-                    Text("Отмена", color = MayasTheme.TextGrey)
+                    Text(stringResource(com.dan1eidtj.mayas.ui.R.string.cancel), color = MayasTheme.TextGrey)
                 }
             },
             containerColor = MaterialTheme.colorScheme.surface
@@ -524,7 +526,7 @@ fun VerifyEmailScreen(vm: AuthVM, onVerified: () -> Unit) {
         Spacer(Modifier.height(20.dp))
 
         Text(
-            "Подтверди почту",
+            stringResource(R.string.verify_email_screen_title),
             fontSize = 24.sp,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground
@@ -533,8 +535,10 @@ fun VerifyEmailScreen(vm: AuthVM, onVerified: () -> Unit) {
         Spacer(Modifier.height(8.dp))
 
         Text(
-            text = "Мы отправили письмо на ${vm.user?.email ?: "твой email"}. " +
-                    "Перейди по ссылке в письме, потом нажми \"Я подтвердил\".",
+            text = stringResource(
+                R.string.verify_email_instruction,
+                vm.user?.email ?: stringResource(R.string.verify_email_fallback)
+            ),
             fontSize = 14.sp,
             color = MayasTheme.TextGrey,
             modifier = Modifier.padding(horizontal = 8.dp)
@@ -571,7 +575,7 @@ fun VerifyEmailScreen(vm: AuthVM, onVerified: () -> Unit) {
                     strokeWidth = 2.dp
                 )
             } else {
-                Text("Я подтвердил", color = Color.White, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.i_confirmed_button), color = Color.White, fontWeight = FontWeight.SemiBold)
             }
         }
 
@@ -581,11 +585,11 @@ fun VerifyEmailScreen(vm: AuthVM, onVerified: () -> Unit) {
             onClick = { vm.resendVerificationEmail() },
             enabled = !vm.isVerifyLoading
         ) {
-            Text("Отправить письмо ещё раз", color = MayasTheme.TextGrey)
+            Text(stringResource(R.string.resend_email_button), color = MayasTheme.TextGrey)
         }
 
         TextButton(onClick = { vm.cancelVerification() }) {
-            Text("Выйти из аккаунта", color = MayasTheme.TextGrey, fontSize = 13.sp)
+            Text(stringResource(R.string.logout_from_account_button), color = MayasTheme.TextGrey, fontSize = 13.sp)
         }
     }
 }

@@ -16,4 +16,12 @@
     <string name="messages_channel_name">Сообщения</string>
     <string name="messages_channel_description">Уведомления о новых сообщениях в Маяс</string>
     <string name="mark_read_action">Прочитано</string>
+    <string name="notification_reply_too_long">Ответ слишком длинный.</string>
+    <string name="notification_reply_requires_login">Войдите в Mayas и попробуйте снова.</string>
+    <string name="notification_reply_blocked">Сообщение не отправлено: один из пользователей заблокировал другого.</string>
+    <string name="notification_reply_open_chat">Для ответа откройте этот чат в Mayas.</string>
+    <string name="notification_reply_no_access">Нет доступа к этому чату.</string>
+    <string name="notification_reply_failed">Не удалось отправить ответ. Откройте чат и попробуйте снова.</string>
+    <string name="notification_mark_read_requires_login">Войдите в Mayas, чтобы отметить чат прочитанным.</string>
+    <string name="notification_mark_read_failed">Не удалось отметить чат прочитанным. Откройте чат в Mayas и повторите попытку.</string>
 </resources>

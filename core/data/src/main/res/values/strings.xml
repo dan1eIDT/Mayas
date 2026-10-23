@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plugin_perm_transform_outgoing">Изменять текст ваших исходящих сообщений</string>
+    <string name="plugin_signature_name">Подпись сообщений</string>
+    <string name="plugin_signature_desc">Добавляет вашу подпись в конец каждого отправляемого сообщения.</string>
+    <string name="plugin_signature_setting_text">Текст подписи</string>
+    <string name="plugin_signature_setting_newline">Подпись с новой строки</string>
+</resources>

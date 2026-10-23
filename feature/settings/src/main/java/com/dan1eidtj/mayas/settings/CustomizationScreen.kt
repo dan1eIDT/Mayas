@@ -21,11 +21,13 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -35,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dan1eidtj.data.ItemType
 import com.dan1eidtj.data.ShopConstants
+import com.dan1eidtj.data.ShopRepository
+import com.dan1eidtj.data.gradientFor
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.mayas.core_ui.ui.components.ChatBubble
 import com.dan1eidtj.mayas.feature.auth.AuthVM
@@ -47,6 +51,7 @@ private enum class CustomizationCategory(val labelRes: Int) {
     EMOJI(R.string.emoji_label),
     BUBBLE(com.dan1eidtj.profile.R.string.styles_label),
     FONT(R.string.font_label),
+    ANIMATION(R.string.animation_label),
     EFFECT(R.string.effect_label)
 }
 
@@ -89,26 +94,6 @@ private fun EmojiCategoryContent(
     currentEmojiStatus: String,
     onUse: (String) -> Unit
 ) {
-    val myOwnedEmojis = allEmojiOptions.filter { ownedItems.contains(it) }
-
-    if (myOwnedEmojis.isEmpty()) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = MayasTheme.Surface,
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            Text(
-                stringResource(R.string.no_purchased_statuses),
-                modifier = Modifier.padding(20.dp),
-                color = MayasTheme.TextSecondary,
-                fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-                lineHeight = 18.sp
-            )
-        }
-        return
-    }
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -116,12 +101,13 @@ private fun EmojiCategoryContent(
             .background(MayasTheme.Surface)
             .padding(12.dp)
     ) {
-        myOwnedEmojis.chunked(4).forEach { row ->
+        allEmojiOptions.chunked(4).forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 row.forEach { emoji ->
+                    val isOwned = ownedItems.contains(emoji)
                     val isSelected = currentEmojiStatus == emoji
                     Box(
                         modifier = Modifier
@@ -134,10 +120,12 @@ private fun EmojiCategoryContent(
                                 color = if (isSelected) MayasTheme.Accent else Color.Transparent,
                                 shape = RoundedCornerShape(12.dp)
                             )
-                            .clickable { onUse(emoji) },
+                            .clickable(enabled = isOwned) { onUse(emoji) },
                         contentAlignment = Alignment.Center
                     ) {
-                        EmojiStatusView(emoji, size = 26.sp)
+                        Box(modifier = if (isOwned) Modifier else Modifier.alpha(0.35f)) {
+                            EmojiStatusView(emoji, size = 26.sp)
+                        }
                         if (isSelected) {
                             Box(
                                 modifier = Modifier
@@ -150,6 +138,20 @@ private fun EmojiCategoryContent(
                                     null,
                                     tint = MayasTheme.Accent,
                                     modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        } else if (!isOwned) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(4.dp),
+                                contentAlignment = Alignment.TopEnd
+                            ) {
+                                Icon(
+                                    Icons.Default.Lock,
+                                    null,
+                                    tint = MayasTheme.TextSecondary.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(12.dp)
                                 )
                             }
                         }
@@ -167,6 +169,14 @@ private fun EmojiCategoryContent(
             Text(stringResource(R.string.remove_status), color = MayasTheme.ErrorRed, fontSize = 12.sp)
         }
     }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        stringResource(R.string.unlock_more_in_shop),
+        color = MayasTheme.TextSecondary,
+        fontSize = 11.sp,
+        modifier = Modifier.fillMaxWidth(),
+        textAlign = TextAlign.Center
+    )
 }
 
 @Composable
@@ -242,10 +252,8 @@ private fun FontCategoryContent(
     currentFont: String,
     onUse: (String) -> Unit
 ) {
-    val myOwnedFonts = ShopConstants.FONT_STYLES
-        .filter { it.id == "default" || ownedItems.contains(it.id) }
-
-    myOwnedFonts.forEach { font ->
+    ShopConstants.FONT_STYLES.forEach { font ->
+        val isOwned = font.id == "default" || ownedItems.contains(font.id)
         val isUsing = currentFont == font.id
         Surface(
             shape = RoundedCornerShape(12.dp),
@@ -257,7 +265,7 @@ private fun FontCategoryContent(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 6.dp)
-                .clickable { onUse(font.id) }
+                .clickable { if (isOwned) onUse(font.id) }
         ) {
             Row(
                 modifier = Modifier
@@ -267,7 +275,7 @@ private fun FontCategoryContent(
             ) {
                 Text(
                     stringResource(com.dan1eidtj.profile.R.string.sample_text_aa),
-                    color = MayasTheme.TextPrimary,
+                    color = if (isOwned) MayasTheme.TextPrimary else MayasTheme.TextSecondary,
                     fontSize = 16.sp,
                     fontFamily = ShopConstants.getFontFamily(font.id),
                     modifier = Modifier.width(28.dp)
@@ -275,13 +283,22 @@ private fun FontCategoryContent(
                 Spacer(Modifier.width(12.dp))
                 Text(
                     font.name,
-                    color = MayasTheme.TextPrimary,
+                    color = if (isOwned) MayasTheme.TextPrimary else MayasTheme.TextSecondary,
                     fontSize = 14.sp,
                     fontFamily = ShopConstants.getFontFamily(font.id),
                     modifier = Modifier.weight(1f)
                 )
-                if (isUsing) {
-                    Text(stringResource(com.dan1eidtj.profile.R.string.in_use_label), color = MayasTheme.Accent, fontSize = 12.sp)
+                if (isOwned) {
+                    if (isUsing) {
+                        Text(stringResource(com.dan1eidtj.profile.R.string.in_use_label), color = MayasTheme.Accent, fontSize = 12.sp)
+                    }
+                } else {
+                    Icon(
+                        Icons.Default.Lock,
+                        null,
+                        tint = MayasTheme.TextSecondary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
         }
@@ -301,9 +318,6 @@ private fun EffectCategoryContent(
     currentEffect: String,
     onUse: (String) -> Unit
 ) {
-    val myOwnedEffects = ShopConstants.EFFECT_STYLES
-        .filter { it.id == "none" || ownedItems.contains(it.id) }
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -311,12 +325,13 @@ private fun EffectCategoryContent(
             .background(MayasTheme.Surface)
             .padding(12.dp)
     ) {
-        myOwnedEffects.chunked(4).forEach { row ->
+        ShopConstants.EFFECT_STYLES.chunked(4).forEach { row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 row.forEach { effect ->
+                    val isOwned = effect.id == "none" || ownedItems.contains(effect.id)
                     val isSelected = currentEffect == effect.id
                     Box(
                         modifier = Modifier
@@ -329,10 +344,13 @@ private fun EffectCategoryContent(
                                 color = if (isSelected) MayasTheme.Accent else Color.Transparent,
                                 shape = RoundedCornerShape(12.dp)
                             )
-                            .clickable { onUse(effect.id) },
+                            .clickable(enabled = isOwned) { onUse(effect.id) },
                         contentAlignment = Alignment.Center
                     ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = if (isOwned) Modifier else Modifier.alpha(0.35f)
+                        ) {
                             Text(effect.icon ?: "✨", fontSize = 22.sp)
                             Text(effect.name, fontSize = 8.5.sp, color = MayasTheme.TextSecondary, maxLines = 1)
                         }
@@ -348,6 +366,20 @@ private fun EffectCategoryContent(
                                     null,
                                     tint = MayasTheme.Accent,
                                     modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        } else if (!isOwned) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(4.dp),
+                                contentAlignment = Alignment.TopEnd
+                            ) {
+                                Icon(
+                                    Icons.Default.Lock,
+                                    null,
+                                    tint = MayasTheme.TextSecondary.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(12.dp)
                                 )
                             }
                         }
@@ -369,22 +401,117 @@ private fun EffectCategoryContent(
 }
 
 @Composable
+private fun AnimationCategoryContent(
+    ownedItems: List<String>,
+    currentAnimation: String,
+    onUse: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MayasTheme.Surface)
+            .padding(12.dp)
+    ) {
+        ShopConstants.ANIMATION_STYLES.chunked(4).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                row.forEach { animation ->
+                    val isOwned = animation.id == "default" || ownedItems.contains(animation.id)
+                    val isSelected = currentAnimation == animation.id
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isSelected) MayasTheme.Accent.copy(0.1f) else Color.Transparent)
+                            .border(
+                                width = if (isSelected) 2.dp else 0.dp,
+                                color = if (isSelected) MayasTheme.Accent else Color.Transparent,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable(enabled = isOwned) { onUse(animation.id) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = if (isOwned) Modifier else Modifier.alpha(0.35f)
+                        ) {
+                            Text(animation.icon ?: "⚡", fontSize = 22.sp)
+                            Text(animation.name, fontSize = 8.5.sp, color = MayasTheme.TextSecondary, maxLines = 1)
+                        }
+                        if (isSelected) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(4.dp),
+                                contentAlignment = Alignment.TopEnd
+                            ) {
+                                Icon(
+                                    Icons.Default.Check,
+                                    null,
+                                    tint = MayasTheme.Accent,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        } else if (!isOwned) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(4.dp),
+                                contentAlignment = Alignment.TopEnd
+                            ) {
+                                Icon(
+                                    Icons.Default.Lock,
+                                    null,
+                                    tint = MayasTheme.TextSecondary.copy(alpha = 0.6f),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+    }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        stringResource(R.string.unlock_more_in_shop),
+        color = MayasTheme.TextSecondary,
+        fontSize = 11.sp,
+        modifier = Modifier.fillMaxWidth(),
+        textAlign = TextAlign.Center
+    )
+}
+
+@Composable
 private fun CustomizationTabsAndContent(
     vm: AuthVM,
     modifier: Modifier = Modifier,
     initialCategory: CustomizationCategory = CustomizationCategory.EMOJI
 ) {
     val ownedItems = vm.ownedItems
+    val shopItems by ShopRepository.items.collectAsState()
     val currentMessageStyle = vm.userData["messageStyle"] ?: "default"
     val currentEmojiStatus = vm.userData["emojiStatus"] ?: ""
-    val currentFont = vm.userData["fontFamily"] ?: "default"
-    val currentEffect = vm.userData["sendEffect"] ?: "none"
+    val currentFont = vm.userData["fontId"] ?: "default"
+    val currentEffect = vm.userData["effectId"] ?: "none"
+    val currentAnimation = vm.userData["animationId"] ?: "default"
 
     val styles = listOf(
         Triple("default", stringResource(com.dan1eidtj.profile.R.string.standard_label), listOf(MayasTheme.Accent, MayasTheme.Accent))
-    ) + ShopConstants.BUBBLE_STYLES.map { item ->
-        Triple(item.id, item.name, ShopConstants.getStyleGradient(item.id))
-    }
+    ) + shopItems
+        .asSequence()
+        .filter { it.type == ItemType.BUBBLE }
+        .distinctBy { it.id }
+        .map { item ->
+            Triple(item.id, item.name, ShopConstants.gradientFor(item))
+        }
+        .toList()
 
     val allEmojiOptions = (ShopConstants.EMOJI_STATUSES + ShopConstants.ICON_STATUSES).map { it.id }
 
@@ -431,6 +558,12 @@ private fun CustomizationTabsAndContent(
                         ownedItems = ownedItems,
                         currentFont = currentFont,
                         onUse = { vm.useItem(it, ItemType.FONT) }
+                    )
+
+                    CustomizationCategory.ANIMATION -> AnimationCategoryContent(
+                        ownedItems = ownedItems,
+                        currentAnimation = currentAnimation,
+                        onUse = { vm.useItem(it, ItemType.ANIMATION) }
                     )
 
                     CustomizationCategory.EFFECT -> EffectCategoryContent(

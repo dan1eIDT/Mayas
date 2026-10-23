@@ -26,6 +26,7 @@ object MessageCache {
             isPremium = message.isPremium,
             messageStyle = message.messageStyle,
             messageEffect = message.messageEffect,
+            animationId = message.animationId,
             circleVideoUrl = message.circleVideoUrl,
             circleVideoDuration = message.circleVideoDuration,
             forwardedFromName = message.forwardedFromName,
@@ -59,6 +60,7 @@ object MessageCache {
         json.put("isPremium", m.isPremium)
         json.putOpt("messageStyle", m.messageStyle)
         json.putOpt("messageEffect", m.messageEffect)
+        json.putOpt("animationId", m.animationId)
         json.put("status", m.status)
         val reactions = JSONObject()
         m.reactions.forEach { (uid, value) -> reactions.put(uid, value) }
@@ -121,6 +123,7 @@ object MessageCache {
             isPremium = json.optBoolean("isPremium"),
             messageStyle = json.optNullableString("messageStyle"),
             messageEffect = json.optNullableString("messageEffect"),
+            animationId = json.optNullableString("animationId"),
             status = json.optInt("status", 1),
             reactions = reactions,
             voiceUrl = json.optNullableString("voiceUrl"),

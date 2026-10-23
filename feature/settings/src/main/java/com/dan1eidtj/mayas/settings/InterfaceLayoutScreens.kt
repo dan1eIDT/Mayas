@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 ProjectIDT */
+/* Copyright (C) 2026 dan1eIDT */
 package com.dan1eidtj.mayas.settings
 
 import androidx.compose.foundation.background
@@ -381,6 +381,48 @@ fun HomeScreenLayoutScreen(
                 )
             }
 
+            item {
+                SwitchRow(
+                    icon = Icons.Default.AutoStories,
+                    title = stringResource(R.string.show_stories_row),
+                    subtitle = stringResource(R.string.show_stories_row_desc),
+                    checked = prefs.showStories,
+                    onCheckedChange = { prefs = prefs.copy(showStories = it) }
+                )
+            }
+
+            item { LayoutSectionLabel(stringResource(R.string.bottom_bar_section)) }
+
+            item {
+                SwitchRow(
+                    icon = Icons.Default.DensitySmall,
+                    title = stringResource(R.string.compact_bottom_bar),
+                    subtitle = stringResource(R.string.compact_bottom_bar_desc),
+                    checked = prefs.compactBottomBar,
+                    onCheckedChange = { prefs = prefs.copy(compactBottomBar = it) }
+                )
+            }
+
+            item {
+                SwitchRow(
+                    icon = Icons.Default.Circle,
+                    title = stringResource(R.string.show_bottom_bar_status),
+                    subtitle = stringResource(R.string.show_bottom_bar_status_desc),
+                    checked = prefs.showBottomBarStatus,
+                    onCheckedChange = { prefs = prefs.copy(showBottomBarStatus = it) }
+                )
+            }
+
+            item {
+                SwitchRow(
+                    icon = Icons.Default.Notifications,
+                    title = stringResource(R.string.show_bottom_bar_notifications),
+                    subtitle = stringResource(R.string.show_bottom_bar_notifications_desc),
+                    checked = prefs.showBottomBarNotifications,
+                    onCheckedChange = { prefs = prefs.copy(showBottomBarNotifications = it) }
+                )
+            }
+
             item { DpiSyncNote() }
             item { Spacer(Modifier.height(24.dp)) }
         }
@@ -612,6 +654,15 @@ fun SidebarLayoutScreen(
                     subtitle = stringResource(R.string.system_items_block_desc),
                     checked = prefs.showAppSection,
                     onCheckedChange = { prefs = prefs.copy(showAppSection = it) }
+                )
+            }
+            item {
+                SwitchRow(
+                    icon = Icons.Default.NotificationsOff,
+                    title = stringResource(R.string.sidebar_mute_all_title),
+                    subtitle = stringResource(R.string.sidebar_mute_all_desc),
+                    checked = prefs.showMuteAllButton,
+                    onCheckedChange = { prefs = prefs.copy(showMuteAllButton = it) }
                 )
             }
 

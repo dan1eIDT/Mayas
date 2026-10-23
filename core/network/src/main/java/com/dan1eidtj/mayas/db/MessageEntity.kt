@@ -25,6 +25,7 @@ data class MessageEntity(
     val isPremium: Boolean = false,
     val messageStyle: String? = null,
     val messageEffect: String? = null,
+    val animationId: String? = null,
     val circleVideoUrl: String? = null,
     val circleVideoDuration: Int = 0,
 

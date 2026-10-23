@@ -35,12 +35,7 @@ class SessionManager(private val context: Context) {
 
         const val MAX_SESSIONS = 3
 
-        /**
-         * Человекочитаемое имя устройства для списка "активных сессий" — например
-         * "Honor 90, Android 14" или "Samsung SM-S911B, Android 15". Собирается из
-         * системных Build.MANUFACTURER/Build.MODEL, поэтому работает для любого
-         * производителя без хардкода конкретных брендов.
-         */
+
         fun deviceDisplayName(): String {
             val manufacturer = Build.MANUFACTURER.replaceFirstChar { it.uppercase() }
             val model = Build.MODEL
@@ -53,14 +48,7 @@ class SessionManager(private val context: Context) {
         }
     }
 
-    /**
-     * Стабильный ID этой установки приложения — не привязан к конкретному
-     * аккаунту, живёт, пока приложение не переустановят или не почистят
-     * данные. Используется как id документа в users/{uid}/sessions/{deviceId},
-     * чтобы у одного физического устройства всегда был один и тот же "слот"
-     * сессии в списке активных сессий, независимо от того, сколько раз на
-     * нём логинились.
-     */
+
     suspend fun getOrCreateDeviceId(): String {
         val existing = context.dataStore.data.first()[DEVICE_ID_KEY]
         if (existing != null) return existing

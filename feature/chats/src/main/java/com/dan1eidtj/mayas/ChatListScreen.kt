@@ -6,7 +6,7 @@ package com.dan1eidtj.mayas.feature.chats.ChatListScreen
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
-import android.content.pm.PackageManager
+import android.content.pm.PackageManager1
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -27,14 +27,12 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -46,6 +44,9 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
@@ -62,12 +63,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ChatBubble
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Contacts
@@ -85,6 +88,8 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -98,6 +103,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -116,20 +124,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -140,7 +152,14 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.activity.compose.BackHandler
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Unarchive
+import com.dan1eidtj.data.ChatArchive
+import com.dan1eidtj.data.ChatSwipeAction
+import com.dan1eidtj.data.ChatSwipePrefs
 import com.dan1eidtj.data.ShopConstants
+import com.dan1eidtj.data.AppUpdatePrefs
 import com.dan1eidtj.mayas.core_ui.ui.components.UserAvatarView
 import com.dan1eidtj.mayas.core_ui.ui.components.VerificationBadge
 import com.dan1eidtj.mayas.core_ui.utils.InstallSource
@@ -153,7 +172,15 @@ import com.dan1eidtj.mayas.core.ui.theme.SidebarLayoutPrefs
 import com.dan1eidtj.mayas.core.ui.theme.VerticalSlot
 import com.dan1eidtj.mayas.core.ui.theme.HorizontalSlot
 import com.dan1eidtj.mayas.core_ui.utils.getNameColorBrush
+import com.dan1eidtj.mayas.core_ui.utils.resolveNameBrush
 import com.dan1eidtj.mayas.core_ui.utils.isUserOnline
+import com.dan1eidtj.mayas.feature.StoryCreatorDialog
+import com.dan1eidtj.mayas.feature.StoryGroup
+import com.dan1eidtj.mayas.feature.StoryOwner
+import com.dan1eidtj.mayas.feature.StoryRepository
+import com.dan1eidtj.mayas.feature.StorySeenState
+import com.dan1eidtj.mayas.feature.StoryViewerDialog
+import com.dan1eidtj.mayas.feature.orderStoryGroups
 import com.dan1eidtj.mayas.feature.TypingIndicator
 import com.dan1eidtj.mayas.feature.auth.AuthVM
 import com.dan1eidtj.mayas.feature.chat.CreateChannelScreen
@@ -187,6 +214,37 @@ data class AppVersion(
     val updateUrl: String,
     val changelog: String? = null
 )
+
+
+private fun isNewerReleaseVersion(
+    latestVersion: String,
+    currentVersion: String
+): Boolean {
+    val latestParts = Regex("\\d+")
+        .findAll(latestVersion.trim())
+        .mapNotNull { it.value.toLongOrNull() }
+        .toList()
+
+    val currentParts = Regex("\\d+")
+        .findAll(currentVersion.trim())
+        .mapNotNull { it.value.toLongOrNull() }
+        .toList()
+
+    if (latestParts.isEmpty() || currentParts.isEmpty()) return false
+
+    val size = maxOf(latestParts.size, currentParts.size)
+    for (index in 0 until size) {
+        val latest = latestParts.getOrElse(index) { 0L }
+        val current = currentParts.getOrElse(index) { 0L }
+
+        when {
+            latest > current -> return true
+            latest < current -> return false
+        }
+    }
+
+    return false
+}
 
 
 @Composable
@@ -232,7 +290,48 @@ fun DrawerActionRow(
     }
 }
 
-enum class ConnectionState { ONLINE, OFFLINE }
+@Composable
+fun WhatsNewDialog(
+    version: String,
+    changelog: String?,
+    onDismiss: () -> Unit
+) {
+    var showChangelog by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.whats_new_welcome_title, version),
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            if (showChangelog) {
+                Text(
+                    text = changelog?.takeIf { it.isNotBlank() }
+                        ?: stringResource(R.string.whats_new_no_changelog)
+                )
+            } else {
+                Text(text = stringResource(R.string.whats_new_welcome_body))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.whats_new_hooray))
+            }
+        },
+        dismissButton = {
+            if (!showChangelog) {
+                TextButton(onClick = { showChangelog = true }) {
+                    Text(text = stringResource(R.string.whats_new_button))
+                }
+            }
+        }
+    )
+}
+
+enum class ConnectionState { ONLINE, CONNECTING, OFFLINE }
 
 enum class ChatFolder(val labelRes: Int, val icon: ImageVector) {
     ALL(com.dan1eidtj.chat.R.string.all_chats, Icons.Default.ChatBubble),
@@ -245,8 +344,6 @@ enum class ChatFolder(val labelRes: Int, val icon: ImageVector) {
 fun getChatId(uid1: String, uid2: String): String {
     return listOf(uid1, uid2).sorted().joinToString("_")
 }
-
-
 
 
 @Composable
@@ -263,19 +360,49 @@ fun ChatListScreen(
     onOpenGlobalSearch: () -> Unit = {},
     homeLayoutPrefs: HomeScreenLayoutPrefs = HomeScreenLayoutPrefs(),
     sidebarLayoutPrefs: SidebarLayoutPrefs = SidebarLayoutPrefs(),
-    onUpdateSidebarPrefs: (SidebarLayoutPrefs) -> Unit = {}
+    onUpdateSidebarPrefs: (SidebarLayoutPrefs) -> Unit = {},
+    onNavigateToAuth: () -> Unit = {}
 ) {
-    val currentUser = FirebaseAuth.getInstance().currentUser ?: return
+    val accountSwitcher = rememberAccountSwitcher(vm, onNavigateToAuth)
+    val authUser by rememberFirebaseUser()
+    val currentUser = authUser ?: return
     val myUid = currentUser.uid
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val chatListScrollState = rememberLazyListState()
+    val headerState = rememberTelegramHeaderState()
 
     val chatListVm: ChatListViewModel = viewModel()
+
+    LaunchedEffect(Unit) { StorySeenState.ensure(context) }
+    val storyGroups by remember(myUid) { StoryRepository.observeFeed(myUid) }
+        .collectAsState(initial = emptyList())
+    val seenStoryIds = StorySeenState.seen
+    val orderedStories = remember(storyGroups, seenStoryIds) { orderStoryGroups(storyGroups, seenStoryIds) }
+    var storyViewerGroups by remember { mutableStateOf<List<StoryGroup>>(emptyList()) }
+    var storyViewerStart by remember { mutableStateOf<Int?>(null) }
+    var showStoryCreator by remember { mutableStateOf(false) }
 
     val roomChats by chatListVm.chats.collectAsState()
     val syncState by chatListVm.syncState.collectAsState()
 
+
+    val muteState by chatListVm.muteState.collectAsState()
+    val massMuteOnText = stringResource(R.string.mass_mute_enabled_toast)
+    val massMuteOffText = stringResource(R.string.mass_mute_disabled_toast)
+    val massMuteNotSyncedText = stringResource(R.string.mass_mute_not_synced_toast)
+    val toggleMassMute: () -> Unit = {
+        val enable = !muteState.massActive
+        val ok = chatListVm.setMassMute(enable)
+        Toast.makeText(
+            context,
+            if (!ok) massMuteNotSyncedText else if (enable) massMuteOnText else massMuteOffText,
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    var drawerAccountsExpanded by remember { mutableStateOf(false) }
 
 
     val httpClient = remember {
@@ -292,8 +419,9 @@ fun ChatListScreen(
 
 
     var isUpdateAvailable by remember { mutableStateOf(false) }
-    var bannerDismissed by rememberSaveable { mutableStateOf(false) }
     var updateUrl by remember { mutableStateOf("") }
+    var whatsNewChangelog by remember { mutableStateOf<String?>(null) }
+    var showWhatsNewDialog by remember { mutableStateOf(false) }
 
     val installSource = remember(context) { InstallSourceProvider.detect(context) }
 
@@ -308,6 +436,16 @@ fun ChatListScreen(
         } catch (e: Exception) { "" }
     }
 
+    fun maybeShowWhatsNew(changelog: String?) {
+        if (currentVersionName.isBlank()) return
+        val lastSeenVersion = AppUpdatePrefs.lastSeenVersion(context)
+        if (lastSeenVersion != null && lastSeenVersion != currentVersionName) {
+            whatsNewChangelog = changelog
+            showWhatsNewDialog = true
+        }
+        AppUpdatePrefs.markVersionSeen(context, currentVersionName)
+    }
+
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
             try {
@@ -315,21 +453,33 @@ fun ChatListScreen(
                 val versionInfo: AppVersion = Json { ignoreUnknownKeys = true }.decodeFromString(rawJson)
                 withContext(Dispatchers.Main) {
                     updateUrl = versionInfo.updateUrl
-                    if (versionInfo.latestVersion.isNotEmpty() && versionInfo.latestVersion != currentVersionName) {
+                    if (isNewerReleaseVersion(versionInfo.latestVersion, currentVersionName)) {
                         isUpdateAvailable = true
                     }
+                    maybeShowWhatsNew(versionInfo.changelog)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 vm.db.collection("system").document("config").get().addOnSuccessListener { doc ->
                     val latestVersion = doc.getString("latestVersion") ?: ""
                     updateUrl = doc.getString("updateUrl") ?: ""
-                    if (latestVersion.isNotEmpty() && latestVersion != currentVersionName) {
+                    if (isNewerReleaseVersion(latestVersion, currentVersionName)) {
                         isUpdateAvailable = true
                     }
+                    maybeShowWhatsNew(doc.getString("changelog"))
+                }.addOnFailureListener {
+                    maybeShowWhatsNew(null)
                 }
             }
         }
+    }
+
+    if (showWhatsNewDialog) {
+        WhatsNewDialog(
+            version = currentVersionName,
+            changelog = whatsNewChangelog,
+            onDismiss = { showWhatsNewDialog = false }
+        )
     }
 
 
@@ -339,8 +489,30 @@ fun ChatListScreen(
 
 
     var selectedChats by remember { mutableStateOf(setOf<String>()) }
-    var connectionState by remember { mutableStateOf(ConnectionState.ONLINE) }
-    var connectionText by remember { mutableStateOf("...") }
+
+    remember(context) { ChatSwipePrefs.ensureInit(context) }
+    LaunchedEffect(myUid) { ChatArchive.bind(context, myUid) }
+    val archivedIds by ChatArchive.ids.collectAsState()
+    val swipeAction by ChatSwipePrefs.action.collectAsState()
+    var showArchive by remember { mutableStateOf(false) }
+
+    val markChatsRead: (Collection<String>) -> Unit = { ids ->
+        ids.forEach { id ->
+            vm.db.collection("chats").document(id).update("unread_$myUid", 0)
+        }
+    }
+    val onSwipeAction: (String, Boolean) -> Unit = { id, pinned ->
+        when (swipeAction) {
+            ChatSwipeAction.READ -> markChatsRead(listOf(id))
+            ChatSwipeAction.ARCHIVE ->
+                ChatArchive.setArchived(context, myUid, listOf(id), !archivedIds.contains(id))
+            ChatSwipeAction.MUTE ->
+                chatListVm.setChatsMuted(setOf(id), !muteState.isMuted(id))
+            ChatSwipeAction.PIN ->
+                vm.db.collection("chats").document(id).update("pinned_$myUid", !pinned)
+        }
+    }
+    var deviceInternetAvailable by remember { mutableStateOf<Boolean?>(null) }
 
 
     val chats: List<Map<String, Any>> = remember(roomChats) {
@@ -404,11 +576,49 @@ fun ChatListScreen(
     var selectedCustomFolderId by remember { mutableStateOf<String?>(null) }
     var folderBeingEdited by remember { mutableStateOf<ChatFolderData?>(null) }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
+    var showBuiltinFolderManager by remember { mutableStateOf(false) }
     val customFolders by chatListVm.customFolders.collectAsState()
     val folderLimitText = stringResource(R.string.folder_limit_reached)
 
     val userCache by chatListVm.partnerPresence.collectAsState()
     val myProfileData by chatListVm.myProfile.collectAsState()
+
+    val myStoryOwner = remember(myUid, myProfileData) {
+        StoryOwner(
+            uid = myUid,
+            name = myProfileData["name"] as? String ?: "",
+            avatarUrl = myProfileData["avatarUrl"] as? String,
+            useCustomAvatar = myProfileData["useCustomAvatar"] as? Boolean ?: false,
+            profileIcon = myProfileData["profileIcon"] as? String ?: "ghost",
+            profileGlow = myProfileData["profileGlow"] as? String ?: "purple",
+            isPremium = myProfileData["isPremium"] as? Boolean ?: false,
+            avatarFrame = myProfileData["avatarFrame"] as? String ?: "none",
+            ringColor = myProfileData["storyRingColor"] as? String
+        )
+    }
+
+    storyViewerStart?.let { start ->
+        StoryViewerDialog(
+            groups = storyViewerGroups,
+            startIndex = start,
+            myUid = myUid,
+            myName = myStoryOwner.name,
+            onDismiss = { storyViewerStart = null },
+            onOpenProfile = { uid ->
+                storyViewerStart = null
+                onOpenProfile(uid)
+            }
+        )
+    }
+
+    if (showStoryCreator) {
+        StoryCreatorDialog(
+            myUid = myUid,
+            initialRingColor = myStoryOwner.ringColor,
+            onDismiss = { showStoryCreator = false },
+            onPublished = { showStoryCreator = false }
+        )
+    }
 
 
     if (showCreateGroupScreen) {
@@ -439,22 +649,52 @@ fun ChatListScreen(
     } else {
 
         val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-        val dotCount by infiniteTransition.animateValue(
+        val dotCountState = infiniteTransition.animateValue(
             initialValue = 1,
             targetValue = 4,
             typeConverter = Int.VectorConverter,
             animationSpec = infiniteRepeatable(
-                animation = tween(600),
+                animation = tween(1800, easing = androidx.compose.animation.core.LinearEasing),
                 repeatMode = RepeatMode.Restart
             ),
             label = "dots"
         )
-        val dots = ".".repeat(dotCount)
+        val connectionState by remember {
+            derivedStateOf {
+                when {
+                    deviceInternetAvailable == false -> ConnectionState.OFFLINE
+                    deviceInternetAvailable == null ||
+                            syncState == SyncState.IDLE ||
+                            syncState == SyncState.SYNCING -> ConnectionState.CONNECTING
+                    syncState == SyncState.OFFLINE -> ConnectionState.OFFLINE
+                    else -> ConnectionState.ONLINE
+                }
+            }
+        }
         val waitingForNetworkTemplate = stringResource(R.string.waiting_for_network_dots)
         val noConnectionTemplate = stringResource(R.string.no_connection_dots)
         val onlineText = stringResource(R.string.online)
+        val meshOnlineText = stringResource(R.string.mesh_online)
+        val meshState by com.dan1eidtj.mayas.mesh.MeshManager.state.collectAsState()
+        val latestPrivateMeshByPartner = remember(meshState.messages, myUid) {
+            meshState.messages.asSequence()
+                .filter { message ->
+                    message.privateChat && if (message.outgoing) {
+                        message.srcUid == myUid && message.dstUid.isNotBlank()
+                    } else {
+                        message.dstUid == myUid && message.srcUid.isNotBlank()
+                    }
+                }
+                .groupBy { message -> if (message.outgoing) message.dstUid else message.srcUid }
+                .mapNotNull { (partnerUid, messages) ->
+                    messages.maxByOrNull { it.timestamp }?.let { partnerUid to it }
+                }
+                .toMap()
+        }
+        val meshPreviewPrefix = stringResource(R.string.message_transport_mesh)
+        val showMeshStatus = meshState.isActive && (deviceInternetAvailable == false || connectionState == ConnectionState.OFFLINE)
 
-        val pulseScale by infiniteTransition.animateFloat(
+        val pulseScaleState = infiniteTransition.animateFloat(
             initialValue = 0.85f,
             targetValue = 1.15f,
             animationSpec = infiniteRepeatable(
@@ -464,7 +704,7 @@ fun ChatListScreen(
             label = "pulseScale"
         )
 
-        val unreadGlowAlpha by infiniteTransition.animateFloat(
+        val unreadGlowAlphaState = infiniteTransition.animateFloat(
             initialValue = 0.3f,
             targetValue = 0.9f,
             animationSpec = infiniteRepeatable(
@@ -473,67 +713,55 @@ fun ChatListScreen(
             ),
             label = "unreadGlowAlpha"
         )
+        val unreadGlowProvider: () -> Float = remember(unreadGlowAlphaState) { { unreadGlowAlphaState.value } }
 
 
-
-        LaunchedEffect(Unit) {
+        LaunchedEffect(context) {
             while (isActive) {
-                val internetOk = checkInternet(context)
-                when {
-                    !internetOk -> {
-                        connectionState = ConnectionState.OFFLINE
-                        connectionText = String.format(waitingForNetworkTemplate, dots)
-                    }
-                    else -> {
-                        connectionState = ConnectionState.ONLINE
-                        connectionText = onlineText
-                    }
-                }
+                deviceInternetAvailable = checkInternet(context)
                 delay(4000)
             }
         }
 
-        LaunchedEffect(syncState) {
-            when (syncState) {
-                SyncState.OFFLINE -> {
-                    connectionState = ConnectionState.OFFLINE
-                    connectionText = String.format(noConnectionTemplate, dots)
-                }
-                SyncState.ONLINE -> {
-                    connectionState = ConnectionState.ONLINE
-                    connectionText = onlineText
-                }
-                else -> {}
+        val connectionLabel: () -> String = {
+            when {
+                showMeshStatus -> meshOnlineText
+                connectionState == ConnectionState.ONLINE -> onlineText
+                deviceInternetAvailable == true && syncState == SyncState.OFFLINE ->
+                    String.format(noConnectionTemplate, ".".repeat(dotCountState.value))
+                else -> String.format(waitingForNetworkTemplate, ".".repeat(dotCountState.value))
             }
         }
 
         val glowColor by animateColorAsState(
             targetValue = when (connectionState) {
                 ConnectionState.ONLINE -> MayasTheme.GlowGreen
+                ConnectionState.CONNECTING -> Color(0xFFFFC107)
                 ConnectionState.OFFLINE -> Color(0xFFFF4D4D)
             },
             animationSpec = tween(500), label = "glow"
         )
 
+        val headerStatusActive by androidx.compose.runtime.produceState(false, connectionState, showMeshStatus) {
+            if (connectionState == ConnectionState.ONLINE && !showMeshStatus) {
+                value = false
+            } else {
+                delay(700)
+                value = true
+            }
+        }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        val filteredChats = remember(chats, searchQuery, userCache, selectedFolder, selectedCustomFolderId, customFolders) {
+        val filteredChats = remember(chats, searchQuery, userCache, selectedFolder, selectedCustomFolderId, customFolders, latestPrivateMeshByPartner, archivedIds, showArchive) {
             val activeCustomFolder = selectedCustomFolderId?.let { id -> customFolders.find { it.id == id } }
             chats.filter { chat ->
+                val chatIdForArchive = chat["chatId"] as? String ?: ""
+                val inArchive = archivedIds.contains(chatIdForArchive)
+                if (showArchive) {
+                    if (!inArchive) return@filter false
+                } else if (inArchive && searchQuery.isEmpty()) {
+                    return@filter false
+                }
                 val isGroup = chat["isGroup"] as? Boolean ?: false
 
 
@@ -567,11 +795,91 @@ fun ChatListScreen(
                 }
             }.sortedWith(
                 compareByDescending<Map<String, Any>> { it["isPinned"] as? Boolean ?: false }
-                    .thenByDescending {
-
-                        it["updatedAt"] as? Long ?: 0L
+                    .thenByDescending { chat ->
+                        val firestoreUpdatedAt = chat["updatedAt"] as? Long ?: 0L
+                        val isGroup = chat["isGroup"] as? Boolean ?: false
+                        if (isGroup) firestoreUpdatedAt else {
+                            val partnerUid = chat["partnerUid"] as? String ?: ""
+                            maxOf(firestoreUpdatedAt, latestPrivateMeshByPartner[partnerUid]?.timestamp ?: 0L)
+                        }
                     }
             )
+        }
+
+        val archivedChats = remember(chats, archivedIds) {
+            chats.filter { archivedIds.contains(it["chatId"] as? String ?: "") }
+                .sortedByDescending { it["updatedAt"] as? Long ?: 0L }
+        }
+        val archivePreview = remember(archivedChats, userCache) {
+            archivedChats.take(3).joinToString(", ") { chat ->
+                if (chat["isGroup"] as? Boolean == true) {
+                    chat["groupName"] as? String ?: ""
+                } else {
+                    val partnerUid = chat["partnerUid"] as? String ?: ""
+                    val cachedName = userCache[partnerUid]?.get("name") as? String
+                    cachedName ?: chat["partnerName"] as? String ?: ""
+                }
+            }
+        }
+        val showArchiveEntry = !showArchive &&
+                searchQuery.isEmpty() &&
+                selectedFolder == ChatFolder.ALL &&
+                selectedCustomFolderId == null &&
+                archivedChats.isNotEmpty()
+
+        LaunchedEffect(showArchive, archivedChats.isEmpty()) {
+            if (showArchive && archivedChats.isEmpty()) showArchive = false
+        }
+        BackHandler(enabled = showArchive && selectedChats.isEmpty()) { showArchive = false }
+
+        val unreadByFolder = remember(chats, archivedIds) {
+            ChatFolder.values().associateWith { folder ->
+                chats.count { chat ->
+                    !archivedIds.contains(chat["chatId"] as? String ?: "") &&
+                    chat.matchesFolder(folder) && (chat["unreadCount"] as? Int ?: 0) > 0
+                }
+            }
+        }
+        val unreadByCustomFolder = remember(chats, customFolders, archivedIds) {
+            customFolders.associate { folder ->
+                folder.id to chats.count { chat ->
+                    !archivedIds.contains(chat["chatId"] as? String ?: "") &&
+                    folder.chatIds.contains(chat["chatId"]) && (chat["unreadCount"] as? Int ?: 0) > 0
+                }
+            }
+        }
+
+        val folderChips = buildList {
+            ChatFolder.values()
+                .filterNot { it.name in sidebarLayoutPrefs.hiddenStandardFolderIds }
+                .forEach { folder ->
+                    add(
+                        FolderChipItem(
+                            key = folder.name,
+                            label = stringResource(folder.labelRes),
+                            count = unreadByFolder[folder] ?: 0,
+                            selected = selectedCustomFolderId == null && selectedFolder == folder,
+                            onClick = {
+                                selectedFolder = folder
+                                selectedCustomFolderId = null
+                            }
+                        )
+                    )
+                }
+            customFolders.sortedBy { it.order }.forEach { folder ->
+                add(
+                    FolderChipItem(
+                        key = folder.id,
+                        label = folder.name,
+                        count = unreadByCustomFolder[folder.id] ?: 0,
+                        selected = selectedCustomFolderId == folder.id,
+                        onClick = {
+                            selectedFolder = ChatFolder.ALL
+                            selectedCustomFolderId = folder.id
+                        }
+                    )
+                )
+            }
         }
 
 
@@ -581,6 +889,7 @@ fun ChatListScreen(
                 ModalDrawerSheet(
                     drawerContainerColor = MayasTheme.Background,
                     drawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp),
+                    windowInsets = WindowInsets(0, 0, 0, 0),
                     modifier = Modifier
                         .width(if (sidebarLayoutPrefs.compactMode) 250.dp else 300.dp)
                         .fillMaxHeight()
@@ -589,61 +898,47 @@ fun ChatListScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .verticalScroll(rememberScrollState())
-                            .padding(vertical = 24.dp)
+                            .navigationBarsPadding()
+                            .padding(bottom = 24.dp)
                     ) {
 
-                        val profileBlock: @Composable () -> Unit = {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = if (sidebarLayoutPrefs.compactMode) 14.dp else 24.dp)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .combinedClickable {
-                                        coroutineScope.launch { drawerState.close() }
-                                        onOpenProfile(myUid)
-                                    }
-                                    .padding(vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(14.dp)
-                            ) {
-                                UserAvatarView(
-                                    avatarUrl = myProfileData["avatarUrl"] as? String,
-                                    useCustomAvatar = myProfileData["useCustomAvatar"] as? Boolean ?: false,
-                                    profileIcon = myProfileData["profileIcon"] as? String ?: "ghost",
-                                    profileGlow = myProfileData["profileGlow"] as? String ?: "purple",
-                                    isPremium = myProfileData["isPremium"] as? Boolean ?: false,
-                                    frameType = myProfileData["avatarFrame"] as? String ?: "none",
-                                    size = 52.dp
-                                )
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = myProfileData["name"] as? String ?: stringResource(R.string.me),
-                                        color = MayasTheme.TextPrimary,
-                                        fontSize = 17.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = stringResource(R.string.open_profile),
-                                        color = MayasTheme.TextSecondary,
-                                        fontSize = 12.sp
-                                    )
+                        val sidebarBannerPlacement = myProfileData["bannerPlacement"] as? String ?: "PROFILE_ONLY"
+                        val showSidebarBanner = sidebarBannerPlacement == "PROFILE_SIDEBAR" || sidebarBannerPlacement == "ALL"
+                        val profileBlock: @Composable (Boolean) -> Unit = { insetTop ->
+                            DrawerProfileHeader(
+                                profile = myProfileData,
+                                compact = sidebarLayoutPrefs.compactMode,
+                                insetTop = insetTop,
+                                showBanner = showSidebarBanner,
+                                accountsExpanded = drawerAccountsExpanded,
+                                onToggleAccounts = { drawerAccountsExpanded = !drawerAccountsExpanded },
+                                onClick = {
+                                    coroutineScope.launch { drawerState.close() }
+                                    onOpenProfile(myUid)
                                 }
-                                Icon(
-                                    imageVector = Icons.Default.ChevronRight,
-                                    contentDescription = null,
-                                    tint = MayasTheme.TextSecondary.copy(alpha = 0.6f),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                            )
+                            DrawerAccountsList(
+                                visible = drawerAccountsExpanded,
+                                sessions = accountSwitcher.sessions,
+                                currentUid = accountSwitcher.currentUid,
+                                onSelect = { session ->
+                                    drawerAccountsExpanded = false
+                                    coroutineScope.launch { drawerState.close() }
+                                    accountSwitcher.select(session)
+                                },
+                                onAddAccount = {
+                                    drawerAccountsExpanded = false
+                                    coroutineScope.launch { drawerState.close() }
+                                    accountSwitcher.addAccount()
+                                }
+                            )
                         }
 
                         if (sidebarLayoutPrefs.profileBlockPosition == VerticalSlot.TOP) {
-                            profileBlock()
-                            Spacer(modifier = Modifier.height(20.dp))
-                            HorizontalDivider(color = MayasTheme.Outline.copy(alpha = 0.5f))
-                            Spacer(modifier = Modifier.height(16.dp))
+                            profileBlock(true)
+                            Spacer(modifier = Modifier.height(12.dp))
+                        } else {
+                            Spacer(modifier = Modifier.statusBarsPadding().height(20.dp))
                         }
 
                         Column(modifier = Modifier.padding(horizontal = if (sidebarLayoutPrefs.compactMode) 14.dp else 24.dp)) {
@@ -755,6 +1050,22 @@ fun ChatListScreen(
                                     onClick = {
                                         coroutineScope.launch { drawerState.close() }
                                         forceShowSearch = true
+                                    },
+                                    iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
+                                    compact = sidebarLayoutPrefs.compactMode
+                                )
+                            }
+
+                            if (sidebarLayoutPrefs.showMuteAllButton) {
+                                DrawerActionRow(
+                                    icon = if (muteState.massActive) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
+                                    iconTint = if (muteState.massActive) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
+                                    label = stringResource(
+                                        if (muteState.massActive) R.string.unmute_all_chats else R.string.mute_all_chats
+                                    ),
+                                    onClick = {
+                                        coroutineScope.launch { drawerState.close() }
+                                        toggleMassMute()
                                     },
                                     iconAtEnd = sidebarLayoutPrefs.actionsIconPosition == HorizontalSlot.END,
                                     compact = sidebarLayoutPrefs.compactMode
@@ -884,91 +1195,110 @@ fun ChatListScreen(
                             }
 
                             val foldersBlock: @Composable () -> Unit = {
-                                Text(
-                                    text = stringResource(R.string.folders_label),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
-                                    letterSpacing = 1.sp
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.folders_label),
+                                        modifier = Modifier.weight(1f),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MayasTheme.TextSecondary.copy(alpha = 0.5f),
+                                        letterSpacing = 1.sp
+                                    )
+                                    IconButton(
+                                        onClick = { showBuiltinFolderManager = true },
+                                        modifier = Modifier.size(30.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.MoreVert,
+                                            contentDescription = stringResource(R.string.manage_sidebar_folders),
+                                            tint = MayasTheme.TextSecondary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
 
                                 Spacer(modifier = Modifier.height(12.dp))
 
-                                ChatFolder.values().forEach { folder ->
-                                    val isSelected = selectedFolder == folder
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(if (sidebarLayoutPrefs.compactMode) 40.dp else 48.dp)
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(
-                                                if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.12f)
-                                                else Color.Transparent
-                                            )
-                                            .combinedClickable {
-                                                selectedFolder = folder
-                                                selectedCustomFolderId = null
-                                                coroutineScope.launch { drawerState.close() }
-                                            }
-                                            .padding(horizontal = if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = folder.icon,
-                                            contentDescription = null,
-                                            tint = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
-                                            modifier = Modifier.size(if (sidebarLayoutPrefs.compactMode) 17.dp else 20.dp)
-                                        )
-                                        Text(
-                                            text = stringResource(folder.labelRes),
-                                            color = if (isSelected) MayasTheme.TextPrimary else MayasTheme.TextSecondary,
-                                            fontSize = if (sidebarLayoutPrefs.compactMode) 13.sp else 14.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                            modifier = Modifier.weight(1f)
-                                        )
-
-                                        val count = when (folder) {
-                                            ChatFolder.ALL -> chats.size
-                                            ChatFolder.PINNED -> chats.count {
-                                                it["isPinned"] as? Boolean ?: false
-                                            }
-
-                                            ChatFolder.GROUPS -> chats.count {
-                                                (it["isGroup"] as? Boolean ?: false) &&
-                                                        it["chatType"] != "CHANNEL" &&
-                                                        !(it["isSavedMessages"] as? Boolean ?: false)
-                                            }
-
-                                            ChatFolder.CHANNELS -> chats.count {
-                                                it["chatType"] == "CHANNEL"
-                                            }
-
-                                            ChatFolder.CONTACTS -> chats.count {
-                                                !(it["isGroup"] as? Boolean ?: false)
-                                            }
-                                        }
-                                        if (count > 0) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(CircleShape)
-                                                    .background(
-                                                        if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.2f)
-                                                        else MayasTheme.Surface.copy(alpha = 0.05f)
-                                                    )
-                                                    .padding(horizontal = 7.dp, vertical = 2.dp)
-                                            ) {
-                                                Text(
-                                                    text = "$count",
-                                                    color = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold
+                                ChatFolder.values()
+                                    .filterNot { it.name in sidebarLayoutPrefs.hiddenStandardFolderIds }
+                                    .forEach { folder ->
+                                        val isSelected = selectedFolder == folder
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(if (sidebarLayoutPrefs.compactMode) 40.dp else 48.dp)
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(
+                                                    if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.12f)
+                                                    else Color.Transparent
                                                 )
+                                                .combinedClickable {
+                                                    selectedFolder = folder
+                                                    selectedCustomFolderId = null
+                                                    coroutineScope.launch { drawerState.close() }
+                                                }
+                                                .padding(horizontal = if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(if (sidebarLayoutPrefs.compactMode) 10.dp else 14.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = folder.icon,
+                                                contentDescription = null,
+                                                tint = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
+                                                modifier = Modifier.size(if (sidebarLayoutPrefs.compactMode) 17.dp else 20.dp)
+                                            )
+                                            Text(
+                                                text = stringResource(folder.labelRes),
+                                                color = if (isSelected) MayasTheme.TextPrimary else MayasTheme.TextSecondary,
+                                                fontSize = if (sidebarLayoutPrefs.compactMode) 13.sp else 14.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                modifier = Modifier.weight(1f)
+                                            )
+
+                                            val count = when (folder) {
+                                                ChatFolder.ALL -> chats.size
+                                                ChatFolder.PINNED -> chats.count {
+                                                    it["isPinned"] as? Boolean ?: false
+                                                }
+
+                                                ChatFolder.GROUPS -> chats.count {
+                                                    (it["isGroup"] as? Boolean ?: false) &&
+                                                            it["chatType"] != "CHANNEL" &&
+                                                            !(it["isSavedMessages"] as? Boolean ?: false)
+                                                }
+
+                                                ChatFolder.CHANNELS -> chats.count {
+                                                    it["chatType"] == "CHANNEL"
+                                                }
+
+                                                ChatFolder.CONTACTS -> chats.count {
+                                                    !(it["isGroup"] as? Boolean ?: false)
+                                                }
+                                            }
+                                            if (count > 0) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(CircleShape)
+                                                        .background(
+                                                            if (isSelected) MayasTheme.GlowPurple.copy(alpha = 0.2f)
+                                                            else MayasTheme.Surface.copy(alpha = 0.05f)
+                                                        )
+                                                        .padding(horizontal = 7.dp, vertical = 2.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "$count",
+                                                        color = if (isSelected) MayasTheme.GlowPurple else MayasTheme.TextSecondary,
+                                                        fontSize = 11.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
                                             }
                                         }
+                                        Spacer(modifier = Modifier.height(4.dp))
                                     }
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                }
 
                                 customFolders.sortedBy { it.order }.forEach { folder ->
                                     val isSelected = selectedCustomFolderId == folder.id
@@ -1124,10 +1454,9 @@ fun ChatListScreen(
                         Spacer(modifier = Modifier.weight(1f))
 
                         if (sidebarLayoutPrefs.profileBlockPosition == VerticalSlot.BOTTOM) {
-                            HorizontalDivider(color = MayasTheme.Outline.copy(alpha = 0.5f))
                             Spacer(modifier = Modifier.height(16.dp))
-                            profileBlock()
-                            Spacer(modifier = Modifier.height(16.dp))
+                            profileBlock(false)
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
 
                         Spacer(modifier = Modifier.height(16.dp))
@@ -1167,58 +1496,35 @@ fun ChatListScreen(
                 containerColor = MayasTheme.Background
             ) { paddingValues ->
 
+                headerState.enabled = searchQuery.isEmpty() && selectedChats.isEmpty() && !showArchive
+                LaunchedEffect(searchQuery.isNotEmpty(), selectedChats.isNotEmpty()) {
+                    if (searchQuery.isNotEmpty() || selectedChats.isNotEmpty()) headerState.expand()
+                }
+
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(paddingValues)
                         .background(MayasTheme.Background)
+                        .nestedScroll(headerState.connection)
                 ) {
-
-                    AnimatedVisibility(
-                        visible = isUpdateAvailable && !bannerDismissed,
-                        enter = expandVertically(),
-                        exit = shrinkVertically()
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(installSource.accentColor.copy(alpha = 0.9f))
-                                .clickable {
-                                    InstallSourceProvider.openUpdate(context, installSource, updateUrl)
-                                }
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Icon(Icons.Default.Update, null, tint = installSource.onAccentColor, modifier = Modifier.size(18.dp))
-                                Text(
-                                    text = stringResource(R.string.update_available),
-                                    color = installSource.onAccentColor,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            IconButton(
-                                onClick = { bannerDismissed = true },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = stringResource(R.string.close_action),
-                                    tint = installSource.onAccentColor.copy(alpha = 0.7f),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
 
                     AnimatedContent(
                         targetState = selectedChats.isEmpty(),
-                        label = "header"
+                        label = "header",
+                        transitionSpec = {
+                            (fadeIn(tween(220)) + slideInVertically(tween(220)) { -it / 3 })
+                                .togetherWith(fadeOut(tween(140)))
+                        }
                     ) { isNormalMode ->
-                        if (isNormalMode) {
+                        if (isNormalMode && showArchive) {
+                            ArchiveHeader(onBack = { showArchive = false })
+                        } else if (isNormalMode) {
                             HeaderSection(
+                                progress = { headerState.progress },
+                                statusLabel = if (headerStatusActive) connectionLabel else null,
+                                statusColor = if (showMeshStatus) Color(0xFFFFC107) else glowColor,
+                                statusSpinner = connectionState == ConnectionState.CONNECTING && !showMeshStatus,
                                 searchQuery = searchQuery,
                                 onSearchChange = { searchQuery = it },
                                 onAddFriendClick = {
@@ -1226,16 +1532,37 @@ fun ChatListScreen(
                                 },
                                 onMenuClick = { coroutineScope.launch { drawerState.open() } },
                                 onGlobalSearchClick = onOpenGlobalSearch,
-                                fabAtStart = homeLayoutPrefs.fabPosition == HorizontalSlot.START,
                                 showSearchField = homeLayoutPrefs.showSearchField &&
                                         (homeLayoutPrefs.searchPosition == VerticalSlot.TOP || forceShowSearch),
-                                showAddFriendButton = homeLayoutPrefs.showAddFriendButton
+                                showAddFriendButton = homeLayoutPrefs.showAddFriendButton,
+                                showStories = homeLayoutPrefs.showStories && searchQuery.isEmpty(),
+                                stories = orderedStories,
+                                myOwner = myStoryOwner,
+                                seen = seenStoryIds,
+                                onStoryAdd = { showStoryCreator = true },
+                                onStoryOpen = { index ->
+                                    storyViewerGroups = orderedStories
+                                    storyViewerStart = index
+                                },
+                                folderChips = folderChips
                             )
                         } else {
                             val pinnedToPanelText = stringResource(R.string.pinned_to_panel)
+                            val allSelectedMuted = selectedChats.isNotEmpty() &&
+                                    selectedChats.all { muteState.isMuted(it) }
                             HeaderSelection(
                                 selectedCount = selectedChats.size,
                                 onClearSelection = { selectedChats = emptySet() },
+                                isSelectionMuted = allSelectedMuted,
+                                onToggleMute = {
+                                    chatListVm.setChatsMuted(selectedChats, !allSelectedMuted)
+                                    selectedChats = emptySet()
+                                },
+                                massMuteActive = muteState.massActive,
+                                onToggleMassMute = {
+                                    toggleMassMute()
+                                    selectedChats = emptySet()
+                                },
                                 onTogglePin = {
                                     selectedChats.forEach { id ->
                                         val chatDoc = chats.firstOrNull { it["chatId"] == id }
@@ -1246,11 +1573,12 @@ fun ChatListScreen(
                                     }
                                     selectedChats = emptySet()
                                 },
+                                onToggleArchive = {
+                                    ChatArchive.setArchived(context, myUid, selectedChats.toList(), !showArchive)
+                                    selectedChats = emptySet()
+                                },
+                                isArchiveMode = showArchive,
                                 onDeleteChats = {
-
-
-
-
                                     selectedChats.forEach { id ->
                                         val chatRef = vm.db.collection("chats").document(id)
                                         chatRef.collection("messages").get()
@@ -1274,34 +1602,6 @@ fun ChatListScreen(
                         }
                     }
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = customFolders.find { it.id == selectedCustomFolderId }?.name
-                                ?: stringResource(selectedFolder.labelRes),
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MayasTheme.GlowPurple,
-                            letterSpacing = 0.5.sp
-                        )
-                        if (selectedFolder != ChatFolder.ALL || selectedCustomFolderId != null) {
-                            TextButton(
-                                onClick = {
-                                    selectedFolder = ChatFolder.ALL
-                                    selectedCustomFolderId = null
-                                },
-                                contentPadding = PaddingValues(0.dp)
-                            ) {
-                                Text(stringResource(R.string.reset), color = MayasTheme.TextSecondary, fontSize = 11.sp)
-                            }
-                        }
-                    }
-
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -1311,7 +1611,7 @@ fun ChatListScreen(
                             LazyColumn(modifier = Modifier.fillMaxSize()) {
                                 items(5) { ShimmerChatItem() }
                             }
-                        } else if (filteredChats.isEmpty()) {
+                        } else if (filteredChats.isEmpty() && !showArchiveEntry) {
                             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                 Text(
                                     text = if (searchQuery.isNotEmpty()) stringResource(R.string.nothing_found) else stringResource(R.string.no_chats_in_folder),
@@ -1322,9 +1622,21 @@ fun ChatListScreen(
                             }
                         } else {
                             LazyColumn(
+                                state = chatListScrollState,
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(vertical = 4.dp)
                             ) {
+                                if (showArchiveEntry) {
+                                    item(key = "archive_entry") {
+                                        ArchiveEntryRow(
+                                            preview = archivePreview,
+                                            unreadChats = archivedChats.count { (it["unreadCount"] as? Int ?: 0) > 0 },
+                                            compact = homeLayoutPrefs.compactList,
+                                            onClick = { showArchive = true },
+                                            modifier = Modifier.animateItem()
+                                        )
+                                    }
+                                }
                                 items(
                                     filteredChats,
                                     key = { it["chatId"] ?: it.hashCode() }) { chat ->
@@ -1359,6 +1671,16 @@ fun ChatListScreen(
                                             "isGroup" to true
                                         )
 
+                                        ChatSwipeRow(
+                                            action = swipeAction,
+                                            enabled = selectedChats.isEmpty() && !isSavedMessages,
+                                            isArchived = archivedIds.contains(chatId),
+                                            isMuted = muteState.isMuted(chatId),
+                                            isPinned = isPinned,
+                                            hasUnread = (chat["unreadCount"] as? Int ?: 0) > 0,
+                                            onTrigger = { onSwipeAction(chatId, isPinned) },
+                                            modifier = Modifier.animateItem()
+                                        ) {
                                         ChatItemNew(
                                             userData = groupData,
                                             lastMsg = chat["lastMessage"] as? String ?: "",
@@ -1369,7 +1691,8 @@ fun ChatListScreen(
                                             updatedAt = chat["updatedAt"] as? Long ?: 0L,
                                             isSelected = selectedChats.contains(chatId),
                                             isPinned = isPinned,
-                                            unreadGlowAlpha = unreadGlowAlpha,
+                                            isMuted = muteState.isMuted(chatId),
+                                            unreadGlowAlpha = unreadGlowProvider,
                                             isOnline = false,
                                             onClick = {
                                                 if (selectedChats.isNotEmpty()) {
@@ -1389,8 +1712,10 @@ fun ChatListScreen(
                                                 }
                                             },
                                             avatarAtEnd = homeLayoutPrefs.avatarPosition == HorizontalSlot.END,
-                                            compact = homeLayoutPrefs.compactList
+                                            compact = homeLayoutPrefs.compactList,
+                                            isPinnedToSidebar = sidebarLayoutPrefs.pinnedChatIds.contains(chatId)
                                         )
+                                        }
                                     } else {
                                         val partnerUid = chat["partnerUid"] as? String ?: ""
                                         val userData: Map<String, Any?> = userCache[partnerUid]
@@ -1411,8 +1736,8 @@ fun ChatListScreen(
                                                 "emoji" to chat["partnerEmoji"],
                                                 "nameColor" to (chat["partnerNameColor"] ?: "gold"),
                                                 "isGroup" to false,
-                                                // Реконструкция из плоского Room-кэша — тот же
-                                                // VerificationInfo, что и в живом userCache.
+
+
                                                 "verification" to com.dan1eidtj.data.VerificationInfo(
                                                     verified = chat["partnerVerified"] as? Boolean ?: false,
                                                     type = com.dan1eidtj.data.VerificationType.fromId(
@@ -1425,15 +1750,35 @@ fun ChatListScreen(
                                         val typingMap = userData["typing"] as? Map<*, *>
                                         val isTyping = typingMap?.get(chatId) == true
 
+                                        val firestoreUpdatedAt = chat["updatedAt"] as? Long ?: 0L
+                                        val latestMeshMessage = latestPrivateMeshByPartner[partnerUid]
+                                        val showMeshPreview = latestMeshMessage != null && latestMeshMessage.timestamp > firestoreUpdatedAt
+                                        val lastMessagePreview = if (showMeshPreview) {
+                                            "$meshPreviewPrefix · ${latestMeshMessage!!.text}"
+                                        } else {
+                                            chat["lastMessage"] as? String ?: ""
+                                        }
+
+                                        ChatSwipeRow(
+                                            action = swipeAction,
+                                            enabled = selectedChats.isEmpty() && !false,
+                                            isArchived = archivedIds.contains(chatId),
+                                            isMuted = muteState.isMuted(chatId),
+                                            isPinned = isPinned,
+                                            hasUnread = (chat["unreadCount"] as? Int ?: 0) > 0,
+                                            onTrigger = { onSwipeAction(chatId, isPinned) },
+                                            modifier = Modifier.animateItem()
+                                        ) {
                                         ChatItemNew(
                                             userData = userData,
-                                            lastMsg = chat["lastMessage"] as? String ?: "",
+                                            lastMsg = lastMessagePreview,
                                             draftText = chat["draftText"] as? String ?: "",
                                             unreadCount = chat["unreadCount"] as? Int ?: 0,
-                                            updatedAt = chat["updatedAt"] as? Long ?: 0L,
+                                            updatedAt = maxOf(firestoreUpdatedAt, latestMeshMessage?.timestamp ?: 0L),
                                             isSelected = selectedChats.contains(chatId),
                                             isPinned = isPinned,
-                                            unreadGlowAlpha = unreadGlowAlpha,
+                                            isMuted = muteState.isMuted(chatId),
+                                            unreadGlowAlpha = unreadGlowProvider,
                                             isOnline = isOnline,
                                             isTyping = isTyping,
                                             onClick = {
@@ -1448,8 +1793,10 @@ fun ChatListScreen(
                                                 selectedChats = selectedChats + chatId
                                             },
                                             avatarAtEnd = homeLayoutPrefs.avatarPosition == HorizontalSlot.END,
-                                            compact = homeLayoutPrefs.compactList
+                                            compact = homeLayoutPrefs.compactList,
+                                            isPinnedToSidebar = sidebarLayoutPrefs.pinnedChatIds.contains(chatId)
                                         )
+                                        }
                                     }
                                 }
                             }
@@ -1468,18 +1815,22 @@ fun ChatListScreen(
                     BottomProfileBar(
                         myUid = myUid,
                         myProfileData = myProfileData,
-                        connectionText = connectionText,
-                        glowColor = glowColor,
-                        pulseScale = pulseScale,
+                        connectionLabel = connectionLabel,
+                        glowColor = if (showMeshStatus) Color(0xFFFFC107) else glowColor,
+                        pulseScale = { pulseScaleState.value },
                         onOpenProfile = onOpenProfile,
                         onOpenSettings = onOpenSettings,
                         onOpenNotifications = onOpenNotifications,
-                        unreadNotificationsCount = unreadNotificationsCount
+                        onOpenAccounts = { accountSwitcher.openSheet() },
+                        unreadNotificationsCount = unreadNotificationsCount,
+                        homeLayoutPrefs = homeLayoutPrefs
                     )
                 }
             }
         }
     }
+
+    AccountSwitcherHost(accountSwitcher)
 
     if (showUserSearchDialog) {
         UserSearchDialog(
@@ -1524,6 +1875,26 @@ fun ChatListScreen(
         )
     }
 
+    if (showBuiltinFolderManager) {
+        SidebarBuiltinFolderManagerDialog(
+            hiddenFolderIds = sidebarLayoutPrefs.hiddenStandardFolderIds,
+            onFolderVisibilityChanged = { folderId, isVisible ->
+                val updatedHiddenFolders = if (isVisible) {
+                    sidebarLayoutPrefs.hiddenStandardFolderIds - folderId
+                } else {
+                    sidebarLayoutPrefs.hiddenStandardFolderIds + folderId
+                }
+                val updatedPrefs = sidebarLayoutPrefs.copy(hiddenStandardFolderIds = updatedHiddenFolders)
+                onUpdateSidebarPrefs(updatedPrefs)
+                if (!isVisible && selectedFolder.name == folderId) {
+                    selectedFolder = ChatFolder.ALL
+                    selectedCustomFolderId = null
+                }
+            },
+            onDismiss = { showBuiltinFolderManager = false }
+        )
+    }
+
     folderBeingEdited?.let { folder ->
         FolderEditorDialog(
             initialName = folder.name,
@@ -1545,6 +1916,74 @@ fun ChatListScreen(
     }
 }
 
+
+@Composable
+private fun SidebarBuiltinFolderManagerDialog(
+    hiddenFolderIds: Set<String>,
+    onFolderVisibilityChanged: (folderId: String, isVisible: Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.sidebar_folder_visibility_title),
+                color = MayasTheme.TextPrimary,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = stringResource(R.string.sidebar_folder_visibility_hint),
+                    color = MayasTheme.TextSecondary,
+                    fontSize = 13.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                ChatFolder.values().forEach { folder ->
+                    val isVisible = folder.name !in hiddenFolderIds
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 44.dp)
+                            .clickable { onFolderVisibilityChanged(folder.name, !isVisible) },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = folder.icon,
+                            contentDescription = null,
+                            tint = MayasTheme.TextSecondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            text = stringResource(folder.labelRes),
+                            color = MayasTheme.TextPrimary,
+                            modifier = Modifier.weight(1f),
+                            fontSize = 14.sp
+                        )
+                        Checkbox(
+                            checked = isVisible,
+                            onCheckedChange = { checked ->
+                                onFolderVisibilityChanged(folder.name, checked)
+                            }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.done_action), color = MayasTheme.GlowPurple)
+            }
+        },
+        containerColor = MayasTheme.Surface
+    )
+}
 
 
 @Composable
@@ -1648,101 +2087,6 @@ fun FolderEditorDialog(
 }
 
 
-
-@Composable
-fun HeaderSection(
-    searchQuery: String,
-    onSearchChange: (String) -> Unit,
-    onAddFriendClick: () -> Unit,
-    onMenuClick: () -> Unit,
-    onGlobalSearchClick: () -> Unit = {},
-    fabAtStart: Boolean = false,
-    showSearchField: Boolean = true,
-    showAddFriendButton: Boolean = true
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 20.dp, start = 20.dp, end = 20.dp, bottom = 12.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            val menuGroup: @Composable () -> Unit = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-
-                    IconButton(
-                        onClick = onMenuClick,
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Menu,
-                            contentDescription = stringResource(R.string.open_menu),
-                            tint = MayasTheme.TextPrimary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-
-                    Text(
-                        text = stringResource(R.string.brand_lowercase_mark),
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MayasTheme.TextPrimary,
-                        letterSpacing = (-0.5).sp
-                    )
-                }
-            }
-
-            val addFriendButton: @Composable () -> Unit = {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    IconButton(
-                        onClick = onGlobalSearchClick,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(MayasTheme.SurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = stringResource(R.string.global_search),
-                            tint = MayasTheme.TextPrimary
-                        )
-                    }
-                    IconButton(
-                        onClick = onAddFriendClick,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(MayasTheme.SurfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PersonAdd,
-                            contentDescription = stringResource(R.string.add_friends),
-                            tint = MayasTheme.GlowPurple
-                        )
-                    }
-                }
-            }
-
-            if (fabAtStart) {
-                if (showAddFriendButton) addFriendButton()
-                menuGroup()
-            } else {
-                menuGroup()
-                if (showAddFriendButton) addFriendButton()
-            }
-        }
-
-        if (showSearchField) {
-            Spacer(modifier = Modifier.height(14.dp))
-            ChatSearchField(searchQuery = searchQuery, onSearchChange = onSearchChange)
-        }
-    }
-}
-
 @Composable
 fun ChatSearchField(searchQuery: String, onSearchChange: (String) -> Unit) {
     OutlinedTextField(
@@ -1774,7 +2118,7 @@ fun ChatSearchField(searchQuery: String, onSearchChange: (String) -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp)
-            .height(40.dp),
+            .height(56.dp),
         shape = RoundedCornerShape(12.dp),
         colors = OutlinedTextFieldDefaults.colors(
             focusedContainerColor = MayasTheme.SurfaceVariant.copy(alpha = 0.4f),
@@ -1791,8 +2135,15 @@ fun HeaderSelection(
     onClearSelection: () -> Unit,
     onTogglePin: () -> Unit,
     onDeleteChats: () -> Unit,
-    onPinToSidebar: () -> Unit = {}
+    onPinToSidebar: () -> Unit = {},
+    isSelectionMuted: Boolean = false,
+    onToggleMute: (() -> Unit)? = null,
+    massMuteActive: Boolean = false,
+    onToggleMassMute: (() -> Unit)? = null,
+    onToggleArchive: (() -> Unit)? = null,
+    isArchiveMode: Boolean = false
 ) {
+    var showActions by remember { mutableStateOf(false) }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1811,18 +2162,121 @@ fun HeaderSelection(
             fontWeight = FontWeight.Bold,
             color = MayasTheme.TextPrimary
         )
-        IconButton(onClick = onPinToSidebar) {
-            Icon(Icons.Default.Dashboard, null, tint = MayasTheme.GlowPurple)
-        }
-        IconButton(onClick = onTogglePin) {
-            Icon(Icons.Default.PushPin, null, tint = MayasTheme.TextPrimary)
-        }
-        IconButton(onClick = onDeleteChats) {
-            Icon(Icons.Default.Delete, null, tint = MayasTheme.ErrorRed)
+        Box {
+            IconButton(onClick = { showActions = true }) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = stringResource(R.string.selected_chat_actions),
+                    tint = MayasTheme.TextPrimary
+                )
+            }
+            DropdownMenu(
+                expanded = showActions,
+                onDismissRequest = { showActions = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.pin_selected_to_sidebar)) },
+                    leadingIcon = { Icon(Icons.Default.Dashboard, null, tint = MayasTheme.GlowPurple) },
+                    onClick = { showActions = false; onPinToSidebar() }
+                )
+                if (onToggleArchive != null) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (isArchiveMode) R.string.unarchive_selected_chats else R.string.archive_selected_chats
+                                )
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                if (isArchiveMode) Icons.Default.Unarchive else Icons.Default.Archive,
+                                null,
+                                tint = MayasTheme.GlowPurple
+                            )
+                        },
+                        onClick = { showActions = false; onToggleArchive() }
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.toggle_pin_selected_chats)) },
+                    leadingIcon = { Icon(Icons.Default.PushPin, null) },
+                    onClick = { showActions = false; onTogglePin() }
+                )
+                if (onToggleMute != null) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (isSelectionMuted) R.string.unmute_selected_chats else R.string.mute_selected_chats
+                                )
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                if (isSelectionMuted) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
+                                null,
+                                tint = MayasTheme.GlowPurple
+                            )
+                        },
+                        onClick = { showActions = false; onToggleMute() }
+                    )
+                }
+                if (onToggleMassMute != null) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                stringResource(
+                                    if (massMuteActive) R.string.unmute_all_chats else R.string.mute_all_chats
+                                )
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                if (massMuteActive) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
+                                null,
+                                tint = MayasTheme.GlowPurple
+                            )
+                        },
+                        onClick = { showActions = false; onToggleMassMute() }
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.delete_selected_chats), color = MayasTheme.ErrorRed) },
+                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = MayasTheme.ErrorRed) },
+                    onClick = { showActions = false; onDeleteChats() }
+                )
+            }
         }
     }
 }
 
+
+@Composable
+private fun ChannelTagInline(label: String, style: String) {
+    val tint = when (style.lowercase(Locale.ROOT)) {
+        "blue" -> Color(0xFF3994E8)
+        "green" -> Color(0xFF20A46B)
+        "gold" -> Color(0xFFC08A16)
+        "red" -> Color(0xFFD64A58)
+        else -> MayasTheme.GlowPurple
+    }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(5.dp))
+            .background(tint.copy(alpha = 0.16f))
+            .padding(horizontal = 5.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text = label,
+            color = tint,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
 
 @Composable
 private fun StatusBadge(
@@ -1858,59 +2312,26 @@ fun ChatItemNew(
     updatedAt: Long,
     isSelected: Boolean,
     isPinned: Boolean,
-    unreadGlowAlpha: Float,
+    unreadGlowAlpha: () -> Float,
+    isMuted: Boolean = false,
     isOnline: Boolean = false,
     isTyping: Boolean = false,
     draftText: String = "",
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     avatarAtEnd: Boolean = false,
-    compact: Boolean = false
+    compact: Boolean = false,
+    isPinnedToSidebar: Boolean = false,
+    modifier: Modifier = Modifier
 ) {
-    val avatarGlow = when (userData?.get("profileGlow")) {
-        "pink" -> MayasTheme.GlowPink
-        "blue" -> MayasTheme.GlowBlue
-        "green" -> MayasTheme.GlowGreen
-        "red" -> MayasTheme.GlowRed
-        "orange" -> MayasTheme.GlowOrange
-        "cyan" -> MayasTheme.GlowCyan
-        "mint" -> MayasTheme.GlowMint
-        "indigo" -> MayasTheme.GlowIndigo
-        "lime" -> MayasTheme.GlowLime
-        "rose" -> MayasTheme.GlowRose
-        "amber" -> MayasTheme.GlowAmber
-        "sky" -> MayasTheme.GlowSky
-        "white" -> MayasTheme.GlowWhite
-        "gold" -> MayasTheme.GlowGold
-        else -> MayasTheme.GlowPurple
-    }
-
     val itemBgColor = if (isSelected) {
         MayasTheme.Accent.copy(alpha = 0.08f)
     } else {
         Color.Transparent
     }
 
-
-    val glowBorderBrush = if (unreadCount > 0) {
-        Brush.sweepGradient(
-            listOf(
-                avatarGlow,
-                avatarGlow.copy(alpha = unreadGlowAlpha),
-                avatarGlow
-            )
-        )
-    } else {
-        Brush.linearGradient(
-            listOf(
-                avatarGlow.copy(alpha = 0.35f),
-                avatarGlow.copy(alpha = 0.10f)
-            )
-        )
-    }
-
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .background(itemBgColor)
@@ -1966,10 +2387,8 @@ fun ChatItemNew(
                             ?: false
 
 
-
-
-                        val nameBrush = if (isPremium && !isGroupChat) {
-                            getNameColorBrush(userData?.get("nameColor") as? String ?: "gold")
+                        val nameBrush = if (!isGroupChat) {
+                            resolveNameBrush(userData?.get("nameColor") as? String ?: "gold", isPremium)
                         } else {
                             null
                         }
@@ -1986,14 +2405,30 @@ fun ChatItemNew(
                             modifier = Modifier.weight(1f, fill = false)
                         )
 
+                        val partnerDisplayMode = when (userData?.get("statusTagDisplayMode") as? String) {
+                            "STATUS_ONLY", "TAG_ONLY" -> userData["statusTagDisplayMode"] as String
+                            else -> "BOTH"
+                        }
                         val partnerStatus = userData?.get("emoji") as? String
-                        if (!partnerStatus.isNullOrBlank()) {
+                        if (partnerDisplayMode != "TAG_ONLY" && !partnerStatus.isNullOrBlank()) {
                             Spacer(Modifier.width(4.dp))
                             StatusBadge(value = partnerStatus, fontSize = 15.sp)
                         }
+                        if (partnerDisplayMode != "STATUS_ONLY") {
+                            val channelTag = userData?.get("activeChannelTag") as? Map<*, *>
+                            val channelTagLabel = channelTag?.get("label") as? String
+                            val channelTagName = channelTag?.get("name") as? String
+                            if (!channelTagLabel.isNullOrBlank() && !channelTagName.isNullOrBlank()) {
+                                Spacer(Modifier.width(4.dp))
+                                ChannelTagInline(
+                                    label = channelTagLabel,
+                                    style = channelTag["style"] as? String ?: "violet"
+                                )
+                            }
+                        }
 
-                        // Значок верификации в списке чатов — независим от Mayas+,
-                        // показывается только при verification.verified == true.
+
+
                         val partnerVerification = userData?.get("verification")
                                 as? com.dan1eidtj.data.VerificationInfo
                         if (partnerVerification?.verified == true) {
@@ -2007,6 +2442,16 @@ fun ChatItemNew(
                                 imageVector = Icons.Default.PushPin,
                                 contentDescription = stringResource(R.string.pinned_indicator),
                                 tint = MayasTheme.GlowPurple,
+                                modifier = Modifier.size(12.dp)
+                            )
+                        }
+
+                        if (isMuted) {
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Default.NotificationsOff,
+                                contentDescription = stringResource(R.string.muted_indicator),
+                                tint = MayasTheme.TextSecondary.copy(alpha = 0.6f),
                                 modifier = Modifier.size(12.dp)
                             )
                         }
@@ -2107,6 +2552,178 @@ fun ChatItemNew(
             avatarEl()
             contentEl()
         }
+
+    }
+}
+
+private const val BANNER_DECODE_WIDTH = 720
+private const val BANNER_DECODE_HEIGHT = 360
+
+private enum class BannerScrim { Bar, Drawer }
+
+@Composable
+private fun ProfileBanner(
+    bannerUrl: String,
+    bannerStyle: String,
+    scrim: BannerScrim,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val resolvedUrl by androidx.compose.runtime.produceState<String?>(initialValue = null, bannerUrl) {
+        value = if (bannerUrl.isBlank()) null else runCatching {
+            com.dan1eidtj.mayas.storage.MediaFileCache.resolveModel(context, bannerUrl)
+        }.getOrNull()
+    }
+    val surfaceColor = MayasTheme.Surface
+    val baseBrush = remember(bannerStyle, surfaceColor) {
+        when (bannerStyle) {
+            "ocean" -> Brush.linearGradient(listOf(Color(0xFF075985), Color(0xFF06B6D4)))
+            "sunset" -> Brush.linearGradient(listOf(Color(0xFF9D174D), Color(0xFFF97316)))
+            "forest" -> Brush.linearGradient(listOf(Color(0xFF14532D), Color(0xFF10B981)))
+            "night" -> Brush.linearGradient(listOf(Color(0xFF111827), Color(0xFF5B21B6)))
+            "custom" -> Brush.linearGradient(listOf(Color(0xFF312E81), Color(0xFF0F172A)))
+            "none" -> Brush.linearGradient(listOf(surfaceColor, surfaceColor))
+            else -> Brush.linearGradient(listOf(Color(0xFF4F46E5), Color(0xFFDB2777)))
+        }
+    }
+    val scrimBrush = remember(scrim) {
+        when (scrim) {
+            BannerScrim.Bar -> Brush.horizontalGradient(
+                listOf(Color.Black.copy(alpha = 0.62f), Color.Black.copy(alpha = 0.22f))
+            )
+            BannerScrim.Drawer -> Brush.verticalGradient(
+                listOf(Color.Black.copy(alpha = 0.08f), Color.Black.copy(alpha = 0.62f))
+            )
+        }
+    }
+    Box(modifier = modifier.background(baseBrush)) {
+        val url = resolvedUrl
+        if (!url.isNullOrBlank()) {
+            val request = remember(url) {
+                coil.request.ImageRequest.Builder(context)
+                    .data(url)
+                    .size(BANNER_DECODE_WIDTH, BANNER_DECODE_HEIGHT)
+                    .crossfade(true)
+                    .build()
+            }
+            coil.compose.AsyncImage(
+                model = request,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        Box(modifier = Modifier.fillMaxSize().background(scrimBrush))
+    }
+}
+
+@Composable
+private fun DrawerProfileHeader(
+    profile: Map<String, Any?>,
+    compact: Boolean,
+    insetTop: Boolean,
+    showBanner: Boolean,
+    accountsExpanded: Boolean,
+    onToggleAccounts: () -> Unit,
+    onClick: () -> Unit
+) {
+    val arrowRotation by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (accountsExpanded) 180f else 0f,
+        label = "drawerAccountsArrow"
+    )
+    val bannerUrl = profile["bannerUrl"] as? String ?: ""
+    val bannerStyle = profile["bannerStyle"] as? String ?: "none"
+    val hasBanner = showBanner && (bannerUrl.isNotBlank() || bannerStyle != "none")
+    val avatarSize = if (compact) 56.dp else 68.dp
+    val statusEmoji = profile["emoji"] as? String
+    val isPremium = profile["isPremium"] as? Boolean ?: false
+    val nameBrush = resolveNameBrush(profile["nameColor"] as? String ?: "gold", isPremium)
+    val verification = profile["verification"] as? com.dan1eidtj.data.VerificationInfo
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MayasTheme.Surface)
+            .clickable(onClick = onClick)
+    ) {
+        if (hasBanner) {
+            ProfileBanner(
+                bannerUrl = bannerUrl,
+                bannerStyle = bannerStyle,
+                scrim = BannerScrim.Drawer,
+                modifier = Modifier.matchParentSize()
+            )
+        }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (insetTop) Modifier.statusBarsPadding() else Modifier)
+                .padding(
+                    start = 20.dp,
+                    end = 12.dp,
+                    top = if (compact) 14.dp else 20.dp,
+                    bottom = if (compact) 12.dp else 14.dp
+                )
+        ) {
+            UserAvatarView(
+                avatarUrl = profile["avatarUrl"] as? String,
+                useCustomAvatar = profile["useCustomAvatar"] as? Boolean ?: false,
+                profileIcon = profile["profileIcon"] as? String ?: "ghost",
+                profileGlow = profile["profileGlow"] as? String ?: "purple",
+                isPremium = isPremium,
+                frameType = profile["avatarFrame"] as? String ?: "none",
+                size = avatarSize
+            )
+            Spacer(modifier = Modifier.height(if (compact) 10.dp else 14.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = profile["name"] as? String ?: stringResource(R.string.me),
+                            style = if (nameBrush != null) TextStyle(brush = nameBrush) else TextStyle(color = MayasTheme.TextPrimary),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (!statusEmoji.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            StatusBadge(value = statusEmoji, fontSize = 16.sp)
+                        }
+                        if (verification?.verified == true) {
+                            Spacer(modifier = Modifier.width(4.dp))
+                            VerificationBadge(info = verification, size = 15.dp)
+                        }
+                    }
+                    Text(
+                        text = stringResource(
+                            if (statusEmoji.isNullOrBlank()) R.string.set_emoji_status else R.string.open_profile
+                        ),
+                        color = MayasTheme.TextSecondary,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .clickable(onClick = onToggleAccounts),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.KeyboardArrowDown,
+                        contentDescription = stringResource(R.string.chatlist_acc_title),
+                        tint = MayasTheme.TextSecondary,
+                        modifier = Modifier
+                            .size(26.dp)
+                            .graphicsLayer { rotationZ = arrowRotation }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -2114,35 +2731,56 @@ fun ChatItemNew(
 fun BottomProfileBar(
     myUid: String,
     myProfileData: Map<String, Any?>,
-    connectionText: String,
+    connectionLabel: () -> String,
     glowColor: Color,
-    pulseScale: Float,
+    pulseScale: () -> Float,
     onOpenProfile: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenNotifications: () -> Unit,
-    unreadNotificationsCount: Int = 0
+    onOpenAccounts: () -> Unit = {},
+    unreadNotificationsCount: Int = 0,
+    homeLayoutPrefs: HomeScreenLayoutPrefs = HomeScreenLayoutPrefs()
 ) {
-    Surface(
+    val isCompact = homeLayoutPrefs.compactBottomBar
+    val bannerUrl = myProfileData["bannerUrl"] as? String ?: ""
+    val bannerStyle = myProfileData["bannerStyle"] as? String ?: "none"
+    val bannerPlacement = myProfileData["bannerPlacement"] as? String ?: "PROFILE_ONLY"
+    val hasBanner = (bannerPlacement == "PROFILE_BOTTOM" || bannerPlacement == "ALL") &&
+            (bannerUrl.isNotBlank() || bannerStyle != "none")
+    val barHeight = if (isCompact) 60.dp else 82.dp
+    val avatarSize = if (isCompact) 38.dp else 50.dp
+    val horizontalPadding = if (isCompact) 10.dp else 16.dp
+    val shape = remember { RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp) }
+    val outline = MayasTheme.Outline
+    val borderBrush = remember(outline) {
+        Brush.verticalGradient(colors = listOf(outline, Color.Transparent))
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(82.dp),
-        color = MayasTheme.Surface.copy(alpha = 0.25f),
-        border = BorderStroke(
-            1.dp,
-            Brush.verticalGradient(
-                colors = listOf(MayasTheme.Outline, Color.Transparent)
-            )
-        )
+            .height(barHeight)
+            .clip(shape)
+            .background(MayasTheme.Surface.copy(alpha = 0.32f))
+            .border(BorderStroke(1.dp, borderBrush), shape)
     ) {
+        if (hasBanner) {
+            ProfileBanner(
+                bannerUrl = bannerUrl,
+                bannerStyle = bannerStyle,
+                scrim = BannerScrim.Bar,
+                modifier = Modifier.matchParentSize()
+            )
+        }
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = horizontalPadding),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(50.dp)
+                    .size(avatarSize)
                     .combinedClickable { onOpenProfile(myUid) }
             ) {
                 UserAvatarView(
@@ -2152,13 +2790,17 @@ fun BottomProfileBar(
                     profileGlow = myProfileData["profileGlow"] as? String ?: "purple",
                     isPremium = myProfileData["isPremium"] as? Boolean ?: false,
                     frameType = myProfileData["avatarFrame"] as? String ?: "none",
-                    size = 50.dp
+                    size = avatarSize
                 )
 
                 Box(
                     modifier = Modifier
-                        .size(13.dp)
-                        .scale(pulseScale)
+                        .size(if (isCompact) 10.dp else 13.dp)
+                        .graphicsLayer {
+                            val pulse = pulseScale()
+                            scaleX = pulse
+                            scaleY = pulse
+                        }
                         .clip(CircleShape)
                         .background(glowColor)
                         .align(Alignment.BottomEnd)
@@ -2166,7 +2808,7 @@ fun BottomProfileBar(
                 )
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(if (isCompact) 8.dp else 12.dp))
 
             Column(
                 modifier = Modifier
@@ -2179,12 +2821,7 @@ fun BottomProfileBar(
                 ) {
                     val isPremium = myProfileData["isPremium"] as? Boolean ?: false
 
-
-                    val nameBrush = if (isPremium) {
-                        getNameColorBrush(myProfileData["nameColor"] as? String ?: "gold")
-                    } else {
-                        null
-                    }
+                    val nameBrush = resolveNameBrush(myProfileData["nameColor"] as? String ?: "gold", isPremium)
 
                     Text(
                         text = myProfileData["name"] as? String ?: stringResource(com.dan1eidtj.mayas.ui.R.string.loading),
@@ -2204,57 +2841,65 @@ fun BottomProfileBar(
                     Spacer(modifier = Modifier.width(4.dp))
                     Icon(
                         imageVector = Icons.Default.KeyboardArrowDown,
-                        contentDescription = stringResource(R.string.open_profile),
+                        contentDescription = stringResource(R.string.chatlist_acc_title),
                         tint = MayasTheme.TextSecondary,
-                        modifier = Modifier.size(14.dp)
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable(onClick = onOpenAccounts)
+                            .padding(6.dp)
+                            .size(14.dp)
                     )
                 }
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = connectionText,
-                    color = glowColor.copy(alpha = 0.9f),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                if (homeLayoutPrefs.showBottomBarStatus) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    ConnectionLabel(
+                        label = connectionLabel,
+                        color = glowColor.copy(alpha = 0.9f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
+            if (homeLayoutPrefs.showBottomBarNotifications) {
+                Box(
+                    modifier = Modifier
+                        .size(if (isCompact) 34.dp else 40.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (hasBanner) Color.Black.copy(alpha = 0.35f)
+                            else MayasTheme.SurfaceVariant.copy(alpha = 0.4f)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    IconButton(onClick = onOpenNotifications) {
+                        Icon(
+                            imageVector = Icons.Outlined.Notifications,
+                            contentDescription = stringResource(R.string.notifications),
+                            tint = MayasTheme.TextPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
 
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MayasTheme.SurfaceVariant.copy(alpha = 0.4f)),
-                contentAlignment = Alignment.Center
-            ) {
-                IconButton(onClick = onOpenNotifications) {
-                    Icon(
-                        imageVector = Icons.Outlined.Notifications,
-                        contentDescription = stringResource(R.string.notifications),
-                        tint = MayasTheme.TextPrimary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                if (unreadNotificationsCount > 0) {
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .offset(x = (-2).dp, y = 2.dp)
-                            .size(if (unreadNotificationsCount > 9) 16.dp else 14.dp)
-                            .clip(CircleShape)
-                            .background(MayasTheme.GlowPurple)
-                            .border(1.5.dp, MayasTheme.Background, CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (unreadNotificationsCount > 9) {
-                            Text(
-                                text = "9+",
-                                color = Color.White,
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.Bold
-                            )
+                    if (unreadNotificationsCount > 0) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .offset(x = (-2).dp, y = 2.dp)
+                                .size(if (unreadNotificationsCount > 9) 16.dp else 14.dp)
+                                .clip(CircleShape)
+                                .background(MayasTheme.GlowPurple)
+                                .border(1.5.dp, MayasTheme.Background, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (unreadNotificationsCount > 9) {
+                                Text(
+                                    text = "9+",
+                                    color = Color.White,
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
                         }
                     }
                 }
@@ -2466,7 +3111,7 @@ fun UserSearchDialog(
                     CircularProgressIndicator(modifier = Modifier.size(24.dp).align(Alignment.CenterHorizontally), color = MayasTheme.GlowPurple)
                 } else {
                     if (foundUser != null) {
-                        val user = foundUser!!
+                        val user = foundUser ?: emptyMap()
                         val userUid = user["uid"] as? String ?: ""
 
                         Column(
@@ -2515,7 +3160,7 @@ fun UserSearchDialog(
                     if (foundChannel != null) {
                         if (foundUser != null) Spacer(Modifier.height(12.dp))
 
-                        val channel = foundChannel!!
+                        val channel = foundChannel ?: emptyMap()
                         val channelId = channel["chatId"] as? String ?: ""
                         @Suppress("UNCHECKED_CAST")
                         val alreadyIn = (channel["participants"] as? List<String>)?.contains(myUid) == true
@@ -2600,7 +3245,6 @@ fun UserSearchDialog(
 }
 
 
-
 fun formatTimestamp(millis: Long, yesterdayLabel: String): String {
     if (millis <= 0L) return ""
     val date = Date(millis)
@@ -2622,8 +3266,9 @@ fun formatTimestamp(millis: Long, yesterdayLabel: String): String {
 }
 
 fun checkInternet(context: Context): Boolean {
-    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    val nw = cm.activeNetwork ?: return false
-    val actNw = cm.getNetworkCapabilities(nw) ?: return false
-    return actNw.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
+    val network = cm.activeNetwork ?: return false
+    val capabilities = cm.getNetworkCapabilities(network) ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
 }

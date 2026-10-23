@@ -1,13 +1,18 @@
+/* Copyright (C) 2026 dan1eIDT */
 package com.dan1eidtj.mayas.feature.chats.ChatListScreen
 
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.dan1eidtj.data.ChatMuteActions
 import com.dan1eidtj.data.FirestoreListenerCoordinator
 import com.dan1eidtj.mayas.db.ChatEntity
 import com.dan1eidtj.mayas.db.ChatRepository
+import com.dan1eidtj.mayas.mesh.MeshManager
 import com.dan1eidtj.mayas.core_ui.Screen
+
+import com.dan1eidtj.data.MuteState
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -17,10 +22,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
@@ -36,6 +39,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
     companion object {
         const val MAX_CUSTOM_FOLDERS = 10
         private const val OFFLINE_GRACE_MS = 4000L
+        private const val REBUILD_DEBOUNCE_MS = 80L
     }
 
     private val db = FirebaseFirestore.getInstance()
@@ -48,6 +52,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
     private val repository = ChatRepository(application)
     private var persistChatsJob: Job? = null
     private var offlineJob: Job? = null
+    private var rebuildJob: Job? = null
 
     private val _chats = MutableStateFlow<List<ChatEntity>>(emptyList())
     val chats: StateFlow<List<ChatEntity>> = _chats.asStateFlow()
@@ -73,8 +78,13 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
     private val _partnerPresence = MutableStateFlow<Map<String, Map<String, Any?>>>(emptyMap())
     val partnerPresence: StateFlow<Map<String, Map<String, Any?>>> = _partnerPresence.asStateFlow()
 
-    // Счётчик непрочитанных уведомлений (пропущенные звонки, системные, промо/акции)
-    // для бейджа на колокольчике в ChatListScreen
+
+
+    private val _muteState = MutableStateFlow(MuteState())
+    val muteState: StateFlow<MuteState> = _muteState.asStateFlow()
+
+
+
     private val _unreadNotificationsCount = MutableStateFlow(0)
     val unreadNotificationsCount: StateFlow<Int> = _unreadNotificationsCount.asStateFlow()
 
@@ -103,8 +113,19 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
 
     init {
         auth.addAuthStateListener(authStateListener)
-        FirestoreListenerCoordinator.register(teardown)
+        FirestoreListenerCoordinator.register(teardown, persistent = true)
         startListening()
+    }
+
+    private fun removeStaleChatIndex(uid: String, chatId: String) {
+        db.collection("userChats")
+            .document(uid)
+            .collection("chats")
+            .document(chatId)
+            .delete()
+            .addOnFailureListener {
+                Log.w("ChatListVM", "Не удалось удалить протухший userChats индекс $chatId", it)
+            }
     }
 
     fun startListening() {
@@ -129,6 +150,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                     return@addSnapshotListener
                 }
                 if (doc != null && doc.exists()) {
+                    _muteState.value = MuteState.from(doc)
                     _myProfile.value = mapOf(
                         "name" to (doc.getString("name") ?: doc.getString("username") ?: "Я"),
                         "avatarUrl" to (doc.getString("avatarUrl") ?: ""),
@@ -139,6 +161,10 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                         "isPremium" to (doc.getBoolean("isPremium") ?: false),
                         "avatarFrame" to (doc.getString("avatarFrame") ?: "none"),
                         "nameColor" to (doc.getString("nameColor") ?: "gold"),
+                        "bannerUrl" to (doc.getString("bannerUrl") ?: ""),
+                        "bannerStyle" to (doc.getString("bannerStyle") ?: "none"),
+                        "bannerPlacement" to (doc.getString("bannerPlacement") ?: "PROFILE_ONLY"),
+                        "emoji" to (doc.getString("emojiStatus") ?: ""),
                         "isGroup" to false,
                         "verification" to runCatching { com.dan1eidtj.data.VerificationInfo.fromMap(doc.data) }.getOrDefault(com.dan1eidtj.data.VerificationInfo())
                     )
@@ -166,9 +192,9 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                 } ?: emptyList()
             }
 
-        // Слушаем коллекцию уведомлений пользователя: /users/{uid}/notifications
-        // Ожидаемая структура документа: { type: "missed_call" | "system" | "promo", isRead: Boolean, ... }
-        // Подгони путь/поля под свою реальную схему в Firestore, если она отличается
+
+
+
         notificationsListener = db.collection("users").document(uid)
             .collection("notifications")
             .whereEqualTo("isRead", false)
@@ -221,7 +247,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                 }
 
                 if (removedChatIds.isNotEmpty()) {
-                    rebuildChatEntities(uid)
+                    scheduleRebuild(uid)
                 }
 
                 currentChatIds.forEach { chatId ->
@@ -235,12 +261,19 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                                         "Ошибка снапшота чата $chatId",
                                         chatError
                                     )
+                                    if (chatError.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                                        chatDocListeners[chatId]?.remove()
+                                        chatDocListeners.remove(chatId)
+                                        chatDocuments.remove(chatId)
+                                        removeStaleChatIndex(uid, chatId)
+                                        scheduleRebuild(uid)
+                                    }
                                     return@addSnapshotListener
                                 }
 
                                 if (chatDoc == null || !chatDoc.exists()) {
                                     chatDocuments.remove(chatId)
-                                    rebuildChatEntities(uid)
+                                    scheduleRebuild(uid)
                                     return@addSnapshotListener
                                 }
 
@@ -250,8 +283,11 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                                         ?: emptyList()
 
                                 if (!participants.contains(uid)) {
+                                    chatDocListeners[chatId]?.remove()
+                                    chatDocListeners.remove(chatId)
                                     chatDocuments.remove(chatId)
-                                    rebuildChatEntities(uid)
+                                    removeStaleChatIndex(uid, chatId)
+                                    scheduleRebuild(uid)
                                     return@addSnapshotListener
                                 }
 
@@ -303,13 +339,19 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                                                         return@addSnapshotListener
                                                     }
 
-                                                    // Настройки приватности этого пользователя.
-                                                    // Гейтим прямо тут, в единственной точке
-                                                    // сборки presence-кэша — дальше это уходит
-                                                    // и в живой список чатов, и в Room (ChatEntity),
-                                                    // так что фикс здесь закрывает обе утечки разом.
-                                                    val lastSeenAllowed =
-                                                        (userDoc.getString("privacy_last_seen") ?: "all") == "all"
+
+
+
+
+
+                                                    val lastSeenMode = userDoc.getString("privacy_last_seen") ?: "all"
+                                                    val hiddenLastSeenFrom = (userDoc.get("privacy_last_seen_hidden_from") as? List<*>)
+                                                        ?.filterIsInstance<String>()?.toSet().orEmpty()
+                                                    val lastSeenAllowed = when (lastSeenMode) {
+                                                        "custom" -> myUid.orEmpty() !in hiddenLastSeenFrom
+                                                        "all" -> true
+                                                        else -> false
+                                                    }
                                                     val photoAllowed =
                                                         (userDoc.getString("privacy_photo") ?: "all") == "all"
 
@@ -332,22 +374,33 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                                                         "nameColor" to (userDoc.getString("nameColor") ?: "gold"),
                                                         "isGroup" to false,
                                                         "emoji" to userDoc.getString("emojiStatus"),
+                                                        "statusTagDisplayMode" to (userDoc.getString("statusTagDisplayMode") ?: "BOTH"),
+                                                        "activeChannelTag" to userDoc.get("activeChannelTag"),
                                                         "verification" to runCatching { com.dan1eidtj.data.VerificationInfo.fromMap(userDoc.data) }.getOrDefault(com.dan1eidtj.data.VerificationInfo())
                                                     )
 
-                                                    _partnerPresence.value =
-                                                        _partnerPresence.value + (partnerUid to presence)
+                                                    if (_partnerPresence.value[partnerUid] == presence) return@addSnapshotListener
 
-                                                    rebuildChatEntities(uid)
+                                                    _partnerPresence.value = _partnerPresence.value + (partnerUid to presence)
+
+                                                    scheduleRebuild(uid)
                                                 }
                                     }
                                 }
 
-                                rebuildChatEntities(uid)
+                                scheduleRebuild(uid)
                             }
                     }
                 }
             }
+    }
+
+    private fun scheduleRebuild(uid: String) {
+        rebuildJob?.cancel()
+        rebuildJob = viewModelScope.launch {
+            delay(REBUILD_DEBOUNCE_MS)
+            rebuildChatEntities(uid)
+        }
     }
 
     private fun rebuildChatEntities(uid: String) {
@@ -421,6 +474,9 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
 
         val sorted = entities.sortedByDescending { it.updatedAt }
         _chats.value = sorted
+        MeshManager.setKnownContactUids(
+            sorted.asSequence().filter { !it.isGroup }.mapNotNull { it.partnerUid }.toSet()
+        )
         persistChats(sorted)
     }
 
@@ -438,6 +494,8 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
         chatsListener = null
         offlineJob?.cancel()
         persistChatsJob?.cancel()
+        rebuildJob?.cancel()
+        rebuildJob = null
 
         chatDocListeners.values.forEach { it.remove() }
         chatDocListeners.clear()
@@ -455,6 +513,7 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
         partnerListeners.clear()
         listeningUid = null
         _myProfile.value = emptyMap()
+        _muteState.value = MuteState()
         _partnerPresence.value = emptyMap()
         _unreadNotificationsCount.value = 0
         syncState.value = SyncState.IDLE
@@ -465,6 +524,33 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
         auth.removeAuthStateListener(authStateListener)
         FirestoreListenerCoordinator.unregister(teardown)
         stopListening()
+    }
+
+
+
+
+
+    fun setMassMute(active: Boolean): Boolean {
+        val uid = myUid ?: return false
+        if (active) {
+
+
+            if (syncState.value != SyncState.ONLINE) return false
+            ChatMuteActions.enableMassMute(uid, chatDocuments.keys.toList())
+        } else {
+            ChatMuteActions.disableMassMute(uid)
+        }
+        return true
+    }
+
+    fun setChatsMuted(chatIds: Collection<String>, muted: Boolean) {
+        val uid = myUid ?: return
+        ChatMuteActions.setChatsMuted(uid, chatIds, muted, massActive = _muteState.value.massActive)
+    }
+
+    fun setMuteNewChatsInMassMode(include: Boolean) {
+        val uid = myUid ?: return
+        ChatMuteActions.setMuteNewChatsInMassMode(uid, include)
     }
 
     fun createFolder(name: String, chatIds: List<String>, onError: (String) -> Unit = {}) {
@@ -526,14 +612,43 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
         batch.commit().addOnFailureListener { e -> Log.e("ChatListVM", "Ошибка изменения порядка папок", e) }
     }
 
-    fun openOrCreateDirectChat(myUid: String, partnerUid: String, onReady: (String) -> Unit) {
+    fun openOrCreateDirectChat(
+        myUid: String,
+        partnerUid: String,
+        onError: ((Exception) -> Unit)? = null,
+        onReady: (String) -> Unit
+    ) {
+        if (myUid.isBlank() || partnerUid.isBlank() || myUid == partnerUid) {
+            onError?.invoke(IllegalArgumentException("invalid_chat_participants"))
+            return
+        }
+
         val chatId = Screen.getChatId(myUid, partnerUid)
         val chatRef = db.collection("chats").document(chatId)
         viewModelScope.launch {
             try {
-                val snapshot = chatRef.get().await()
-                if (!snapshot.exists()) {
-                    chatRef.set(
+                val creationResult = db.runTransaction { transaction ->
+                    val existingChat = transaction.get(chatRef)
+                    if (existingChat.exists()) return@runTransaction "EXISTS"
+
+                    val myProfile = transaction.get(db.collection("users").document(myUid))
+                    val partnerProfile = transaction.get(db.collection("users").document(partnerUid))
+                    if (!myProfile.exists() || !partnerProfile.exists()) {
+                        return@runTransaction "PROFILE_MISSING"
+                    }
+
+                    val myBlocked = (myProfile.get("blocked") as? List<*>)
+                        ?.filterIsInstance<String>()
+                        .orEmpty()
+                    val partnerBlocked = (partnerProfile.get("blocked") as? List<*>)
+                        ?.filterIsInstance<String>()
+                        .orEmpty()
+                    if (partnerUid in myBlocked || myUid in partnerBlocked) {
+                        return@runTransaction "BLOCKED"
+                    }
+
+                    transaction.set(
+                        chatRef,
                         mapOf(
                             "type" to "DIRECT",
                             "participants" to listOf(myUid, partnerUid),
@@ -544,7 +659,15 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                             "unreadCount_$myUid" to 0,
                             "unreadCount_$partnerUid" to 0
                         )
-                    ).await()
+                    )
+                    "CREATED"
+                }.await()
+
+                if (creationResult == "BLOCKED") {
+                    throw IllegalStateException("blocked")
+                }
+                if (creationResult == "PROFILE_MISSING") {
+                    throw IllegalStateException("profile_missing")
                 }
 
                 db.collection("userChats")
@@ -562,8 +685,11 @@ class ChatListViewModel(application: Application) : AndroidViewModel(application
                     .await()
 
                 onReady(chatId)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e("ChatListVM", "Ошибка создания чата", e)
+                onError?.invoke(e)
             }
         }
     }

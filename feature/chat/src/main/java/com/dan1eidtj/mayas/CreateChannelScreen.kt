@@ -33,6 +33,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
+import com.dan1eidtj.mayas.core.ui.components.ImageCropEditorDialog
+import com.dan1eidtj.mayas.core.ui.components.ImageEditAspect
+import com.dan1eidtj.mayas.core.ui.components.cleanupEditedImage
+import android.net.Uri
 import com.dan1eidtj.mayas.core_ui.ui.components.MayasAvatar
 import com.dan1eidtj.mayas.feature.ChatVM
 import com.dan1eidtj.mayas.storage.B2MediaClient
@@ -62,31 +66,41 @@ fun CreateChannelScreen(
     var isCreating by remember { mutableStateOf(false) }
     var channelAvatarKey by remember { mutableStateOf<String?>(null) }
     var isUploadingAvatar by remember { mutableStateOf(false) }
+    var avatarToEdit by remember { mutableStateOf<Uri?>(null) }
 
     val avatarLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.let { pickedUri ->
-            coroutineScope.launch {
-                isUploadingAvatar = true
-                try {
-                    val bytes = ImageCompressor.compressAvatar(context, pickedUri)
-                    val myUid = chatVM.myUid ?: ""
+        if (uri != null) avatarToEdit = uri
+    }
 
-
-                    val key = B2MediaClient().uploadMedia(
-                        kind = MediaKind.AVATAR,
-                        ownerId = myUid,
-                        bytes = bytes,
-                        contentType = "image/jpeg",
-                        extension = "jpg"
-                    )
-                    channelAvatarKey = key
-                } catch (e: Exception) {
-                    Toast.makeText(context, context.getString(R.string.error_avatar_upload_failed), Toast.LENGTH_SHORT).show()
-                } finally {
-                    isUploadingAvatar = false
+    avatarToEdit?.let { source ->
+        ImageCropEditorDialog(
+            sourceUri = source,
+            aspect = ImageEditAspect.SQUARE,
+            onDismiss = { avatarToEdit = null },
+            onApply = { edited ->
+                avatarToEdit = null
+                coroutineScope.launch {
+                    isUploadingAvatar = true
+                    try {
+                        val bytes = ImageCompressor.compressAvatar(context, edited)
+                        val myUid = chatVM.myUid ?: ""
+                        val key = B2MediaClient().uploadMedia(
+                            kind = MediaKind.AVATAR,
+                            ownerId = myUid,
+                            bytes = bytes,
+                            contentType = "image/jpeg",
+                            extension = "jpg"
+                        )
+                        channelAvatarKey = key
+                    } catch (e: Exception) {
+                        Toast.makeText(context, context.getString(R.string.error_avatar_upload_failed), Toast.LENGTH_SHORT).show()
+                    } finally {
+                        cleanupEditedImage(context, edited)
+                        isUploadingAvatar = false
+                    }
                 }
             }
-        }
+        )
     }
 
 

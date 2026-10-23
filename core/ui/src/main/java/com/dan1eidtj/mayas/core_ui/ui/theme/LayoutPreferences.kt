@@ -1,3 +1,4 @@
+/* Copyright (C) 2026 dan1eIDT */
 package com.dan1eidtj.mayas.core.ui.theme
 
 import android.content.Context
@@ -13,6 +14,10 @@ object LayoutPreferences {
     private const val KEY_HOME_COMPACT_LIST = "home_compact_list"
     private const val KEY_HOME_SHOW_SEARCH_FIELD = "home_show_search_field"
     private const val KEY_HOME_SHOW_ADD_FRIEND = "home_show_add_friend"
+    private const val KEY_HOME_SHOW_STORIES = "home_show_stories"
+    private const val KEY_HOME_COMPACT_BOTTOM_BAR = "home_compact_bottom_bar"
+    private const val KEY_HOME_SHOW_BOTTOM_BAR_STATUS = "home_show_bottom_bar_status"
+    private const val KEY_HOME_SHOW_BOTTOM_BAR_NOTIFICATIONS = "home_show_bottom_bar_notifications"
 
     private const val KEY_SIDEBAR_PROFILE_POSITION = "sidebar_profile_position"
     private const val KEY_SIDEBAR_ICON_POSITION = "sidebar_icon_position"
@@ -24,6 +29,7 @@ object LayoutPreferences {
     private const val KEY_SIDEBAR_CUSTOM_LINKS = "sidebar_custom_links"
     private const val KEY_SIDEBAR_SHOW_PINNED_CHATS = "sidebar_show_pinned_chats"
     private const val KEY_SIDEBAR_PINNED_CHAT_IDS = "sidebar_pinned_chat_ids"
+    private const val KEY_SIDEBAR_HIDDEN_STANDARD_FOLDER_IDS = "sidebar_hidden_standard_folder_ids"
 
     private const val ITEMS_DELIMITER = "||"
     private const val LINK_FIELD_DELIMITER = "::"
@@ -49,7 +55,11 @@ object LayoutPreferences {
                 ?: defaults.avatarPosition,
             compactList = p.getBoolean(KEY_HOME_COMPACT_LIST, defaults.compactList),
             showSearchField = p.getBoolean(KEY_HOME_SHOW_SEARCH_FIELD, defaults.showSearchField),
-            showAddFriendButton = p.getBoolean(KEY_HOME_SHOW_ADD_FRIEND, defaults.showAddFriendButton)
+            showAddFriendButton = p.getBoolean(KEY_HOME_SHOW_ADD_FRIEND, defaults.showAddFriendButton),
+            showStories = p.getBoolean(KEY_HOME_SHOW_STORIES, defaults.showStories),
+            compactBottomBar = p.getBoolean(KEY_HOME_COMPACT_BOTTOM_BAR, defaults.compactBottomBar),
+            showBottomBarStatus = p.getBoolean(KEY_HOME_SHOW_BOTTOM_BAR_STATUS, defaults.showBottomBarStatus),
+            showBottomBarNotifications = p.getBoolean(KEY_HOME_SHOW_BOTTOM_BAR_NOTIFICATIONS, defaults.showBottomBarNotifications)
         )
     }
 
@@ -62,6 +72,10 @@ object LayoutPreferences {
             .putBoolean(KEY_HOME_COMPACT_LIST, prefs.compactList)
             .putBoolean(KEY_HOME_SHOW_SEARCH_FIELD, prefs.showSearchField)
             .putBoolean(KEY_HOME_SHOW_ADD_FRIEND, prefs.showAddFriendButton)
+            .putBoolean(KEY_HOME_SHOW_STORIES, prefs.showStories)
+            .putBoolean(KEY_HOME_COMPACT_BOTTOM_BAR, prefs.compactBottomBar)
+            .putBoolean(KEY_HOME_SHOW_BOTTOM_BAR_STATUS, prefs.showBottomBarStatus)
+            .putBoolean(KEY_HOME_SHOW_BOTTOM_BAR_NOTIFICATIONS, prefs.showBottomBarNotifications)
             .apply()
     }
 
@@ -105,7 +119,12 @@ object LayoutPreferences {
             pinnedChatIds = p.getString(KEY_SIDEBAR_PINNED_CHAT_IDS, null)
                 ?.split(ITEMS_DELIMITER)
                 ?.filter { it.isNotBlank() }
-                ?: defaults.pinnedChatIds
+                ?: defaults.pinnedChatIds,
+            hiddenStandardFolderIds = p.getString(KEY_SIDEBAR_HIDDEN_STANDARD_FOLDER_IDS, null)
+                ?.split(ITEMS_DELIMITER)
+                ?.filter { it.isNotBlank() }
+                ?.toSet()
+                ?: defaults.hiddenStandardFolderIds
         )
     }
 
@@ -126,6 +145,10 @@ object LayoutPreferences {
             )
             .putBoolean(KEY_SIDEBAR_SHOW_PINNED_CHATS, prefs.showPinnedChats)
             .putString(KEY_SIDEBAR_PINNED_CHAT_IDS, prefs.pinnedChatIds.joinToString(ITEMS_DELIMITER))
+            .putString(
+                KEY_SIDEBAR_HIDDEN_STANDARD_FOLDER_IDS,
+                prefs.hiddenStandardFolderIds.sorted().joinToString(ITEMS_DELIMITER)
+            )
             .apply()
     }
 }

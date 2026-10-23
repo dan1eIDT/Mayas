@@ -72,6 +72,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.dan1eidtj.chat.R
 import com.dan1eidtj.mayas.storage.MediaCachePrefs
+import com.dan1eidtj.mayas.storage.AutoDownloadType
 import com.dan1eidtj.mayas.storage.MediaFileCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -253,11 +254,11 @@ fun CircleVideoBubble(
             loading = true
             loadFailed = false
             blocked = false
-            val file = runCatching { MediaFileCache.obtain(context, mediaKey, auto = !manual) }.getOrNull()
+            val file = runCatching { MediaFileCache.obtain(context, mediaKey, auto = !manual, autoType = AutoDownloadType.VIDEO) }.getOrNull()
             loading = false
             when {
                 file != null -> localFile = file
-                !manual && MediaCachePrefs.autoDownloadBlocked(context) -> blocked = true
+                !manual && MediaCachePrefs.autoDownloadBlocked(context, AutoDownloadType.VIDEO) -> blocked = true
                 else -> loadFailed = true
             }
         }

@@ -46,26 +46,30 @@ fun B2Image(
     contentDescription: String? = null,
     contentScale: ContentScale = ContentScale.Fit,
     mediaClient: B2MediaClient = remember { B2MediaClient() },
+    autoDownloadType: AutoDownloadType? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    var model by remember(key) { mutableStateOf(MediaFileCache.cachedModel(context, key)) }
+    var model by remember(key) { mutableStateOf(MediaFileCache.cachedModel(context, key).takeUnless { key?.startsWith("http") == true }) }
     var error by remember(key) { mutableStateOf(false) }
     var attempt by remember(key) { mutableStateOf(0) }
     var manual by remember(key) { mutableStateOf(false) }
     var blocked by remember(key) { mutableStateOf(false) }
 
-    LaunchedEffect(key, attempt, manual) {
+    LaunchedEffect(key, attempt, manual, autoDownloadType) {
         if (key.isNullOrBlank() || model != null) return@LaunchedEffect
         error = false
         blocked = false
-        var resolved = runCatching { MediaFileCache.resolveModel(context, key, auto = !manual) }.getOrNull()
-        if (resolved == null && !manual && MediaCachePrefs.autoDownloadBlocked(context)) {
+        val automatic = !manual && autoDownloadType != null
+        var resolved = runCatching {
+            MediaFileCache.resolveModel(context, key, auto = automatic, autoType = autoDownloadType)
+        }.getOrNull()
+        if (resolved == null && automatic && MediaCachePrefs.autoDownloadBlocked(context, autoDownloadType)) {
             blocked = true
             return@LaunchedEffect
         }
         if (resolved == null) {
             delay(1500)
-            resolved = runCatching { MediaFileCache.resolveModel(context, key, auto = !manual) }.getOrNull()
+            resolved = runCatching { MediaFileCache.resolveModel(context, key, auto = automatic, autoType = autoDownloadType) }.getOrNull()
         }
         if (resolved == null) error = true else model = resolved
     }

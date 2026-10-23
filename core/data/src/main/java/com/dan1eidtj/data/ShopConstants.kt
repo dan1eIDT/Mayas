@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 ProjectIDT */
+/* Copyright (C) 2026 dan1eIDT */
 package com.dan1eidtj.data
 
 import androidx.compose.ui.graphics.Color
@@ -8,6 +8,9 @@ import kotlin.random.Random
 import androidx.core.graphics.toColorInt
 
 object ShopConstants {
+    const val AD_WATCH_DAILY_LIMIT = 25
+    const val AD_REWARD_COINS = 250
+
     val BUBBLE_STYLES = listOf(
         ShopItem("neon", "Неоновый", ItemType.BUBBLE, 150),
         ShopItem("gold", "Золотой", ItemType.BUBBLE, 300),
@@ -39,6 +42,7 @@ object ShopConstants {
         ShopItem("onyx", "Оникс", ItemType.BUBBLE, 200, description = "Чёрный с белоснежным текстом"),
         ShopItem("shadow", "Тень", ItemType.BUBBLE, 280, description = "Чёрный с фиолетовым текстом"),
         ShopItem("abyss", "Пучина", ItemType.BUBBLE, 280, description = "Чёрный с ледяным голубым текстом"),
+        ShopItem("hologram", "Голограмма", ItemType.BUBBLE, 420, description = "Полупрозрачный градиент с RGB-сдвигом по краю", isNew = true),
     )
 
     val EMOJI_STATUSES = listOf(
@@ -62,6 +66,8 @@ object ShopConstants {
 
         "🦄" to 350, "🐉" to 500,
         "🏆" to 800,
+
+        "🛰️" to 45, "🕹️" to 60,
 
         "👑" to 5000,
         "✨" to 7500,
@@ -88,6 +94,11 @@ object ShopConstants {
         ShopItem("serif", "Классический", ItemType.FONT, 140),
         ShopItem("mono", "Кодовый", ItemType.FONT, 160, description = "Моноширинный, как в терминале"),
         ShopItem("cursive", "Рукописный", ItemType.FONT, 180, isNew = true)
+    )
+
+    val ANIMATION_STYLES = listOf(
+        ShopItem("default", "Стандартная", ItemType.ANIMATION, 0),
+        ShopItem("plasma", "Плазма", ItemType.ANIMATION, 180, icon = "⚡", description = "Пружинистое, более медленное появление сообщения", isNew = true)
     )
 
     val EFFECT_STYLES = listOf(
@@ -130,6 +141,7 @@ object ShopConstants {
         "onyx" -> Color(0xFFE8E8E8)
         "shadow" -> Color(0xFF9B6DFF)
         "abyss" -> Color(0xFF5AC8FA)
+        "hologram" -> Color(0xFF7FF9E8)
         "custom_frame" -> Color(0xFF39FF6A)
         else -> Color.Gray
     }
@@ -165,6 +177,7 @@ object ShopConstants {
         "onyx" -> listOf(Color(0xFF0A0A0A), Color(0xFF161616))
         "shadow" -> listOf(Color(0xFF0A0A0A), Color(0xFF150A1F))
         "abyss" -> listOf(Color(0xFF0A0A0A), Color(0xFF081620))
+        "hologram" -> listOf(Color(0xFF7B2FF7), Color(0xFF00C6FF), Color(0xFF7FF9E8))
         "custom_frame" -> listOf(Color(0xFF000000), Color(0xFF39FF6A))
         else -> listOf(getStyleColor(id), getStyleColor(id))
     }
@@ -192,6 +205,7 @@ object ShopConstants {
         "onyx" -> Color(0xFFFFFFFF)
         "shadow" -> Color(0xFFB794FF)
         "abyss" -> Color(0xFF5AC8FA)
+        "hologram" -> Color(0xFF0A1A18)
         else -> Color.White
     }
 
@@ -263,7 +277,7 @@ object ShopConstants {
 }
 
 fun ShopConstants.fallbackItems(): List<ShopItem> =
-    BUBBLE_STYLES + ALL_STATUSES + FONT_STYLES + EFFECT_STYLES
+    BUBBLE_STYLES + ALL_STATUSES + FONT_STYLES + ANIMATION_STYLES + EFFECT_STYLES
 
 fun ShopConstants.colorFor(item: ShopItem): Color =
     item.colorHex?.let { runCatching { Color(it.toColorInt()) }.getOrNull() }

@@ -37,12 +37,17 @@
     <string name="all_chats">Все чаты</string>
     <string name="pinned_chats">Закрепленные</string>
     <string name="groups">Группы</string>
+    <string name="copy_post_link">Скопировать ссылку на публикацию</string>
+    <string name="post_link_copied">Ссылка на публикацию скопирована</string>
     <string name="share_message">Поделиться сообщением</string>
     <string name="error_send_photo">Не удалось отправить фото</string>
     <string name="error_compress_image">Не удалось сжать изображение</string>
     <string name="error_process_image">Не удалось обработать изображение</string>
     <string name="clear_chat">Очистить чат</string>
     <string name="search_in_chat">Поиск в чате...</string>
+    <string name="search_no_results">Нет результатов</string>
+    <string name="previous_search_result">Предыдущий результат</string>
+    <string name="next_search_result">Следующий результат</string>
     <string name="only_admins_can_post">Только администраторы канала могут публиковать сообщения</string>
     <string name="block_user">Заблокировать</string>
     <string name="report">Пожаловаться</string>
@@ -52,9 +57,9 @@
     <string name="photo_message">📷 Фотография</string>
     <string name="voice_message">🎤 Голосовое сообщение</string>
     <string name="album_message">🖼 Альбом</string>
-    <string name="circle_video_message">⭕ Видеосообщение</string>
+    <string name="circle_video_message">Видеосообщение</string>
     <string name="username_clicked">\@%1$s кликнут</string>
-    <string name="hashtag_clicked">\#%1$s кликнут</string>
+    <string name="hashtag_clicked">#%1$s кликнут</string>
     <string name="text_copied">Текст скопирован</string>
     <string name="message_pinned">Сообщение закреплено</string>
     <string name="forwarded_to_saved">Переслано в Избранное</string>
@@ -82,6 +87,9 @@
     <string name="block_user_confirm_title">Заблокировать пользователя?</string>
     <string name="block_user_confirm_desc">Вы больше не будете получать сообщения от этого пользователя.</string>
     <string name="user_blocked">Пользователь заблокирован</string>
+    <string name="message_send_blocked">Отправка невозможна: один из пользователей заблокировал другого</string>
+    <string name="message_send_failed">Не удалось отправить сообщение. Попробуйте ещё раз</string>
+    <string name="block_action_failed">Не удалось изменить блокировку. Попробуйте ещё раз</string>
     <string name="choose_chat_theme">Выберите тему чата</string>
     <string name="theme_locked_desc">Эта тема доступна только в Mayas+</string>
 
@@ -130,6 +138,13 @@
     <string name="group_fallback_name">Группа</string>
 
     <!-- ChatScreen -->
+    <string name="mesh_transport_button">Переключить передачу через Mesh</string>
+    <string name="mesh_transport_status">Mesh · стандартное оформление</string>
+    <string name="mesh_transport_disabled">Обычная отправка Mayas включена</string>
+    <string name="mesh_transport_warning">Сообщения Mesh отправляются напрямую подключённому устройству, без эффектов и оформления. Сквозного шифрования нет, личность устройства криптографически не подтверждается.</string>
+    <string name="mesh_transport_text_only">Через Mesh доступны только обычные текстовые сообщения без расписания, медиа и эффектов.</string>
+    <string name="mesh_transport_unavailable">Собеседник больше не подключён к Mesh. Сообщение не отправлено.</string>
+    <string name="message_transport_mesh">Mesh</string>
     <string name="chat_role_owner">владелец</string>
     <string name="chat_role_admin">админ</string>
     <string name="scheduled_indicator">Запланировано</string>
@@ -165,7 +180,7 @@
     <string name="hour_abbrev">Ч</string>
     <string name="minute_abbrev">М</string>
     <string name="schedule_action">Запланировать</string>
-    <string name="circle_video_preview_format">⭕ Видеосообщение (%1$d сек.)</string>
+    <string name="circle_video_preview_format">" Видеосообщение (%1$d сек.)"</string>
     <string name="error_send_media">Не удалось отправить. Проверьте подключение к интернету</string>
     <string name="error_load_media">Не удалось загрузить файл. Проверьте подключение к интернету</string>
     <string name="circle_close">Закрыть</string>
@@ -204,7 +219,8 @@
     <string name="circle_bubble_play">Воспроизвести видеосообщение</string>
     <string name="circle_bubble_pause">Пауза</string>
     <string name="circle_bubble_retry">Повторить загрузку видеосообщения</string>
-    <string name="reactions_limit_premium">Приобретите Mayas+, чтобы добавлять больше реакций!</string>
+    <string name="reaction_action_failed">Не удалось изменить реакцию. Попробуйте ещё раз.</string>
+    <string name="reactions_limit_premium">Приобретите NotMayas+, чтобы добавлять больше реакций!</string>
     <string name="reactions_more">Больше реакций</string>
     <string name="reactions_less">Свернуть реакции</string>
     <string name="reaction_chip_description">Реакция %1$s, поставили: %2$d</string>
@@ -231,4 +247,80 @@
     <string name="reactors_you">Вы</string>
     <string name="reaction_push_text">поставил(а) реакцию %1$s на ваше сообщение</string>
     <string name="circle_bubble_muted">Без звука. Нажмите, чтобы включить звук</string>
-</resources>
+    <string name="story_my">Моя история</string>
+    <string name="story_reply_label">История</string>
+    <string name="story_reply_sent">Ответ отправлен</string>
+    <string name="story_media_failed">Грузим..</string>
+    <string name="story_close">Закрыть</string>
+    <string name="story_delete_title">Удалить историю</string>
+    <string name="story_delete_message">История исчезнет у всех зрителей.</string>
+    <string name="story_delete_confirm">Удалить</string>
+    <string name="story_viewers_count">Просмотры: %1$d</string>
+    <string name="story_viewers_title">Просмотры</string>
+    <string name="story_no_viewers">Пока никто не посмотрел</string>
+    <string name="story_reply_hint">Ответить…</string>
+    <string name="story_send">Отправить</string>
+    <string name="story_react">Реакция</string>
+    <string name="story_time_now">только что</string>
+    <string name="story_time_minutes">%1$d мин. назад</string>
+    <string name="story_time_hours">%1$d ч. назад</string>
+    <string name="story_create_title">Новая история</string>
+    <string name="story_option_photo">Снять фото</string>
+    <string name="story_option_video">Снять видео</string>
+    <string name="story_option_gallery">Выбрать из галереи</string>
+    <string name="story_caption_hint">Добавьте подпись…</string>
+    <string name="story_privacy_title">Кто увидит</string>
+    <string name="story_privacy_all">Все</string>
+    <string name="story_privacy_contacts">Контакты</string>
+    <string name="story_privacy_selected">Выбранные</string>
+    <string name="story_no_contacts">Пока нет контактов для выбора</string>
+    <string name="story_ring_color">Цвет рамки историй</string>
+    <string name="story_publish">Опубликовать</string>
+    <string name="story_video_too_long">Видео длиннее 60 секунд</string>
+    <string name="story_publish_failed">Не удалось опубликовать историю</string>
+    <string name="story_reply_failed">Не удалось отправить ответ. Возможно, отправка ограничена блокировкой.</string>
+    <string name="story_duration_title">Сколько хранить историю</string>
+    <string name="story_duration_1">1 день</string>
+    <string name="story_duration_2">2 дня</string>
+    <string name="story_duration_3">3 дня</string>
+    <string name="story_duration_7">7 дней</string>
+    <string name="message_transport_mesh_unverified">Mesh · старая запись, личность не подтверждена</string>
+
+    <!-- Mesh -->
+    <string name="mesh_peer_nearby">Контакт рядом по Mesh. Если нет интернета, сообщения уйдут напрямую через Mesh</string>
+    <string name="mesh_info_title">Сообщение по Mesh</string>
+    <string name="mesh_info_close">Закрыть</string>
+    <string name="mesh_info_transport">Канал</string>
+    <string name="mesh_info_transport_value">Mesh, без интернета</string>
+    <string name="mesh_info_hops">Прыжков</string>
+    <string name="mesh_info_route">Маршрут</string>
+    <string name="mesh_info_route_direct">Напрямую между устройствами</string>
+    <string name="mesh_info_route_relayed">Через промежуточных устройств: %1$d</string>
+    <string name="mesh_info_direction">Направление</string>
+    <string name="mesh_info_outgoing">Исходящее</string>
+    <string name="mesh_info_incoming">Входящее</string>
+    <string name="mesh_info_from">От</string>
+    <string name="mesh_info_to">Кому (Mesh ID)</string>
+    <string name="mesh_info_identity">Устройство</string>
+    <string name="mesh_info_identity_ok">Подтверждено подписью</string>
+    <string name="mesh_info_identity_no">Не подтверждено</string>
+    <string name="mesh_info_status">Статус</string>
+    <string name="mesh_info_status_sent">Отправлено, ждём подтверждение</string>
+    <string name="mesh_info_status_delivered">Доставлено</string>
+    <string name="mesh_info_status_failed">Не доставлено</string>
+    <string name="mesh_info_sent_at">Отправлено</string>
+    <string name="mesh_info_received_at">Получено</string>
+    <string name="mesh_info_delivered_at">Подтверждено</string>
+    <string name="mesh_info_attempts">Попыток отправки</string>
+    <string name="mesh_info_id">ID сообщения</string>
+
+
+
+
+
+
+
+    </resources>
+
+
+

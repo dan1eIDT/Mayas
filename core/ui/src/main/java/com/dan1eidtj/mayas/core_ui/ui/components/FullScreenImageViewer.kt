@@ -32,6 +32,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.isSpecified
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -40,6 +42,8 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntSize
+import kotlin.math.max
+import kotlin.math.min
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -69,6 +73,31 @@ fun FullScreenImageViewer(
         var isDragging by remember(imageUrl) { mutableStateOf(false) }
         var reloadKey by remember(imageUrl) { mutableIntStateOf(0) }
         var containerSize by remember { mutableStateOf(IntSize.Zero) }
+        var imageIntrinsicSize by remember(imageUrl) { mutableStateOf(Size.Unspecified) }
+
+        fun maxPanForScale(targetScale: Float): Offset {
+            val width = containerSize.width.toFloat()
+            val height = containerSize.height.toFloat()
+            if (width <= 0f || height <= 0f) return Offset.Zero
+            if (!imageIntrinsicSize.isSpecified || imageIntrinsicSize.width <= 0f || imageIntrinsicSize.height <= 0f) {
+                return Offset(width * (targetScale - 1f) / 2f, height * (targetScale - 1f) / 2f)
+            }
+            val fitScale = min(width / imageIntrinsicSize.width, height / imageIntrinsicSize.height)
+            val renderedWidth = imageIntrinsicSize.width * fitScale * targetScale
+            val renderedHeight = imageIntrinsicSize.height * fitScale * targetScale
+            return Offset(
+                max(0f, (renderedWidth - width) / 2f),
+                max(0f, (renderedHeight - height) / 2f)
+            )
+        }
+
+        fun clampPan(candidate: Offset, targetScale: Float): Offset {
+            val limit = maxPanForScale(targetScale)
+            return Offset(
+                candidate.x.coerceIn(-limit.x, limit.x),
+                candidate.y.coerceIn(-limit.y, limit.y)
+            )
+        }
 
         val dismissThresholdPx = with(density) { 100.dp.toPx() }
         val dragProgress = (kotlin.math.abs(dragY) / dismissThresholdPx).coerceIn(0f, 1f)
@@ -104,31 +133,26 @@ fun FullScreenImageViewer(
                                         (centerX - tapPos.x) * (newScale - 1f),
                                         (centerY - tapPos.y) * (newScale - 1f)
                                     )
-                                    val maxX = containerSize.width * (newScale - 1f) / 2f
-                                    val maxY = containerSize.height * (newScale - 1f) / 2f
-                                    panOffset = Offset(
-                                        rawOffset.x.coerceIn(-maxX, maxX),
-                                        rawOffset.y.coerceIn(-maxY, maxY)
-                                    )
+                                    panOffset = clampPan(rawOffset, newScale)
                                 }
                             },
                             onTap = { if (scale <= 1f) onDismiss() }
                         )
                     }
                     .pointerInput(Unit) {
-                        detectTransformGestures { _, pan, zoom, _ ->
-                            val newScale = (scale * zoom).coerceIn(1f, 5f)
-                            scale = newScale
-                            panOffset = if (newScale <= 1f) {
-                                Offset.Zero
+                        detectTransformGestures { centroid, pan, zoom, _ ->
+                            val previousScale = scale
+                            val newScale = (previousScale * zoom).coerceIn(1f, 5f)
+                            if (newScale <= 1f) {
+                                scale = 1f
+                                panOffset = Offset.Zero
                             } else {
-                                val maxX = containerSize.width * (newScale - 1f) / 2f
-                                val maxY = containerSize.height * (newScale - 1f) / 2f
-                                val candidate = panOffset + pan
-                                Offset(
-                                    candidate.x.coerceIn(-maxX, maxX),
-                                    candidate.y.coerceIn(-maxY, maxY)
-                                )
+                                val center = Offset(containerSize.width / 2f, containerSize.height / 2f)
+                                val focalPoint = centroid - center
+                                val scaleFactor = newScale / previousScale
+                                val scaledOffset = (panOffset - focalPoint) * scaleFactor + focalPoint + pan
+                                scale = newScale
+                                panOffset = clampPan(scaledOffset, newScale)
                             }
                         }
                     }
@@ -169,6 +193,9 @@ fun FullScreenImageViewer(
                     onState = { state ->
                         isLoading = state is AsyncImagePainter.State.Loading
                         isError = state is AsyncImagePainter.State.Error
+                        if (state is AsyncImagePainter.State.Success) {
+                            imageIntrinsicSize = state.painter.intrinsicSize
+                        }
                     }
                 )
 

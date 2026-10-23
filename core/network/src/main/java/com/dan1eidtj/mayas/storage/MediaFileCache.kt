@@ -32,12 +32,12 @@ object MediaFileCache {
         return if (file.isFile && file.length() > 0L) file else null
     }
 
-    suspend fun obtain(context: Context, key: String, auto: Boolean = false): File? {
+    suspend fun obtain(context: Context, key: String, auto: Boolean = false, autoType: AutoDownloadType? = null): File? {
         cachedFile(context, key)?.let {
             it.setLastModified(System.currentTimeMillis())
             return it
         }
-        if (auto && !key.startsWith("http") && MediaCachePrefs.autoDownloadBlocked(context)) return null
+        if (auto && MediaCachePrefs.autoDownloadBlocked(context, autoType)) return null
         val mutex = locks.getOrPut(key) { Mutex() }
         return mutex.withLock {
             cachedFile(context, key)?.let { return@withLock it }
@@ -59,11 +59,14 @@ object MediaFileCache {
         return android.net.Uri.fromFile(file).toString()
     }
 
-    suspend fun resolveModel(context: Context, keyOrUrl: String?, auto: Boolean = false): String? {
+    suspend fun resolveModel(context: Context, keyOrUrl: String?, auto: Boolean = false, autoType: AutoDownloadType? = null): String? {
         if (keyOrUrl.isNullOrBlank()) return null
-        if (keyOrUrl.startsWith("http")) return keyOrUrl
-        val file = obtain(context, keyOrUrl, auto)
-        if (file == null && auto && MediaCachePrefs.autoDownloadBlocked(context)) return null
+        if (keyOrUrl.startsWith("http")) {
+            if (auto && MediaCachePrefs.autoDownloadBlocked(context, autoType)) return null
+            return keyOrUrl
+        }
+        val file = obtain(context, keyOrUrl, auto, autoType)
+        if (file == null && auto && MediaCachePrefs.autoDownloadBlocked(context, autoType)) return null
         if (file != null) return android.net.Uri.fromFile(file).toString()
         return runCatching { B2MediaClient.resolveDownloadUrl(keyOrUrl) }.getOrNull()
     }

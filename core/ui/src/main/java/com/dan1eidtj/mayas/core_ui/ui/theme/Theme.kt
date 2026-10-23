@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
@@ -109,12 +110,30 @@ object MayasTheme {
 
     val FrameBlackHalo = Color.White.copy(alpha = 0.15f)
 
+    // Новые рамки. Первый и последний цвет совпадают, чтобы sweepGradient замыкался без шва.
+    val FrameSakura: List<Color>   = listOf(Color(0xFFFFD6E8), Color(0xFFFFFFFF), Color(0xFFFF9EC7), Color(0xFFFFFFFF), Color(0xFFFFD6E8))
+    val FrameLilac: List<Color>    = listOf(Color(0xFFFFFFFF), Color(0xFFC3A6FF), Color(0xFFFFFFFF))
+    val FrameMintPink: List<Color> = listOf(Color(0xFFA8F0C6), Color(0xFFFFB3D1), Color(0xFFA8F0C6))
+    val FrameCoffee: List<Color>   = listOf(Color(0xFFF3E3CF), Color(0xFF7A5238), Color(0xFFF3E3CF))
+    val FrameIce: List<Color>      = listOf(Color(0xFF9FD8FF), Color(0xFFFFFFFF), Color(0xFF9FD8FF))
+    val FramePinkRed: List<Color>  = listOf(Color(0xFFFFB6D0), Color(0xFFFF1744), Color(0xFFFFB6D0))
+
     val NicknameGold: List<Color> = listOf(Color(0xFFFFE57F), GlowGold, Color(0xFFB8860B))
     val NicknameRose: List<Color> = listOf(Color(0xFFFF8FAB), GlowRose, Color(0xFFB0003A))
     val NicknameAmber: List<Color> = listOf(Color(0xFFFFE082), GlowAmber, Color(0xFFC77800))
     val NicknameSky: List<Color> = listOf(Color(0xFF7FE0FF), GlowSky, Color(0xFF0066CC))
     val NicknameWhite: List<Color> = listOf(Color.White, Color(0xFFE0E0E0), Color(0xFFB0B0B0))
     val NicknameBlack: List<Color> = listOf(Color(0xFF4A4A4A), GlowBlack, Color(0xFF000000))
+
+    // --- Новые цвета ников (двойные градиенты) ---
+    val NicknameSoftPink: List<Color>    = listOf(Color(0xFFFFD6E8), Color(0xFFFF9EC7)) // нежно розовый
+    val NicknameWhitePink: List<Color>   = listOf(Color(0xFFFFFFFF), Color(0xFFFFB8D6)) // бело-розовый
+    val NicknameWhiteViolet: List<Color> = listOf(Color(0xFFFFFFFF), Color(0xFFC3A6FF)) // бело-фиолетовый
+    val NicknameMintPink: List<Color>    = listOf(Color(0xFFA8F0C6), Color(0xFFFFB3D1)) // нежно зелёный + нежно розовый
+    val NicknameBeigeCoffee: List<Color> = listOf(Color(0xFFF3E3CF), Color(0xFF7A5238)) // бежевый + кофейный
+    val NicknameMintYellow: List<Color>  = listOf(Color(0xFFB8F2C8), Color(0xFFFFF0A6)) // нежно зелёный + нежно жёлтый
+    val NicknameSkyWhite: List<Color>    = listOf(Color(0xFF9FD8FF), Color(0xFFFFFFFF)) // нежно голубой + белый
+    val NicknamePinkRed: List<Color>     = listOf(Color(0xFFFFB6D0), Color(0xFFFF1744)) // нежно розовый + ярко красный
 
     val NicknameSimpleGold = Color(0xFFFFD700)
     val NicknameSimpleCyan = Color(0xFF00F2FE)
@@ -152,6 +171,29 @@ object MayasTheme {
     )
 }
 
+
+data class NickStyle(val key: String, val colors: List<Color>)
+
+/**
+ * Реестр НОВЫХ градиентных цветов ника (доступны с Mayas+, как и остальные цвета в пикере).
+ * Рендер ника берёт кисть через [nickBrush]. Чтобы добавить цвет: значение в MayasTheme + строка здесь.
+ */
+val NicknameStyles: List<NickStyle> = listOf(
+    NickStyle("softpink",    MayasTheme.NicknameSoftPink),
+    NickStyle("whitepink",   MayasTheme.NicknameWhitePink),
+    NickStyle("whiteviolet", MayasTheme.NicknameWhiteViolet),
+    NickStyle("mintpink",    MayasTheme.NicknameMintPink),
+    NickStyle("beigecoffee", MayasTheme.NicknameBeigeCoffee),
+    NickStyle("mintyellow",  MayasTheme.NicknameMintYellow),
+    NickStyle("skywhite",    MayasTheme.NicknameSkyWhite),
+    NickStyle("pinkred",     MayasTheme.NicknamePinkRed),
+)
+
+fun nickStyle(key: String?): NickStyle? = NicknameStyles.firstOrNull { it.key == key }
+
+/** Кисть для ника по ключу или null, если ключ не из реестра. */
+fun nickBrush(key: String?): Brush? =
+    nickStyle(key)?.let { Brush.linearGradient(it.colors) }
 
 /**
  * Строит Material3 [ColorScheme] на основе активной [MayasColorScheme],

@@ -31,21 +31,28 @@ import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.storage.FirebaseStorage
 import com.dan1eidtj.mayas.core_ui.Screen
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import com.dan1eidtj.mayas.db.OfflineDataStore
+import com.dan1eidtj.mayas.storage.MediaCachePrefs
+import com.dan1eidtj.mayas.storage.AutoDownloadType
+import com.dan1eidtj.mayas.mesh.MeshManager
 import kotlinx.coroutines.tasks.await
 import com.dan1eidtj.data.buyShopItemViaBackend
+import com.dan1eidtj.data.refreshBalanceAndInventory
 import com.dan1eidtj.data.BuyItemResult
+import com.dan1eidtj.data.BackendApi
 
 class AuthVM(application: Application) : AndroidViewModel(application) {
 
     private val auth = FirebaseAuth.getInstance()
     val db: FirebaseFirestore = FirebaseFirestore.getInstance()
     private val sessionManager = SessionManager(application)
+    private val accountTokenStore = AccountTokenStore(application.applicationContext)
 
     var activeSessions by mutableStateOf<List<UserSession>>(emptyList())
         private set
 
-    /** Одна запись в списке "Активные сессии" — устройство, где залогинен этот аккаунт. */
+
     data class RemoteSession(
         val id: String,
         val deviceName: String,
@@ -120,7 +127,6 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         private set
 
     var userData by mutableStateOf<Map<String, String>>(emptyMap())
-        private set
 
     var appTheme by mutableStateOf("dark")
         private set
@@ -134,11 +140,44 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
     var premiumUntil by mutableStateOf<com.google.firebase.Timestamp?>(null)
         private set
 
+    private var premiumExpiryJob: kotlinx.coroutines.Job? = null
+
+    private fun applyPremium(flag: Boolean, until: com.google.firebase.Timestamp?) {
+        premiumExpiryJob?.cancel()
+        premiumExpiryJob = null
+        premiumUntil = until
+        val untilMillis = until?.toDate()?.time
+        val now = System.currentTimeMillis()
+        val active = flag && (untilMillis == null || untilMillis > now)
+        isPremium = active
+        if (active && untilMillis != null) {
+            premiumExpiryJob = viewModelScope.launch {
+                kotlinx.coroutines.delay((untilMillis - now).coerceAtMost(Int.MAX_VALUE.toLong()) + 500L)
+                if (premiumUntil?.toDate()?.time == untilMillis) isPremium = false
+            }
+        }
+    }
+
+    private fun resetPremium() {
+        premiumExpiryJob?.cancel()
+        premiumExpiryJob = null
+        isPremium = false
+        premiumUntil = null
+        ownedItems = emptyList()
+        isInvisible = false
+    }
+
     var isInvisible by mutableStateOf(false)
         private set
 
     var ownedItems by mutableStateOf<List<String>>(emptyList())
         private set
+
+    var purchasingItemIds by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    val isPurchaseInProgress: Boolean
+        get() = purchasingItemIds.isNotEmpty()
 
     var backStack by mutableStateOf(listOf<Screen>(Screen.Chats))
         private set
@@ -150,8 +189,8 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             }
         }
         user?.uid?.let { loadUserData(it) }
-        // Восстанавливаем трекинг сессии и для случая "юзер уже был залогинен
-        // при прошлом запуске" (Firebase Auth сам восстанавливает currentUser).
+
+
         user?.uid?.let { bindSessionTracking(it) }
 
         user?.let { u ->
@@ -249,12 +288,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         remoteSessions = emptyList()
     }
 
-    /**
-     * Завершить сессию из списка "Активные сессии". Если это сессия ТЕКУЩЕГО
-     * устройства — это просто обычный выход. Если чужая — удаляем её документ,
-     * а то устройство само себя разлогинит через свой selfSessionListener,
-     * как только увидит, что документ пропал (при следующем подключении к сети).
-     */
+
     fun endSession(sessionId: String) {
         val uid = auth.currentUser?.uid ?: return
         if (sessionId == myDeviceId) {
@@ -293,15 +327,29 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                     return@addSnapshotListener
                 }
                 if (snap?.exists() == true) {
+                    MeshManager.refreshIdentity()
+                    MeshManager.setBlockedUserIds(
+                        (snap.get("blocked") as? List<*>)?.filterIsInstance<String>()?.toSet() ?: emptySet()
+                    )
                     val data = snap.data?.mapValues { it.value?.toString() ?: "" } ?: emptyMap()
                     userData = data
+                    val legacyAutoDownloadEnabled = data["autoDownloadMedia"] != "false"
+                    MediaCachePrefs.setAutoDownloadEnabled(getApplication(), legacyAutoDownloadEnabled)
+                    AutoDownloadType.values().forEach { type ->
+                        val saved = data[type.userDataKey]
+                        MediaCachePrefs.setAutoDownloadEnabled(
+                            getApplication(), type, saved?.let { it != "false" } ?: legacyAutoDownloadEnabled
+                        )
+                    }
                     appTheme = data["theme"] ?: "dark"
                     fontSize = data["fontSize"]?.toFloatOrNull() ?: 16f
-                    isPremium = snap.getBoolean("isPremium") ?: false
-                    premiumUntil = snap.getTimestamp("premiumUntil")
+                    applyPremium(snap.getBoolean("isPremium") ?: false, snap.getTimestamp("premiumUntil"))
                     isInvisible = snap.getBoolean("isInvisible") ?: false
                     @Suppress("UNCHECKED_CAST")
                     ownedItems = snap.get("ownedItems") as? List<String> ?: emptyList()
+                } else {
+                    MeshManager.setBlockedUserIds(emptySet())
+                    resetPremium()
                 }
             }
     }
@@ -340,8 +388,38 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
 
     fun updateUserData(key: String, value: Any) {
         val uid = auth.currentUser?.uid ?: return
+        val stringValue = value.toString()
+        val isAutoDownloadSetting = key == "autoDownloadMedia" || AutoDownloadType.values().any { it.userDataKey == key }
+        val previousValue = userData[key]
+
+        userData = userData + (key to stringValue)
+        if (isAutoDownloadSetting) {
+            if (key == "autoDownloadMedia") {
+                MediaCachePrefs.setAutoDownloadEnabled(getApplication(), stringValue != "false")
+            } else {
+                AutoDownloadType.values().firstOrNull { it.userDataKey == key }?.let { type ->
+                    MediaCachePrefs.setAutoDownloadEnabled(getApplication(), type, stringValue != "false")
+                }
+            }
+        }
         db.collection("users").document(uid).update(key, value)
-            .addOnFailureListener { Log.e("AuthVM", "Failed to update $key", it) }
+            .addOnFailureListener { error ->
+                Log.e("AuthVM", "Failed to update $key", error)
+                if (userData[key] == stringValue) {
+                    userData = if (previousValue == null) userData - key else userData + (key to previousValue)
+                    if (isAutoDownloadSetting) {
+                        if (key == "autoDownloadMedia") {
+                            MediaCachePrefs.setAutoDownloadEnabled(getApplication(), previousValue != "false")
+                        } else {
+                            AutoDownloadType.values().firstOrNull { it.userDataKey == key }?.let { type ->
+                                val restoredEnabled = previousValue?.let { it != "false" }
+                                    ?: (userData["autoDownloadMedia"] != "false")
+                                MediaCachePrefs.setAutoDownloadEnabled(getApplication(), type, restoredEnabled)
+                            }
+                        }
+                    }
+                }
+            }
     }
     private fun mapAuthError(e: Exception): String {
         return when (e) {
@@ -471,8 +549,11 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         unbindSessionTracking()
         logoutSilently {
             auth.signOut()
+            MeshManager.refreshIdentity()
             user = null
             userData = emptyMap()
+            resetPremium()
+            MeshManager.setBlockedUserIds(emptySet())
             then()
         }
     }
@@ -531,7 +612,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             leaveCurrentAccount {
                 auth.signInWithEmailAndPassword(email, pass)
                     .addOnSuccessListener { result ->
-                        completeRegistration(result.user, email, name, username, onError)
+                        completeRegistration(result.user, email, pass, name, username, onError)
                     }
                     .addOnFailureListener { e ->
                         isLoading = false
@@ -549,6 +630,9 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                 user = loggedUser
                 val uid = loggedUser?.uid
                 if (uid != null) {
+                    // Keep a Keystore-encrypted local fallback so account switching does not
+                    // require the user to retype the password when the optional token API is down.
+                    accountTokenStore.putPassword(uid, pass)
                     loadUserData(uid)
                     bindSessionTracking(uid)
                     viewModelScope.launch {
@@ -576,6 +660,9 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
 
                         loggedUser.getIdToken(true).addOnCompleteListener {
                             showVerifyScreen = false
+                            // Token issuance is best-effort: normal Firebase login must keep working
+                            // even if the optional account-token backend is unavailable.
+                            saveAccountTokenForCurrentUser()
                             onSuccess()
                         }
                     } else {
@@ -604,7 +691,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         isLoading = true
         auth.createUserWithEmailAndPassword(email, pass)
             .addOnSuccessListener { result ->
-                completeRegistration(result.user, email, name, username, onError)
+                completeRegistration(result.user, email, pass, name, username, onError)
             }
             .addOnFailureListener { e ->
                 isLoading = false
@@ -615,6 +702,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
     private fun completeRegistration(
         u: FirebaseUser?,
         email: String,
+        pass: String,
         name: String,
         username: String,
         onError: (String) -> Unit
@@ -639,8 +727,14 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                     "theme" to "dark",
                     "description" to "",
                     "avatarUrl" to "",
+                    "bannerUrl" to "",
+                    "bannerStyle" to "none",
+                    "statusTagDisplayMode" to "BOTH",
                     "emojiStatus" to " ",
                     "emailVerified" to false,
+                    "createdAt" to com.google.firebase.Timestamp(
+                        java.util.Date(u.metadata?.creationTimestamp?.takeIf { it > 0L } ?: System.currentTimeMillis())
+                    ),
                     // Верификация и роль — явные дефолты для новых юзеров.
                     // Firestore rules всё равно требуют rank=0 и verification=false
                     // на create, это просто делает документ сразу читаемым без
@@ -649,35 +743,55 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                     "verification" to false
                 )
 
-                db.collection("users").document(u.uid).set(userMap)
-                    .addOnSuccessListener {
+                viewModelScope.launch {
+                    val cleanUsername = username.lowercase().trim()
+                    var mainUsernameClaimed = false
+                    var profileCreated = false
+                    try {
+                        // Сначала атомарно резервируем имя на сервере, затем создаём профиль.
+                        // Это синхронизирует регистрацию с резервированием дополнительных username.
+                        BackendApi.registerMainUsername(cleanUsername)
+                        mainUsernameClaimed = true
+                        db.collection("users").document(u.uid).set(userMap).await()
+                        profileCreated = true
+                        // Turns the short-lived PENDING_MAIN reservation into a permanent claim and
+                        // keeps the profile username in sync with the shared username registry.
+                        BackendApi.changeMainUsername(cleanUsername)
+
                         user = auth.currentUser
+                        accountTokenStore.putPassword(u.uid, pass)
                         loadUserData(u.uid)
                         bindSessionTracking(u.uid)
-                        viewModelScope.launch {
-                            sessionManager.saveSession(UserSession(
-                                uid = u.uid,
-                                email = email,
-                                name = name,
-                                avatarUrl = "",
-                                username = username.lowercase().trim(),
-                                createdAt = u.metadata?.creationTimestamp ?: System.currentTimeMillis()
-                            ))
-                        }
-
+                        sessionManager.saveSession(UserSession(
+                            uid = u.uid,
+                            email = email,
+                            name = name,
+                            avatarUrl = "",
+                            username = cleanUsername,
+                            createdAt = u.metadata?.creationTimestamp ?: System.currentTimeMillis()
+                        ))
 
                         u.sendEmailVerification()
                             .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось отправить письмо верификации", e) }
-
                         isLoading = false
                         showVerifyScreen = true
-
-
-                    }
-                    .addOnFailureListener { e ->
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        if (mainUsernameClaimed && !profileCreated) {
+                            runCatching { BackendApi.releaseMainUsernameClaim(cleanUsername) }
+                                .onFailure { releaseError -> Log.e("AuthVM", "Не удалось освободить резерв username после ошибки регистрации", releaseError) }
+                        }
                         isLoading = false
-                        onError(e.localizedMessage ?: "Ошибка сохранения профиля")
+                        val errorMessage = when (e.message?.substringBefore(' ')) {
+                            "USERNAME_TAKEN" -> "Этот username уже занят"
+                            "INVALID_USERNAME" -> "Username должен содержать 5–32 символа: латинские буквы, цифры и _"
+                            else -> e.localizedMessage ?: "Ошибка сохранения профиля"
+                        }
+                        Log.e("AuthVM", "Не удалось завершить регистрацию профиля", e)
+                        onError(errorMessage)
                     }
+                }
             } else {
                 isLoading = false
                 onError(task.exception?.localizedMessage ?: "Ошибка обновления профиля")
@@ -692,6 +806,17 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         // рекурсивно ещё раз вызовем logout().
         val uid = auth.currentUser?.uid
         val deviceId = myDeviceId
+        if (uid != null) {
+            val token = runCatching { accountTokenStore.get(uid) }.getOrNull()
+            // Remove the local secret immediately; server revocation is best-effort and may
+            // fail offline, but must never prevent logout.
+            accountTokenStore.remove(uid)
+            if (token != null && deviceId != null) {
+                viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    AccountTokenApi.revoke(uid, deviceId, token)
+                }
+            }
+        }
         unbindSessionTracking()
         if (uid != null && deviceId != null) {
             db.collection("users").document(uid)
@@ -707,8 +832,11 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                 }
             }
             auth.signOut()
+            MeshManager.refreshIdentity()
             user = null
             userData = emptyMap()
+            resetPremium()
+            MeshManager.setBlockedUserIds(emptySet())
             backStack = listOf(Screen.Chats)
         }
     }
@@ -726,27 +854,165 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         userDataListener?.remove()
         userDataListener = null
 
+        var completed = false
+        val finish = {
+            if (!completed) {
+                completed = true
+                onComplete()
+            }
+        }
+
         if (uid != null) {
+            val snapshotName = userData["name"] ?: auth.currentUser?.displayName ?: "User"
+            val snapshotAvatar = userData["avatarUrl"] ?: ""
+            val snapshotUsername = userData["username"]
+            val snapshotEmail = auth.currentUser?.email ?: ""
+            val snapshotCreatedAt = auth.currentUser?.metadata?.creationTimestamp ?: 0L
             viewModelScope.launch {
-                sessionManager.saveSession(UserSession(
-                    uid = uid,
-                    email = auth.currentUser?.email ?: "",
-                    name = userData["name"] ?: auth.currentUser?.displayName ?: "User",
-                    avatarUrl = userData["avatarUrl"] ?: "",
-                    username = userData["username"],
-                    createdAt = auth.currentUser?.metadata?.creationTimestamp ?: 0L
-                ))
+                runCatching {
+                    sessionManager.saveSession(UserSession(
+                        uid = uid,
+                        email = snapshotEmail,
+                        name = snapshotName,
+                        avatarUrl = snapshotAvatar,
+                        username = snapshotUsername,
+                        createdAt = snapshotCreatedAt
+                    ))
+                }.onFailure { Log.e("AuthVM", "Не удалось сохранить сессию", it) }
 
                 db.collection("users").document(uid).update(mapOf(
                     "isOnline" to false,
                     "lastSeen" to FieldValue.serverTimestamp()
-                )).addOnCompleteListener {
-                    onComplete()
-                }
+                )).addOnCompleteListener { finish() }
+
+                kotlinx.coroutines.delay(3000)
+                finish()
             }
         } else {
-            onComplete()
+            finish()
         }
+    }
+
+    private fun saveAccountTokenForCurrentUser() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val current = auth.currentUser ?: return@launch
+            val deviceId = runCatching { sessionManager.getOrCreateDeviceId() }.getOrNull() ?: return@launch
+            val token = AccountTokenApi.issue(deviceId) ?: return@launch
+            accountTokenStore.put(current.uid, token)
+        }
+    }
+
+
+    fun switchAccountByToken(
+        targetUid: String,
+        onPasswordRequired: () -> Unit,
+        onError: (String) -> Unit = {},
+        onSuccess: () -> Unit
+    ) {
+        if (targetUid == auth.currentUser?.uid) {
+            onSuccess()
+            return
+        }
+        isLoading = true
+        viewModelScope.launch {
+            val deviceId = try {
+                sessionManager.getOrCreateDeviceId()
+            } catch (e: Exception) {
+                isLoading = false
+                onError(e.localizedMessage ?: "Не удалось определить устройство")
+                return@launch
+            }
+            val token = runCatching { accountTokenStore.get(targetUid) }.getOrNull()
+            if (token.isNullOrBlank()) {
+                switchUsingSavedPassword(targetUid, onPasswordRequired, onError, onSuccess)
+                return@launch
+            }
+            when (val exchange = AccountTokenApi.exchange(targetUid, deviceId, token)) {
+                is AccountTokenApi.ExchangeResult.Invalid -> {
+                    accountTokenStore.removeToken(targetUid)
+                    switchUsingSavedPassword(targetUid, onPasswordRequired, onError, onSuccess)
+                }
+                AccountTokenApi.ExchangeResult.Unavailable -> {
+                    // Token API may be unreachable in some networks; use the locally encrypted
+                    // credential fallback before showing a password dialog.
+                    switchUsingSavedPassword(targetUid, onPasswordRequired, onError, onSuccess)
+                }
+                is AccountTokenApi.ExchangeResult.Ok -> {
+                    val session = activeSessions.firstOrNull { it.uid == targetUid }
+                    if (session == null) {
+                        accountTokenStore.removeToken(targetUid)
+                        isLoading = false
+                        onError("Сохранённый аккаунт не найден. Добавь его заново.")
+                        return@launch
+                    }
+                    leaveCurrentAccount {
+                        viewModelScope.launch {
+                            try {
+                                val result = auth.signInWithCustomToken(exchange.customToken).await()
+                                val signedIn = result.user
+                                if (signedIn == null || signedIn.uid != targetUid) {
+                                    auth.signOut()
+                                    accountTokenStore.removeToken(targetUid)
+                                    user = null
+                                    isLoading = false
+                                    switchUsingSavedPassword(targetUid, onPasswordRequired, onError, onSuccess)
+                                    return@launch
+                                }
+                                accountTokenStore.put(targetUid, exchange.newToken)
+                                user = signedIn
+                                showVerifyScreen = !signedIn.isEmailVerified
+                                loadUserData(targetUid)
+                                bindSessionTracking(targetUid)
+                                sessionManager.saveSession(session)
+                                MeshManager.refreshIdentity()
+                                isLoading = false
+                                if (showVerifyScreen) {
+                                    onError("Для этого аккаунта нужно подтвердить почту.")
+                                } else {
+                                    onSuccess()
+                                }
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Log.w("AuthVM", "Быстрое переключение по токену не удалось", e)
+                                accountTokenStore.removeToken(targetUid)
+                                auth.signOut()
+                                user = null
+                                isLoading = false
+                                switchUsingSavedPassword(targetUid, onPasswordRequired, onError, onSuccess)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun switchUsingSavedPassword(
+        targetUid: String,
+        onPasswordRequired: () -> Unit,
+        onError: (String) -> Unit,
+        onSuccess: () -> Unit
+    ) {
+        val session = activeSessions.firstOrNull { it.uid == targetUid }
+        if (session == null) {
+            isLoading = false
+            onError("Сохранённый аккаунт не найден. Добавь его заново.")
+            return
+        }
+        val savedPassword = runCatching { accountTokenStore.getPassword(targetUid) }.getOrNull()
+        if (savedPassword.isNullOrBlank()) {
+            isLoading = false
+            onPasswordRequired()
+            return
+        }
+        isLoading = false
+        switchAccount(
+            targetEmail = session.email,
+            targetPass = savedPassword,
+            onError = onError,
+            onSuccess = onSuccess
+        )
     }
 
     fun switchAccount(
@@ -811,7 +1077,17 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
     }
 
     fun removeSession(uid: String) {
-        viewModelScope.launch { sessionManager.removeSession(uid) }
+        viewModelScope.launch {
+            val token = runCatching { accountTokenStore.get(uid) }.getOrNull()
+            val deviceId = runCatching { sessionManager.getOrCreateDeviceId() }.getOrNull()
+            accountTokenStore.remove(uid)
+            sessionManager.removeSession(uid)
+            if (token != null && deviceId != null) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    AccountTokenApi.revoke(uid, deviceId, token)
+                }
+            }
+        }
     }
 
     fun sendPasswordReset(onComplete: (String?) -> Unit) {
@@ -823,8 +1099,17 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateEmail(password: String, newEmail: String, onComplete: (String?) -> Unit) {
-        val user = auth.currentUser ?: return
-        val credential = EmailAuthProvider.getCredential(user.email!!, password)
+        val user = auth.currentUser
+        if (user == null) {
+            onComplete(getApplication<Application>().getString(R.string.error_reauthentication_required))
+            return
+        }
+        val email = user.email?.takeIf { it.isNotBlank() }
+        if (email == null) {
+            onComplete(getApplication<Application>().getString(R.string.error_reauthentication_email_missing))
+            return
+        }
+        val credential = EmailAuthProvider.getCredential(email, password)
 
         user.reauthenticate(credential).addOnCompleteListener { reauthTask ->
             if (reauthTask.isSuccessful) {
@@ -843,8 +1128,17 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
     }
 
     fun updatePassword(oldPass: String, newPass: String, onComplete: (String?) -> Unit) {
-        val user = auth.currentUser ?: return
-        val credential = EmailAuthProvider.getCredential(user.email!!, oldPass)
+        val user = auth.currentUser
+        if (user == null) {
+            onComplete(getApplication<Application>().getString(R.string.error_reauthentication_required))
+            return
+        }
+        val email = user.email?.takeIf { it.isNotBlank() }
+        if (email == null) {
+            onComplete(getApplication<Application>().getString(R.string.error_reauthentication_email_missing))
+            return
+        }
+        val credential = EmailAuthProvider.getCredential(email, oldPass)
 
         user.reauthenticate(credential).addOnCompleteListener { reauthTask ->
             if (reauthTask.isSuccessful) {
@@ -878,10 +1172,11 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         val clean = username.lowercase().trim()
         var userDone = false
         var channelDone = false
+        var claimDone = false
         var isTaken = false
 
         fun finish() {
-            if (userDone && channelDone) onResult(!isTaken)
+            if (userDone && channelDone && claimDone) onResult(!isTaken)
         }
 
         db.collection("users")
@@ -893,7 +1188,26 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                 userDone = true
                 finish()
             }
-            .addOnFailureListener { userDone = true; finish() }
+            .addOnFailureListener { e ->
+                Log.e("AuthVM", "Не удалось проверить занятость username в users", e)
+                isTaken = true
+                userDone = true
+                finish()
+            }
+
+        db.collection("usernameClaims").document(clean).get()
+            .addOnSuccessListener { snap ->
+                if (snap.exists()) isTaken = true
+                claimDone = true
+                finish()
+            }
+            .addOnFailureListener { e ->
+                Log.e("AuthVM", "Не удалось проверить username claim", e)
+                // При недоступности реестра нельзя считать имя свободным.
+                isTaken = true
+                claimDone = true
+                finish()
+            }
 
         db.collection("chats")
             .whereEqualTo("username", clean)
@@ -904,7 +1218,12 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                 channelDone = true
                 finish()
             }
-            .addOnFailureListener { channelDone = true; finish() }
+            .addOnFailureListener { e ->
+                Log.e("AuthVM", "Не удалось проверить занятость username в chats", e)
+                isTaken = true
+                channelDone = true
+                finish()
+            }
     }
 
     fun handleAuthAction(onSuccess: () -> Unit) {
@@ -916,8 +1235,8 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
 
         if (!isLoginMode) {
             if (nameInput.isEmpty()) { authError = "Введите имя"; return }
-            if (usernameInput.isEmpty() || usernameInput.contains(" ")) {
-                authError = "Юзернейм без пробелов"; return
+            if (!usernameInput.matches(Regex("^[a-zA-Z0-9_]{5,32}$"))) {
+                authError = "Username должен содержать 5–32 символа: латинские буквы, цифры и _"; return
             }
 
             checkUsername(usernameInput) { isAvailable ->
@@ -944,6 +1263,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
     ) {
         isLoading = true
         val query = input.trim().lowercase()
+        val usernameQuery = query.removePrefix("@")
 
         viewModelScope.launch {
             try {
@@ -953,14 +1273,27 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
 
                 if (snap.isEmpty) {
                     snap = db.collection("users")
-                        .whereEqualTo("username", query)
+                        .whereEqualTo("username", usernameQuery)
                         .limit(1).get().await()
                 }
 
-                if (!snap.isEmpty) {
-                    val targetUid = snap.documents[0].id
-                    val chatId = Screen.getChatId(myUid, targetUid)
-                    onStart(chatId)
+                var targetUid = snap.documents.firstOrNull()?.id
+                if (targetUid == null && usernameQuery.matches(Regex("^[a-z0-9_]{5,32}$"))) {
+                    val claim = db.collection("usernameClaims").document(usernameQuery).get().await()
+                    val claimKind = claim.getString("kind")
+                    if (claimKind in setOf("MAIN", "ADDITIONAL")) {
+                        val claimedUid = claim.getString("uid")?.takeIf { it.isNotBlank() }
+                        targetUid = if (claimedUid != null && db.collection("users").document(claimedUid).get().await().exists()) {
+                            claimedUid
+                        } else {
+                            null
+                        }
+                    }
+                }
+
+                val resolvedUid = targetUid?.takeIf { it.isNotBlank() }
+                if (resolvedUid != null && resolvedUid != myUid) {
+                    onStart(Screen.getChatId(myUid, resolvedUid))
                 } else {
                     onError("Пользователь не найден")
                 }
@@ -1009,19 +1342,33 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                     data["uid"] = doc.id
                     onResult(data)
                 } else {
-                    onResult(null)
+                    db.collection("usernameClaims").document(username.lowercase().trim()).get()
+                        .addOnSuccessListener { claim ->
+                            val claimedUid = claim.getString("uid")
+                            val kind = claim.getString("kind")
+                            if (claimedUid.isNullOrBlank() || kind !in setOf("MAIN", "ADDITIONAL")) {
+                                onResult(null)
+                            } else {
+                                db.collection("users").document(claimedUid).get()
+                                    .addOnSuccessListener { userDoc ->
+                                        if (!userDoc.exists()) {
+                                            onResult(null)
+                                        } else {
+                                            val data = userDoc.data?.toMutableMap() ?: mutableMapOf()
+                                            data["uid"] = userDoc.id
+                                            onResult(data)
+                                        }
+                                    }
+                                    .addOnFailureListener { onResult(null) }
+                            }
+                        }
+                        .addOnFailureListener { onResult(null) }
                 }
             }
             .addOnFailureListener { onResult(null) }
     }
 
-    /**
-     * Ищет пользователя по номеру телефона через phoneIndex/{номер} — это точечный
-     * get() по известному ID документа, а не listing/query по полю. Firestore-правила
-     * различают get и list: get на phoneIndex разрешён, а list по этой коллекции
-     * запрещён навсегда (см. firestore.rules) — так что массово слить все номера
-     * через клиент физически нельзя, а точечный поиск "у кого такой-то номер" работает.
-     */
+
     fun resolveUserByPhone(phone: String, onResult: (Map<String, Any?>?) -> Unit) {
         val normalized = PhoneUtils.normalize(phone)
         if (normalized == null) { onResult(null); return }
@@ -1043,12 +1390,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             .addOnFailureListener { onResult(null) }
     }
 
-    /**
-     * Читает СВОЙ собственный номер из приватной подколлекции users/{uid}/private/contact.
-     * Эта подколлекция читается только владельцем (см. firestore.rules) — даже другой
-     * авторизованный юзер получит permission-denied, если попробует её запросить напрямую.
-     * Используется, например, чтобы подставить текущий номер в поле редактирования профиля.
-     */
+
     fun getMyPhone(onResult: (String) -> Unit) {
         val uid = auth.currentUser?.uid ?: run { onResult(""); return }
         db.collection("users").document(uid).collection("private").document("contact").get()
@@ -1056,17 +1398,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             .addOnFailureListener { onResult("") }
     }
 
-    /**
-     * Сохраняет номер телефона текущего юзера.
-     * Номер НЕ пишется в users/{uid} (этот документ читают все signed-in юзеры) —
-     * вместо этого:
-     *  1) кладётся в приватную users/{uid}/private/contact, которую видит только сам юзер;
-     *  2) кладётся в phoneIndex/{номер} = {uid} — это единственный способ найти юзера
-     *     по номеру, и он доступен только через точечный get(), не через list().
-     * Пустая строка отвязывает номер: удаляются оба документа.
-     * Если юзер меняет номер на другой — старая запись в phoneIndex подчищается,
-     * чтобы по старому номеру его больше нельзя было найти.
-     */
+
     fun updatePhoneNumber(rawPhone: String, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
         val uid = auth.currentUser?.uid ?: return
         val trimmed = rawPhone.trim()
@@ -1128,7 +1460,9 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
 
         ref.putFile(uri)
             .continueWithTask { task ->
-                if (!task.isSuccessful) throw task.exception!!
+                if (!task.isSuccessful) {
+                    throw task.exception ?: IllegalStateException("Загрузка аватара завершилась без ошибки SDK")
+                }
                 ref.downloadUrl
             }
             .addOnSuccessListener { downloadUri ->
@@ -1146,17 +1480,55 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             }
     }
 
+    @Suppress("UNUSED_PARAMETER")
     fun buyItem(id: String, price: Int, onSuccess: () -> Unit, onError: (String) -> Unit) {
-        if (auth.currentUser?.uid == null) return
+        if (auth.currentUser?.uid == null) {
+            onError("Не авторизован")
+            return
+        }
+        if (id.isBlank()) {
+            onError("Некорректный идентификатор товара")
+            return
+        }
+        if (id in purchasingItemIds) return
 
+        purchasingItemIds = purchasingItemIds + id
         viewModelScope.launch {
-            when (val result = buyShopItemViaBackend(id)) {
-                is BuyItemResult.Success -> onSuccess()
-                BuyItemResult.LowBalance -> onError("Недостаточно монет!")
-                BuyItemResult.AlreadyOwned -> onError("Уже куплено")
-                BuyItemResult.ItemNotFound -> onError("Товар не найден")
-                BuyItemResult.OutOfSeason -> onError("Товар сейчас недоступен")
-                is BuyItemResult.Error -> onError(result.message)
+            try {
+                when (val result = buyShopItemViaBackend(id)) {
+                    is BuyItemResult.Success -> {
+                        // Reflect the authoritative backend result immediately; the Firestore
+                        // listener will subsequently reconcile the profile snapshot.
+                        userData = userData + ("balance" to result.newBalance.toString())
+                        if (result.itemId !in ownedItems) ownedItems = ownedItems + result.itemId
+                        onSuccess()
+                    }
+                    BuyItemResult.LowBalance -> onError("Недостаточно монет!")
+                    BuyItemResult.AlreadyOwned -> onError("Уже куплено")
+                    BuyItemResult.ItemNotFound -> onError("Товар не найден")
+                    BuyItemResult.OutOfSeason -> onError("Товар сейчас недоступен")
+                    is BuyItemResult.Error -> {
+                        if (!result.outcomeUnknown) {
+                            onError(result.message)
+                        } else {
+                            val fresh = refreshBalanceAndInventory()
+                            if (fresh == null) {
+                                onError("Не удалось подтвердить покупку. Проверь баланс и инвентарь, прежде чем пробовать снова.")
+                            } else {
+                                fresh.balance?.let { userData = userData + ("balance" to it.toString()) }
+                                ownedItems = fresh.ownedItems
+                                if (id in fresh.ownedItems) onSuccess() else onError(result.message)
+                            }
+                        }
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("AuthVM", "Ошибка покупки товара $id", e)
+                onError(e.localizedMessage?.takeIf { it.isNotBlank() } ?: "Не удалось выполнить покупку. Проверь подключение и попробуй ещё раз.")
+            } finally {
+                purchasingItemIds = purchasingItemIds - id
             }
         }
     }
@@ -1172,10 +1544,26 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             com.dan1eidtj.data.ItemType.EFFECT -> "effectId"
         }
 
-
-
-        val value: Any = if (id == "default" || id == "none") FieldValue.delete() else id
-        db.collection("users").document(uid).update(field, value)
+        viewModelScope.launch {
+            try {
+                val userRef = db.collection("users").document(uid)
+                db.runTransaction { transaction ->
+                    val snapshot = transaction.get(userRef)
+                    @Suppress("UNCHECKED_CAST")
+                    val inventory = snapshot.get("ownedItems") as? List<Any?> ?: emptyList()
+                    // Validate against the latest document inside the same transaction
+                    // that updates the equipped field, not a potentially stale Compose state.
+                    if (id != "default" && id != "none" && id !in inventory) {
+                        throw IllegalStateException("ITEM_NOT_OWNED")
+                    }
+                    val value: Any = if (id == "default" || id == "none") FieldValue.delete() else id
+                    transaction.update(userRef, field, value)
+                    true
+                }.await()
+            } catch (e: Exception) {
+                Log.e("AuthVM", "Не удалось применить предмет $id", e)
+            }
+        }
     }
 
     fun getFcmToken() {

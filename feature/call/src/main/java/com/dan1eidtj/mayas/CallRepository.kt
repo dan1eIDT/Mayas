@@ -84,6 +84,9 @@ class FirestoreCallRepository(
         receiverId: String,
         type: CallType
     ): Result<CallSession> = runCatching {
+        require(callerId.isNotBlank() && receiverId.isNotBlank() && callerId != receiverId) {
+            "Некорректные идентификаторы участников звонка"
+        }
         val callId = UUID.randomUUID().toString()
         val session = CallSession(
             callId = callId,
@@ -93,9 +96,23 @@ class FirestoreCallRepository(
             type = type,
             createdAt = System.currentTimeMillis()
         )
-        callsCollection.document(callId)
-            .set(session.toFirestoreMap())
-            .await()
+        val callRef = callsCollection.document(callId)
+        val callerRef = firestore.collection("users").document(callerId)
+        val receiverRef = firestore.collection("users").document(receiverId)
+
+        val allowed = firestore.runTransaction { transaction ->
+            val callerProfile = transaction.get(callerRef)
+            val receiverProfile = transaction.get(receiverRef)
+            val callerBlocked = (callerProfile.get("blocked") as? List<*>)?.contains(receiverId) == true
+            val receiverBlocked = (receiverProfile.get("blocked") as? List<*>)?.contains(callerId) == true
+            if (callerBlocked || receiverBlocked) {
+                return@runTransaction false
+            }
+            transaction.set(callRef, session.toFirestoreMap())
+            true
+        }.await()
+
+        if (!allowed) throw IllegalStateException("CALL_BLOCKED")
         session
     }
 

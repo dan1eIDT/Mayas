@@ -29,6 +29,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.dan1eidtj.mayas.settings.R
 import com.dan1eidtj.mayas.core.ui.theme.ThemeConverter.hexToColor
 import com.dan1eidtj.mayas.core.ui.theme.ThemeConverter.toHexArgb
 import kotlin.math.roundToInt
@@ -80,17 +82,17 @@ fun ColorPickerDialog(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                LabeledSlider("Оттенок", hue, 0f, 360f) { hue = it }
-                LabeledSlider("Насыщенность", saturation, 0f, 1f) { saturation = it }
-                LabeledSlider("Яркость", value, 0f, 1f) { value = it }
-                LabeledSlider("Прозрачность", alpha, 0f, 1f) { alpha = it }
+                LabeledSlider(stringResource(R.string.hue_label), hue, 0f, 360f) { hue = it }
+                LabeledSlider(stringResource(R.string.saturation_label), saturation, 0f, 1f) { saturation = it }
+                LabeledSlider(stringResource(R.string.brightness_label), value, 0f, 1f) { value = it }
+                LabeledSlider(stringResource(R.string.opacity_label), alpha, 0f, 1f) { alpha = it }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 TextField(
                     value = hexInput,
                     onValueChange = { hexInput = it },
-                    label = { Text("HEX (#AARRGGBB)") },
+                    label = { Text(stringResource(R.string.hex_field_label)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -102,15 +104,15 @@ fun ColorPickerDialog(
                         alpha = parsed.alpha
                     }
                 }) {
-                    Text("Применить HEX")
+                    Text(stringResource(R.string.apply_hex))
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(currentColor) }) { Text("Готово") }
+            TextButton(onClick = { onConfirm(currentColor) }) { Text(stringResource(R.string.done_action)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            TextButton(onClick = onDismiss) { Text(stringResource(com.dan1eidtj.mayas.ui.R.string.cancel)) }
         }
     )
 }

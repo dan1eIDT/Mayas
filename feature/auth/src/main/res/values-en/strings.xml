@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- AuthScreen -->
+    <string name="welcome_back">Welcome back!</string>
+    <string name="create_account">Create a new account</string>
+    <string name="username_no_at">Username (no @)</string>
+    <string name="password">Password</string>
+    <string name="name_label">Name</string>
+    <string name="hide_password">Hide password</string>
+    <string name="show_password">Show password</string>
+    <string name="forgot_password">Forgot password?</string>
+    <string name="login">Log in</string>
+    <string name="register">Sign up</string>
+    <string name="app_name_caps">MAYAS</string>
+
+    <!-- Auth: account / password reset flow -->
+    <string name="email_label">Email</string>
+    <string name="no_account_create">No account? Create one</string>
+    <string name="already_have_account">Already have one? Log in</string>
+    <string name="password_reset">Password reset</string>
+    <string name="reset_password_desc">Enter the email address to receive a password reset link.</string>
+    <string name="reset_email_sent">Password reset email sent to %1$s</string>
+
+    <!-- AuthVM errors -->
+    <string name="error_invalid_email">Invalid email format</string>
+    <string name="error_wrong_credentials">Wrong email or password</string>
+    <string name="error_user_not_found">No user found with this email</string>
+    <string name="error_user_disabled">This account has been disabled</string>
+    <string name="error_account_not_found">Account not found</string>
+    <string name="error_email_in_use">This email is already in use</string>
+    <string name="error_weak_password">Password is too weak, try another one</string>
+    <string name="error_too_many_requests">Too many attempts. Try again later</string>
+    <string name="error_no_internet">No internet connection</string>
+    <string name="error_unknown">Something went wrong. Please try again</string>
+    <string name="error_enter_email">Enter your email!</string>
+    <string name="error_user_not_created">User was not created</string>
+    <string name="error_profile_save_failed">Failed to save profile</string>
+    <string name="error_profile_update_failed">Failed to update profile</string>
+    <string name="error_password_min_length">Password must be at least 6 characters</string>
+    <string name="error_enter_name">Enter your name</string>
+    <string name="error_username_no_spaces">Username can\'t contain spaces</string>
+    <string name="error_username_taken_at">Username @%1$s is already taken!</string>
+    <string name="error_search_failed">Search failed: %1$s</string>
+    <string name="error_insufficient_balance">Not enough coins!</string>
+    <string name="error_db_failed">Database error</string>
+    <string name="error_upload_failed">Upload failed</string>
+    <string name="error_delete_reauth">Delete failed. This action may require you to sign in again.</string>
+    <string name="error_wrong_old_password">Wrong old password</string>
+    <string name="error_update_email_failed">Failed to update email</string>
+    <string name="error_update_password_failed">Failed to update password</string>
+    <string name="error_wrong_password">Wrong password</string>
+
+    <!-- AuthVM: new, kept distinct from the similarly worded errors above -->
+    <string name="error_invalid_email_short">Invalid email</string>
+    <string name="error_generic_short">Error</string>
+    <string name="error_user_search_not_found">User not found</string>
+    <string name="unknown_device">Unknown device</string>
+    <string name="error_phone_check_failed">Failed to verify phone number</string>
+    <string name="error_phone_save_failed">Failed to save phone number</string>
+    <string name="error_phone_read_failed">Failed to read current phone number</string>
+    <string name="verify_email_link_sent">Email sent to %1$s</string>
+    <string name="error_phone_invalid">That number doesn\'t look valid</string>
+    <string name="error_email_not_verified">Your email isn\'t verified yet. Check your inbox (and spam folder)</string>
+    <string name="error_phone_already_linked">This number is already linked to another account</string>
+
+    <!-- AuthScreen -->
+    <string name="app_title_mixed_case">Mayas</string>
+    <string name="tos_prefix">I\'ve read the </string>
+    <string name="tos_link_text">Mayas Terms of Service</string>
+    <string name="age_consent_notice">By continuing, you confirm that you have a legal guardian\'s consent to use the app, or that you are already 14 years old.</string>
+    <string name="verify_email_screen_title">Verify your email</string>
+    <string name="verify_email_instruction">We sent an email to %1$s. Follow the link in the email, then tap \"I\'ve verified\".</string>
+    <string name="verify_email_fallback">your email</string>
+    <string name="i_confirmed_button">I\'ve verified</string>
+    <string name="resend_email_button">Resend email</string>
+    <string name="logout_from_account_button">Log out of account</string>
+    <string name="auth_return_to_account">Back to account %1$s</string>
+    <string name="auth_same_account">This account is already open</string>
+    <string name="auth_account_limit_reached">Account limit reached. Remove one to add another</string>
+    <string name="error_reauthentication_required">Please sign in to your account again</string>
+    <string name="error_reauthentication_email_missing">This account has no email for reauthentication</string>
+</resources>

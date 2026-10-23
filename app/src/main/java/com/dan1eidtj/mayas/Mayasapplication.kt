@@ -51,6 +51,8 @@ class MayasApplication : MultiDexApplication(), CallManagerProvider {
         installFirestorePermissionDeniedSafetyNet()
         super.onCreate()
         EmojiStyleState.ensureInit(this)
+        com.dan1eidtj.data.plugins.PluginManager.init(this)
+        com.dan1eidtj.mayas.mesh.MeshManager.init(this)
         configureOfflineCache()
         com.dan1eidtj.mayas.feature.OutboxManager.start(this)
         Thread {
@@ -61,7 +63,6 @@ class MayasApplication : MultiDexApplication(), CallManagerProvider {
                 Log.w("MayasApplication", "Не удалось очистить устаревшие временные файлы", e)
             }
         }.start()
-        ShopRepository.startListening()
         observeAppForegroundState()
         observeOutgoingCallsToStartService()
     }

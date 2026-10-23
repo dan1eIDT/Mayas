@@ -44,8 +44,8 @@ class CallManager(
     private var remoteDescriptionSet = false
     private val pendingRemoteCandidates = mutableListOf<IceCandidateData>()
 
-    // Отслеживаем, успел ли этот звонок дойти до CONNECTED — если нет и мы на стороне
-    // RECEIVER, значит звонок пропущен, и надо записать уведомление
+
+
     private var wasConnectedThisCall = false
     private var missedCallLogged = false
 
@@ -132,6 +132,12 @@ class CallManager(
                         managerScope.launch { callRepository.deleteCall(session.callId) }
                         return@collect
                     }
+                    if (!canCommunicateWith(session.callerId, reportError = false)) {
+                        Log.i("CallManager", "Входящий звонок ${session.callId} отброшен из-за блокировки")
+                        callRepository.updateCallState(session.callId, CallState.REJECTED)
+                        callRepository.deleteCall(session.callId)
+                        return@collect
+                    }
                     _activeCall.value = session
                     _callState.value = CallState.INCOMING
                     currentRole = CallParticipantRole.RECEIVER
@@ -151,6 +157,7 @@ class CallManager(
 
     fun startOutgoingCall(receiverId: String, type: CallType) {
         managerScope.launch {
+            if (!canCommunicateWith(receiverId, reportError = true)) return@launch
             val result = callRepository.createOutgoingCall(
                 callerId = currentUserIdProvider(),
                 receiverId = receiverId,
@@ -189,10 +196,37 @@ class CallManager(
                 attachToCall(session.callId)
             }.onFailure { error ->
                 Log.e("CallManager", "startOutgoingCall failed1", error)
+                if (error.message == "CALL_BLOCKED") {
+                    showError("Звонок недоступен: один из пользователей заблокировал другого.")
+                }
                 callFeedbackController.stop()
                 _callState.value = CallState.ENDED
                 _activeCall.value = null
             }
+        }
+    }
+
+    private suspend fun canCommunicateWith(peerUid: String, reportError: Boolean): Boolean {
+        val currentUid = currentUserIdProvider()
+        if (currentUid.isBlank() || peerUid.isBlank() || currentUid == peerUid) {
+            if (reportError) showError("Не удалось начать звонок: некорректный собеседник.")
+            return false
+        }
+        return try {
+            val currentProfile = db.collection("users").document(currentUid).get().await()
+            val peerProfile = db.collection("users").document(peerUid).get().await()
+            val blockedByMe = (currentProfile.get("blocked") as? List<*>)?.contains(peerUid) == true
+            val blockedMe = (peerProfile.get("blocked") as? List<*>)?.contains(currentUid) == true
+            if (blockedByMe || blockedMe) {
+                if (reportError) showError("Звонок недоступен: один из пользователей заблокировал другого.")
+                false
+            } else {
+                true
+            }
+        } catch (error: Exception) {
+            Log.e("CallManager", "Не удалось проверить блокировку перед звонком", error)
+            if (reportError) showError("Не удалось проверить блокировку. Повторите попытку.")
+            false
         }
     }
 
@@ -374,14 +408,7 @@ class CallManager(
         }
     }
 
-    /**
-     * Записывает "пропущенный звонок" в notifications получателя, если этот звонок
-     * ни разу не дошёл до CONNECTED и текущий пользователь был на приёме (RECEIVER).
-     * Защищено флагом missedCallLogged от повторной записи одного и того же звонка.
-     *
-     * ВАЖНО: используются поля session.callerId и session.receiverId — если в твоём
-     * CallSession они называются иначе, поправь тут под реальную схему.
-     */
+
     private fun tryLogMissedCall(session: CallSession) {
         if (missedCallLogged) return
         if (currentRole != CallParticipantRole.RECEIVER) return

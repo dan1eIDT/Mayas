@@ -7,4 +7,6 @@ import androidx.compose.runtime.setValue
 object SharedContentManager {
     var sharedText by mutableStateOf<String?>(null)
     var pendingInviteCode by mutableStateOf<String?>(null)
+    var pendingChatId by mutableStateOf<String?>(null)
+    var pendingMessageId by mutableStateOf<String?>(null)
 }

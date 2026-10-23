@@ -66,14 +66,7 @@ import kotlinx.coroutines.launch
 
 private enum class ContactsSyncState { IDLE, NO_PERMISSION, LOADING, DONE, ERROR }
 
-/**
- * Экран "Найти контакты в Маяс": запрашивает READ_CONTACTS, читает адресную
- * книгу устройства, матчит номера с зарегистрированными юзерами через
- * ContactsRepository и даёт сразу открыть с ними чат.
- *
- * Номера самих контактов на сервер не отправляются — сравнение идёт батчами
- * нормализованных номеров через whereIn, а не выгрузкой всей книги целиком.
- */
+
 @Composable
 fun ContactsSyncScreen(
     myUid: String,

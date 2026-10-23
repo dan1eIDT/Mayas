@@ -5,11 +5,17 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 
+enum class AutoDownloadType(val userDataKey: String, val preferenceKey: String) {
+    PHOTO("autoDownloadPhotos", "auto_download_photos"),
+    VIDEO("autoDownloadVideos", "auto_download_videos"),
+}
+
 object MediaCachePrefs {
     private const val FILE = "mayas_media_cache_prefs"
     private const val KEY_MAX_BYTES = "max_bytes"
     private const val KEY_KEEP_DAYS = "keep_days"
     private const val KEY_WIFI_ONLY = "wifi_only"
+    private const val KEY_AUTO_DOWNLOAD_ENABLED = "auto_download_enabled"
 
     private const val GB = 1024L * 1024L * 1024L
 
@@ -36,6 +42,26 @@ object MediaCachePrefs {
 
     fun wifiOnly(context: Context): Boolean = prefs(context).getBoolean(KEY_WIFI_ONLY, false)
 
+    fun autoDownloadEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AUTO_DOWNLOAD_ENABLED, true)
+
+    fun setAutoDownloadEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUTO_DOWNLOAD_ENABLED, enabled).apply()
+    }
+
+    fun autoDownloadEnabled(context: Context, type: AutoDownloadType): Boolean {
+        val preferences = prefs(context)
+        return if (preferences.contains(type.preferenceKey)) {
+            preferences.getBoolean(type.preferenceKey, true)
+        } else {
+            autoDownloadEnabled(context)
+        }
+    }
+
+    fun setAutoDownloadEnabled(context: Context, type: AutoDownloadType, enabled: Boolean) {
+        prefs(context).edit().putBoolean(type.preferenceKey, enabled).apply()
+    }
+
     fun setWifiOnly(context: Context, value: Boolean) {
         prefs(context).edit().putBoolean(KEY_WIFI_ONLY, value).apply()
     }
@@ -46,5 +72,8 @@ object MediaCachePrefs {
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
     }
 
-    fun autoDownloadBlocked(context: Context): Boolean = wifiOnly(context) && !isUnmetered(context)
+    fun autoDownloadBlocked(context: Context, type: AutoDownloadType? = null): Boolean {
+        val enabled = if (type == null) autoDownloadEnabled(context) else autoDownloadEnabled(context, type)
+        return !enabled || (wifiOnly(context) && !isUnmetered(context))
+    }
 }

@@ -2,6 +2,8 @@
 package com.dan1eidtj.mayas.settings
 
 import android.widget.Toast
+import android.app.Activity
+import android.content.ContextWrapper
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -33,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.dan1eidtj.data.UserSession
+import com.dan1eidtj.data.readBooleanPreference
 import com.dan1eidtj.data.AdminConfig
 import com.dan1eidtj.data.cache.AppCacheManager
 import com.dan1eidtj.data.cache.CacheBreakdown
@@ -40,6 +43,7 @@ import com.dan1eidtj.mayas.core_ui.emoji.EmojiGlyphStyled
 import com.dan1eidtj.mayas.core_ui.emoji.EmojiStyle
 import com.dan1eidtj.mayas.core_ui.emoji.EmojiStyleState
 import com.dan1eidtj.mayas.storage.MediaCachePrefs
+import com.dan1eidtj.mayas.storage.AutoDownloadType
 import com.dan1eidtj.mayas.storage.MediaFileCache
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,6 +57,13 @@ import androidx.compose.foundation.horizontalScroll
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.mayas.feature.auth.AuthVM
 import com.google.firebase.auth.FirebaseAuth
+import com.dan1eidtj.data.ChatMuteActions
+import com.dan1eidtj.data.MuteState
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -67,12 +78,17 @@ fun SettingsScreen(
     onNavigateToCredits: () -> Unit,
     onNavigateToAuth: () -> Unit,
     onNavigateToCustomization: () -> Unit,
+    onNavigateToPlugins: () -> Unit = {},
+    onNavigateToMesh: () -> Unit = {},
+    onNavigateToSteam: () -> Unit = {},
     onNavigateToThemes: () -> Unit,
     onNavigateToAdminShop: () -> Unit,
     onNavigateToShop: () -> Unit = {},
     onNavigateToHomeScreenLayout: () -> Unit = {},
     onNavigateToSidebarLayout: () -> Unit = {},
-    onNavigateToNotificationSettings: () -> Unit = {}
+    onNavigateToNotificationSettings: () -> Unit = {},
+    seasonalEffectsEnabled: Boolean = false,
+    onSeasonalEffectsEnabledChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
@@ -95,6 +111,36 @@ fun SettingsScreen(
     var switchPassword by remember { mutableStateOf("") }
     var switchError by remember { mutableStateOf<String?>(null) }
     var showStorage by remember { mutableStateOf(false) }
+    val accountSwitchTargetMissingText = stringResource(R.string.account_switch_target_missing)
+
+    // Массовое отключение уведомлений (состояние — в users/{uid}, см. MuteState).
+    // Отдельный лёгкий слушатель: ChatListViewModel здесь не создаём, он поднял бы все слушатели чатов.
+    val muteUid = remember { FirebaseAuth.getInstance().currentUser?.uid }
+    var muteState by remember { mutableStateOf(MuteState()) }
+    DisposableEffect(muteUid) {
+        val registration = muteUid?.let { uid ->
+            vm.db.collection("users").document(uid).addSnapshotListener { doc, _ ->
+                if (doc != null) muteState = MuteState.from(doc)
+            }
+        }
+        onDispose { registration?.remove() }
+    }
+    val muteScope = rememberCoroutineScope()
+    val massMuteNotSyncedText = stringResource(R.string.settings_mass_mute_not_synced)
+    val setMassMute: (Boolean) -> Unit = { enable ->
+        val uid = muteUid
+        if (uid != null) {
+            muteScope.launch {
+                val ok = if (enable) {
+                    ChatMuteActions.enableMassMuteFromServer(uid)
+                } else {
+                    ChatMuteActions.disableMassMute(uid)
+                    true
+                }
+                if (!ok) Toast.makeText(context, massMuteNotSyncedText, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     if (showPasswordDialog && accountToSwitch != null) {
         AlertDialog(
@@ -126,17 +172,21 @@ fun SettingsScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        vm.switchAccount(
-                            accountToSwitch!!.email,
-                            switchPassword,
-                            onError = { switchError = it }
-                        ) {
-                            showPasswordDialog = false
-                            switchPassword = ""
-                            onBack()
+                        val account = accountToSwitch
+                        if (account == null) {
+                            switchError = accountSwitchTargetMissingText
+                        } else {
+                            vm.switchAccount(
+                                account.email,
+                                switchPassword,
+                                onError = { switchError = it }
+                            ) {
+                                showPasswordDialog = false
+                                switchPassword = ""
+                            }
                         }
                     },
-                    enabled = switchPassword.isNotBlank() && !vm.isLoading,
+                    enabled = accountToSwitch != null && switchPassword.isNotBlank() && !vm.isLoading,
                     colors = ButtonDefaults.buttonColors(containerColor = MayasTheme.Accent)
                 ) {
                     if (vm.isLoading) CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
@@ -165,7 +215,22 @@ fun SettingsScreen(
                 if (session.uid != vm.user?.uid) {
                     accountToSwitch = session
                     showAccountSheet = false
-                    showPasswordDialog = true
+                    vm.switchAccountByToken(
+                        targetUid = session.uid,
+                        onPasswordRequired = {
+                            switchPassword = ""
+                            switchError = null
+                            showPasswordDialog = true
+                        },
+                        onError = { message ->
+                            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                        },
+                        onSuccess = {
+                            showPasswordDialog = false
+                            switchPassword = ""
+                            switchError = null
+                        }
+                    )
                 }
             },
             onDeleteSession = { uid ->
@@ -269,8 +334,32 @@ fun SettingsScreen(
                         iconBackground = MayasTheme.GlowPink,
                         title = stringResource(R.string.settings_customization_title),
                         subtitle = stringResource(R.string.settings_customization_subtitle),
-                        showDivider = false,
+                        showDivider = true,
                         onClick = onNavigateToCustomization
+                    )
+                    SettingsRow(
+                        icon = Icons.Default.Extension,
+                        iconBackground = MayasTheme.GlowPurple,
+                        title = stringResource(R.string.plugins_title),
+                        subtitle = stringResource(R.string.plugins_subtitle),
+                        showDivider = true,
+                        onClick = onNavigateToPlugins
+                    )
+                    SettingsRow(
+                        icon = Icons.Default.Wifi,
+                        iconBackground = Color(0xFFFFC107),
+                        title = stringResource(R.string.mesh_title),
+                        subtitle = stringResource(R.string.mesh_subtitle),
+                        showDivider = true,
+                        onClick = onNavigateToMesh
+                    )
+                    SettingsRow(
+                        icon = Icons.Default.SportsEsports,
+                        iconBackground = Color(0xFF1B2838),
+                        title = stringResource(R.string.steam_title),
+                        subtitle = stringResource(R.string.steam_subtitle),
+                        showDivider = false,
+                        onClick = onNavigateToSteam
                     )
                     SettingsRow(
                         icon = Icons.Default.Palette,
@@ -290,7 +379,9 @@ fun SettingsScreen(
                     SettingsExpandable(showInterfaceSettings) {
                         InterfaceSettingsSubSection(
                             onNavigateToHomeScreenLayout = onNavigateToHomeScreenLayout,
-                            onNavigateToSidebarLayout = onNavigateToSidebarLayout
+                            onNavigateToSidebarLayout = onNavigateToSidebarLayout,
+                            seasonalEffectsEnabled = seasonalEffectsEnabled,
+                            onSeasonalEffectsEnabledChange = onSeasonalEffectsEnabledChange
                         )
                     }
                     if (AdminConfig.isAdmin(FirebaseAuth.getInstance().currentUser?.uid)) {
@@ -344,6 +435,40 @@ fun SettingsScreen(
                         title = stringResource(R.string.settings_notifications_title),
                         subtitle = stringResource(R.string.settings_notifications_subtitle),
                         onClick = onNavigateToNotificationSettings
+                    )
+                    SettingsRow(
+                        icon = Icons.Default.NotificationsOff,
+                        iconBackground = MayasTheme.GlowPurple,
+                        title = stringResource(R.string.settings_mass_mute_title),
+                        subtitle = stringResource(R.string.settings_mass_mute_subtitle),
+                        onClick = { setMassMute(!muteState.massActive) },
+                        showChevron = false,
+                        trailing = {
+                            Switch(
+                                checked = muteState.massActive,
+                                onCheckedChange = { setMassMute(it) },
+                                colors = SwitchDefaults.colors(checkedThumbColor = MayasTheme.GlowPurple)
+                            )
+                        }
+                    )
+                    SettingsRow(
+                        icon = Icons.Default.AddComment,
+                        iconBackground = MayasTheme.GlowPurple,
+                        title = stringResource(R.string.settings_mass_mute_new_title),
+                        subtitle = stringResource(R.string.settings_mass_mute_new_subtitle),
+                        onClick = {
+                            muteUid?.let { ChatMuteActions.setMuteNewChatsInMassMode(it, !muteState.includeNew) }
+                        },
+                        showChevron = false,
+                        trailing = {
+                            Switch(
+                                checked = muteState.includeNew,
+                                onCheckedChange = { checked ->
+                                    muteUid?.let { ChatMuteActions.setMuteNewChatsInMassMode(it, checked) }
+                                },
+                                colors = SwitchDefaults.colors(checkedThumbColor = MayasTheme.GlowPurple)
+                            )
+                        }
                     )
                 }
                 Spacer(Modifier.height(20.dp))
@@ -764,22 +889,22 @@ fun ChatSettingsSubSection(vm: AuthVM) {
             modifier = Modifier.padding(vertical = 12.dp)
         )
 
-        val autoDownloadMedia = vm.userData["autoDownloadMedia"] != "false"
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.chat_autoload_media), color = MayasTheme.TextPrimary, fontSize = 14.sp)
-                Text(stringResource(R.string.chat_autoload_media_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.chat_autoload_media), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+            Text(stringResource(R.string.chat_autoload_media_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
+
+            val legacyDefault = vm.userData["autoDownloadMedia"] != "false"
+            val autoDownloadPhotos = vm.userData[AutoDownloadType.PHOTO.userDataKey]?.let { it != "false" } ?: legacyDefault
+            val autoDownloadVideos = vm.userData[AutoDownloadType.VIDEO.userDataKey]?.let { it != "false" } ?: legacyDefault
+
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.chat_autoload_photos), color = MayasTheme.TextPrimary, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Switch(checked = autoDownloadPhotos, onCheckedChange = { vm.updateUserData(AutoDownloadType.PHOTO.userDataKey, it.toString()) }, colors = SwitchDefaults.colors(checkedThumbColor = MayasTheme.Accent))
             }
-            Switch(
-                checked = autoDownloadMedia,
-                onCheckedChange = { enabled ->
-                    vm.updateUserData("autoDownloadMedia", enabled.toString())
-                },
-                colors = SwitchDefaults.colors(checkedThumbColor = MayasTheme.Accent)
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.chat_autoload_videos), color = MayasTheme.TextPrimary, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                Switch(checked = autoDownloadVideos, onCheckedChange = { vm.updateUserData(AutoDownloadType.VIDEO.userDataKey, it.toString()) }, colors = SwitchDefaults.colors(checkedThumbColor = MayasTheme.Accent))
+            }
         }
 
         Spacer(Modifier.height(8.dp))
@@ -805,9 +930,124 @@ fun ChatSettingsSubSection(vm: AuthVM) {
 }
 
 @Composable
+private fun LanguageSelector() {
+    val context = LocalContext.current
+    val activity = remember(context) {
+        var current: android.content.Context? = context
+        var depth = 0
+        while (current != null && current !is Activity && depth++ < 32) {
+            current = (current as? ContextWrapper)?.baseContext
+        }
+        current as? Activity
+    }
+    val currentLanguage = context
+        .getSharedPreferences("mayas_app_preferences", android.content.Context.MODE_PRIVATE)
+        .getString("app_language", null)
+        ?: java.util.Locale.getDefault().language
+
+    fun applyLanguage(tag: String) {
+        if (tag == currentLanguage) return
+        val saved = context.getSharedPreferences(
+            "mayas_app_preferences",
+            android.content.Context.MODE_PRIVATE
+        ).edit().putString("app_language", tag).commit()
+        if (!saved) {
+            Toast.makeText(context, context.getString(R.string.language_apply_failed), Toast.LENGTH_SHORT).show()
+            return
+        }
+        activity?.recreate()
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .padding(vertical = 6.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Language,
+                contentDescription = null,
+                tint = MayasTheme.TextPrimary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.language_title),
+                    color = MayasTheme.TextPrimary,
+                    fontSize = 14.sp
+                )
+                Text(
+                    stringResource(R.string.language_desc),
+                    color = MayasTheme.TextSecondary,
+                    fontSize = 12.sp
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            LanguageButton(
+                text = stringResource(R.string.language_russian),
+                selected = currentLanguage == "ru",
+                modifier = Modifier.weight(1f),
+                onClick = { applyLanguage("ru") }
+            )
+            LanguageButton(
+                text = stringResource(R.string.language_english),
+                selected = currentLanguage == "en",
+                modifier = Modifier.weight(1f),
+                onClick = { applyLanguage("en") }
+            )
+        }
+    }
+}
+
+@Composable
+private fun LanguageButton(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                if (selected) MayasTheme.Accent.copy(alpha = 0.18f)
+                else MayasTheme.SurfaceVariant.copy(alpha = 0.4f)
+            )
+            .border(
+                width = if (selected) 1.5.dp else 0.dp,
+                color = if (selected) MayasTheme.Accent else Color.Transparent,
+                shape = RoundedCornerShape(12.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = if (selected) MayasTheme.Accent else MayasTheme.TextPrimary,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+        )
+    }
+}
+
+@Composable
 fun InterfaceSettingsSubSection(
     onNavigateToHomeScreenLayout: () -> Unit,
-    onNavigateToSidebarLayout: () -> Unit
+    onNavigateToSidebarLayout: () -> Unit,
+    seasonalEffectsEnabled: Boolean = false,
+    onSeasonalEffectsEnabledChange: (Boolean) -> Unit = {}
 ) {
     Column(
         modifier = Modifier
@@ -817,7 +1057,42 @@ fun InterfaceSettingsSubSection(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
+        LanguageSelector()
+
+        HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
+
         EmojiStyleSelector()
+
+        HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.AutoAwesome,
+                contentDescription = null,
+                tint = MayasTheme.Accent,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.seasonal_effects_title),
+                    color = MayasTheme.TextPrimary,
+                    fontSize = 14.sp
+                )
+                Text(
+                    text = stringResource(R.string.seasonal_effects_description),
+                    color = MayasTheme.TextSecondary,
+                    fontSize = 12.sp
+                )
+            }
+            Switch(
+                checked = seasonalEffectsEnabled,
+                onCheckedChange = onSeasonalEffectsEnabledChange
+            )
+        }
 
         HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
 
@@ -859,6 +1134,10 @@ fun InterfaceSettingsSubSection(
 
         HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
 
+        ChatSwipeActionSetting()
+
+        HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
+
         Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(top = 8.dp)) {
             Icon(Icons.Default.Info, null, tint = MayasTheme.TextSecondary, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(10.dp))
@@ -874,6 +1153,7 @@ fun InterfaceSettingsSubSection(
 @Composable
 fun PrivacySubSection(vm: AuthVM, onNavigateToPremium: () -> Unit) {
     var showSelectorFor by remember { mutableStateOf<String?>(null) }
+    var showLastSeenExceptions by remember { mutableStateOf(false) }
 
     val privacySettings = listOf(
         Triple("privacy_phone", stringResource(R.string.privacy_phone_label), Icons.Default.Phone),
@@ -883,18 +1163,27 @@ fun PrivacySubSection(vm: AuthVM, onNavigateToPremium: () -> Unit) {
     )
 
     if (showSelectorFor != null) {
-        val currentKey = showSelectorFor!!
+        val currentKey = showSelectorFor.orEmpty()
         val currentValue = vm.userData[currentKey] ?: "all"
         val title = privacySettings.find { it.first == currentKey }?.second ?: stringResource(R.string.privacy_setting_fallback)
 
         PrivacySelectorDialog(
             title = title,
             currentValue = currentValue,
+            allowCustomLastSeen = currentKey == "privacy_last_seen",
             onSelect = { newValue ->
                 vm.updateUserData(currentKey, newValue)
                 showSelectorFor = null
             },
             onDismiss = { showSelectorFor = null }
+        )
+    }
+
+    if (showLastSeenExceptions) {
+        LastSeenExceptionsDialog(
+            vm = vm,
+            selectedUids = parseStoredUidList(vm.userData["privacy_last_seen_hidden_from"]),
+            onDismiss = { showLastSeenExceptions = false }
         )
     }
 
@@ -942,6 +1231,7 @@ fun PrivacySubSection(vm: AuthVM, onNavigateToPremium: () -> Unit) {
             val valueText = when (value) {
                 "contacts" -> stringResource(R.string.audience_contacts)
                 "none" -> stringResource(R.string.audience_nobody)
+                "custom" -> stringResource(R.string.privacy_custom_people)
                 else -> stringResource(R.string.audience_everyone)
             }
 
@@ -958,6 +1248,121 @@ fun PrivacySubSection(vm: AuthVM, onNavigateToPremium: () -> Unit) {
                     Text(valueText, color = MayasTheme.Accent, fontSize = 12.sp)
                 }
                 Icon(Icons.Default.ChevronRight, null, tint = MayasTheme.TextSecondary.copy(0.3f), modifier = Modifier.size(16.dp))
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { showLastSeenExceptions = true }.padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.PersonOff, null, tint = MayasTheme.TextSecondary, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.privacy_last_seen_exceptions_title), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text(
+                    stringResource(R.string.privacy_last_seen_exceptions_desc, parseStoredUidList(vm.userData["privacy_last_seen_hidden_from"]).size),
+                    color = MayasTheme.TextSecondary,
+                    fontSize = 12.sp
+                )
+            }
+            Icon(Icons.Default.ChevronRight, null, tint = MayasTheme.TextSecondary.copy(0.3f), modifier = Modifier.size(16.dp))
+        }
+
+        HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.privacy_show_stats_title), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text(stringResource(R.string.privacy_show_stats_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
+            }
+            Switch(
+                checked = readBooleanPreference(vm.userData["showStats"], defaultValue = true),
+                onCheckedChange = { vm.updateUserData("showStats", it) },
+                colors = SwitchDefaults.colors(checkedThumbColor = MayasTheme.Accent)
+            )
+        }
+
+        StatisticVisibilitySetting(
+            title = stringResource(R.string.privacy_show_registration_title),
+            description = stringResource(R.string.privacy_show_registration_desc),
+            checked = readBooleanPreference(vm.userData["showRegistrationDate"], defaultValue = true),
+            enabled = readBooleanPreference(vm.userData["showStats"], defaultValue = true),
+            onCheckedChange = { vm.updateUserData("showRegistrationDate", it) }
+        )
+        StatisticVisibilitySetting(
+            title = stringResource(R.string.privacy_show_message_stats_title),
+            description = stringResource(R.string.privacy_show_message_stats_desc),
+            checked = readBooleanPreference(vm.userData["showMessageStats"], defaultValue = true),
+            enabled = readBooleanPreference(vm.userData["showStats"], defaultValue = true),
+            onCheckedChange = { vm.updateUserData("showMessageStats", it) }
+        )
+        StatisticVisibilitySetting(
+            title = stringResource(R.string.privacy_show_ad_stats_title),
+            description = stringResource(R.string.privacy_show_ad_stats_desc),
+            checked = readBooleanPreference(vm.userData["showAdStats"], defaultValue = true),
+            enabled = readBooleanPreference(vm.userData["showStats"], defaultValue = true),
+            onCheckedChange = { vm.updateUserData("showAdStats", it) }
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(stringResource(R.string.privacy_show_balance_title), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                Text(stringResource(R.string.privacy_show_balance_desc), color = MayasTheme.TextSecondary, fontSize = 12.sp)
+            }
+            Switch(
+                checked = readBooleanPreference(vm.userData["showBalance"], defaultValue = true),
+                onCheckedChange = { vm.updateUserData("showBalance", it) },
+                colors = SwitchDefaults.colors(checkedThumbColor = MayasTheme.Accent)
+            )
+        }
+
+        HorizontalDivider(color = MayasTheme.TextSecondary.copy(0.1f))
+
+        val statusTagMode = when (vm.userData["statusTagDisplayMode"] as? String) {
+            "STATUS_ONLY", "TAG_ONLY" -> vm.userData["statusTagDisplayMode"] as String
+            else -> "BOTH"
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                stringResource(R.string.status_tag_display_mode),
+                color = MayasTheme.TextPrimary,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                stringResource(R.string.status_tag_display_note),
+                color = MayasTheme.TextSecondary,
+                fontSize = 12.sp
+            )
+            listOf(
+                "BOTH" to R.string.status_tag_both,
+                "STATUS_ONLY" to R.string.status_tag_status_only,
+                "TAG_ONLY" to R.string.status_tag_tag_only
+            ).forEach { (mode, labelRes) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(10.dp))
+                        .clickable(enabled = statusTagMode != mode) {
+                            vm.updateUserData("statusTagDisplayMode", mode)
+                        }
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(
+                        selected = statusTagMode == mode,
+                        onClick = { vm.updateUserData("statusTagDisplayMode", mode) },
+                        colors = RadioButtonDefaults.colors(selectedColor = MayasTheme.Accent)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(labelRes), color = MayasTheme.TextPrimary, fontSize = 14.sp)
+                }
             }
         }
     }
@@ -1114,6 +1519,7 @@ private fun formatSessionLastActive(timestamp: com.google.firebase.Timestamp?): 
 fun PrivacySelectorDialog(
     title: String,
     currentValue: String,
+    allowCustomLastSeen: Boolean = false,
     onSelect: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1122,11 +1528,16 @@ fun PrivacySelectorDialog(
         title = { Text(title, color = MayasTheme.TextPrimary) },
         text = {
             Column {
-                val options = listOf(
-                    "all" to stringResource(R.string.audience_everyone),
-                    "contacts" to stringResource(R.string.audience_contacts),
-                    "none" to stringResource(R.string.audience_nobody)
-                )
+                val everyoneLabel = stringResource(R.string.audience_everyone)
+                val contactsLabel = stringResource(R.string.audience_contacts)
+                val nobodyLabel = stringResource(R.string.audience_nobody)
+                val customLabel = stringResource(R.string.privacy_custom_people)
+                val options = buildList {
+                    add("all" to everyoneLabel)
+                    add("contacts" to contactsLabel)
+                    add("none" to nobodyLabel)
+                    if (allowCustomLastSeen) add("custom" to customLabel)
+                }
                 options.forEach { (value, label) ->
                     Row(
                         modifier = Modifier
@@ -1152,6 +1563,158 @@ fun PrivacySelectorDialog(
                 Text(stringResource(R.string.storage_cancel), color = MayasTheme.TextSecondary)
             }
         },
+        containerColor = MayasTheme.Surface
+    )
+}
+
+private fun parseStoredUidList(value: String?): Set<String> = value.orEmpty()
+    .removePrefix("[")
+    .removeSuffix("]")
+    .split(',')
+    .map { it.trim().trim('"').trim() }
+    .filter { it.isNotBlank() }
+    .toSet()
+
+@Composable
+private fun StatisticVisibilitySetting(
+    title: String,
+    description: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, color = MayasTheme.TextPrimary, fontSize = 14.sp)
+            Text(description, color = MayasTheme.TextSecondary, fontSize = 12.sp)
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+            colors = SwitchDefaults.colors(checkedThumbColor = MayasTheme.Accent)
+        )
+    }
+}
+
+private data class PrivacyContactOption(val uid: String, val label: String)
+
+@Composable
+private fun LastSeenExceptionsDialog(
+    vm: AuthVM,
+    selectedUids: Set<String>,
+    onDismiss: () -> Unit
+) {
+    var contacts by remember { mutableStateOf<List<PrivacyContactOption>>(emptyList()) }
+    var selected by remember(selectedUids) { mutableStateOf(selectedUids) }
+    var loading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        loading = true
+        loadError = false
+        try {
+            val myUid = FirebaseAuth.getInstance().currentUser?.uid ?: throw IllegalStateException("not signed in")
+            val chatDocs = vm.db.collection("chats").whereArrayContains("participants", myUid).limit(200).get().await().documents
+            val peers = chatDocs.mapNotNull { doc ->
+                val participants = (doc.get("participants") as? List<*>)?.filterIsInstance<String>().orEmpty()
+                val isGroup = doc.getBoolean("isGroup") ?: false
+                val type = doc.getString("type") ?: "DIRECT"
+                if (isGroup || type == "CHANNEL" || participants.size != 2) null
+                else participants.firstOrNull { it != myUid }
+            }.distinct().take(80)
+            contacts = coroutineScope {
+                peers.map { uid -> async {
+                    runCatching {
+                        val user = vm.db.collection("users").document(uid).get().await()
+                        if (!user.exists()) null else PrivacyContactOption(
+                            uid,
+                            user.getString("name")?.takeIf { it.isNotBlank() }
+                                ?: user.getString("username")?.takeIf { it.isNotBlank() }
+                                ?: uid.take(8)
+                        )
+                    }.getOrNull()
+                } }.awaitAll().filterNotNull().sortedBy { it.label.lowercase(Locale.ROOT) }
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.e("PrivacySettings", "Не удалось загрузить контакты для исключений последней активности", e)
+            loadError = true
+        } finally {
+            loading = false
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!saving) onDismiss() },
+        title = { Text(stringResource(R.string.privacy_last_seen_exceptions_title), color = MayasTheme.TextPrimary) },
+        text = {
+            Column {
+                Text(stringResource(R.string.privacy_last_seen_exceptions_hint), color = MayasTheme.TextSecondary, fontSize = 12.sp)
+                if (saveError) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(stringResource(R.string.privacy_save_failed), color = MayasTheme.ErrorRed, fontSize = 12.sp)
+                }
+                Spacer(Modifier.height(8.dp))
+                when {
+                    loading -> CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+                    loadError -> Text(stringResource(R.string.privacy_contacts_load_failed), color = MayasTheme.ErrorRed)
+                    contacts.isEmpty() -> Text(stringResource(R.string.privacy_contacts_empty), color = MayasTheme.TextSecondary)
+                    else -> LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                        items(contacts, key = { it.uid }) { contact ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    selected = if (contact.uid in selected) selected - contact.uid else selected + contact.uid
+                                }.padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = contact.uid in selected,
+                                    onCheckedChange = { checked -> selected = if (checked) selected + contact.uid else selected - contact.uid }
+                                )
+                                Text(contact.label, color = MayasTheme.TextPrimary)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = !loading && !saving && !loadError,
+                onClick = {
+                    if (saving) return@TextButton
+                    saving = true
+                    saveError = false
+                    scope.launch {
+                        val myUid = FirebaseAuth.getInstance().currentUser?.uid
+                        try {
+                            if (myUid.isNullOrBlank()) throw IllegalStateException("not signed in")
+                            vm.db.collection("users").document(myUid).update(
+                                mapOf("privacy_last_seen" to "custom", "privacy_last_seen_hidden_from" to selected.toList())
+                            ).await()
+                            vm.userData = vm.userData + mapOf(
+                                "privacy_last_seen" to "custom",
+                                "privacy_last_seen_hidden_from" to selected.toList().toString()
+                            )
+                            onDismiss()
+                        } catch (e: CancellationException) {
+                            saving = false
+                            throw e
+                        } catch (e: Exception) {
+                            android.util.Log.e("PrivacySettings", "Не удалось сохранить исключения последней активности", e)
+                            saveError = true
+                            saving = false
+                        }
+                    }
+                }
+            ) { Text(if (saving) stringResource(R.string.privacy_saving) else stringResource(R.string.privacy_save)) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text(stringResource(R.string.storage_cancel)) } },
         containerColor = MayasTheme.Surface
     )
 }

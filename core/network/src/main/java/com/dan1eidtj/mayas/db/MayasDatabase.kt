@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 @Database(
     entities = [ChatEntity::class, MessageEntity::class, OutboxEntity::class],
-    version = 19,
+    version = 20,
     exportSchema = false
 )
 @androidx.room.TypeConverters(Converters::class)

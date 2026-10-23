@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Mayas</string>
+    <string name="notif_text">Turn on notifications to find out the moment someone messages you on Mayas!</string>
+
+    <!-- MainActivity -->
+    <string name="notifications_enabled_toast">Notifications enabled!</string>
+    <string name="notifications_later_toast">You can enable notifications later.</string>
+    <string name="enable_action">Enable</string>
+    <string name="not_now_action">Not now</string>
+    <string name="theme_default_name">Theme %1$d</string>
+
+    <!-- MayasMessagingService / NotificationReplyReceiver -->
+    <string name="new_message_notification_text">New message</string>
+    <string name="new_messages_summary">New messages</string>
+    <string name="messages_channel_name">Messages</string>
+    <string name="messages_channel_description">Notifications about new messages on Mayas</string>
+    <string name="mark_read_action">Mark read</string>
+    <string name="notification_reply_too_long">Reply is too long.</string>
+    <string name="notification_reply_requires_login">Sign in to Mayas and try again.</string>
+    <string name="notification_reply_blocked">Message not sent: one of the users has blocked the other.</string>
+    <string name="notification_reply_open_chat">Open this chat in Mayas to reply.</string>
+    <string name="notification_reply_no_access">You do not have access to this chat.</string>
+    <string name="notification_reply_failed">Could not send reply. Open the chat and try again.</string>
+    <string name="notification_mark_read_requires_login">Sign in to Mayas to mark this chat as read.</string>
+    <string name="notification_mark_read_failed">Could not mark the chat as read. Open it in Mayas and try again.</string>
+</resources>

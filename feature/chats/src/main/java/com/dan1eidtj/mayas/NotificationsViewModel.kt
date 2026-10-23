@@ -14,10 +14,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
-/**
- * Тип уведомления. Строковое значение — это то, что реально лежит в поле "type"
- * в документе Firestore (users/{uid}/notifications/{id}).
- */
+
 enum class NotificationType(val raw: String) {
     MISSED_CALL("missed_call"),
     SYSTEM("system"),

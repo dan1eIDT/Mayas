@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 ProjectIDT */
+/* Copyright (C) 2026 dan1eIDT */
 @file:OptIn(ExperimentalMaterial3Api::class)
 
 package com.dan1eidtj.mayas
@@ -6,6 +6,7 @@ package com.dan1eidtj.mayas
 import android.Manifest
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.Context
 import android.content.pm.PackageManager
 import com.dan1eidtj.mayas.core.ui.theme.MayasAppTheme
 import com.dan1eidtj.mayas.core.ui.theme.MayasColorScheme
@@ -15,6 +16,7 @@ import com.dan1eidtj.mayas.core.ui.theme.LightMayasColorScheme
 import com.dan1eidtj.mayas.core.ui.theme.ThemeEditorScreen
 import androidx.compose.foundation.isSystemInDarkTheme
 import android.os.Build
+import android.net.Uri
 import android.content.res.Configuration
 import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
@@ -32,11 +34,16 @@ import androidx.annotation.RequiresApi
 import androidx.compose.animation.*
 import androidx.compose.animation.core.EaseInOutQuart
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
@@ -59,6 +66,7 @@ import com.dan1eidtj.mayas.feature.chats.ChatListScreen.GlobalSearchScreen
 import com.dan1eidtj.mayas.NotificationsScreen
 import com.dan1eidtj.mayas.ads.AdsManager
 import com.dan1eidtj.mayas.core_ui.Screen
+import com.dan1eidtj.mayas.mesh.MeshManager
 import com.dan1eidtj.mayas.settings.CustomizationScreen
 import com.dan1eidtj.mayas.settings.SettingsScreen
 import com.dan1eidtj.mayas.settings.ThemesScreen
@@ -71,10 +79,26 @@ import com.dan1eidtj.data.ItemType
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.delay
+import java.util.Locale
 
 
 class MainActivity : ComponentActivity() {
+
+    override fun attachBaseContext(newBase: Context) {
+        val languageTag = newBase
+            .getSharedPreferences("mayas_app_preferences", Context.MODE_PRIVATE)
+            .getString("app_language", "")
+            .orEmpty()
+        if (languageTag.isBlank()) {
+            super.attachBaseContext(newBase)
+            return
+        }
+        val locale = Locale.forLanguageTag(languageTag)
+        Locale.setDefault(locale)
+        val configuration = Configuration(newBase.resources.configuration)
+        configuration.setLocale(locale)
+        super.attachBaseContext(newBase.createConfigurationContext(configuration))
+    }
 
     private val callManager: CallManager
         get() = (application as CallManagerProvider).callManager
@@ -117,7 +141,6 @@ class MainActivity : ComponentActivity() {
         val launchSplash = installSplashScreen()
         launchSplash.setKeepOnScreenCondition { !contentReady }
         super.onCreate(savedInstanceState)
-        window.decorView.postDelayed({ contentReady = true }, 3000L)
 
         val systemNight = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val savedScheme = ThemePreferences.loadSelectedScheme(this)
@@ -210,12 +233,31 @@ class MainActivity : ComponentActivity() {
         }
 
         if (Intent.ACTION_VIEW == action) {
-            val data = intent.data
-
-            if (data?.scheme == "mayas" && data.host == "join") {
-                val code = data.lastPathSegment
-                if (!code.isNullOrBlank()) {
-                    SharedContentManager.pendingInviteCode = code
+            val data = intent.data ?: return
+            when {
+                data.scheme == "mayas" && data.host == "join" -> {
+                    val code = data.getQueryParameter("code") ?: data.lastPathSegment
+                    if (!code.isNullOrBlank() && code.length <= 256 && '/' !in code) {
+                        SharedContentManager.pendingInviteCode = code
+                    }
+                }
+                data.scheme == "https" && data.host == "dan1eidt.github.io" &&
+                    data.path.orEmpty().startsWith("/mayas-site/join") -> {
+                    val code = data.getQueryParameter("code")
+                    if (!code.isNullOrBlank() && code.length <= 256 && '/' !in code) {
+                        SharedContentManager.pendingInviteCode = code
+                    }
+                }
+                data.scheme == "mayas" && data.host == "chat" -> {
+                    val chatId = data.getQueryParameter("chatId")
+                    val messageId = data.getQueryParameter("messageId")
+                    val validId: (String?) -> Boolean = { value ->
+                        !value.isNullOrBlank() && value.length <= 1500 && '/' !in value
+                    }
+                    if (validId(chatId) && validId(messageId)) {
+                        SharedContentManager.pendingChatId = chatId
+                        SharedContentManager.pendingMessageId = messageId
+                    }
                 }
             }
         }
@@ -299,6 +341,17 @@ fun MayasApp(
     var sidebarLayoutPrefs by remember {
         mutableStateOf(LayoutPreferences.loadSidebarLayoutPrefs(layoutPrefsContext))
     }
+    var seasonalEffectsEnabled by remember {
+        mutableStateOf(
+            layoutPrefsContext.getSharedPreferences("mayas_app_preferences", Context.MODE_PRIVATE)
+                .getBoolean("seasonal_effects_enabled", false)
+        )
+    }
+    val updateSeasonalEffects: (Boolean) -> Unit = { enabled ->
+        seasonalEffectsEnabled = enabled
+        layoutPrefsContext.getSharedPreferences("mayas_app_preferences", Context.MODE_PRIVATE)
+            .edit().putBoolean("seasonal_effects_enabled", enabled).apply()
+    }
 
     LaunchedEffect(user) {
         if (user == null) {
@@ -330,28 +383,64 @@ fun MayasApp(
                 navController = navController,
                 startDestination = if (user == null) Screen.Auth.route else Screen.Chats.route,
                 enterTransition = {
-                    slideIntoContainer(
-                        AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(260, easing = EaseInOutQuart)
-                    ) + fadeIn(animationSpec = tween(200))
+                    val isChatListTransition =
+                        (initialState.destination.route == Screen.Chats.route &&
+                            targetState.destination.route == Screen.Chat.route) ||
+                            (initialState.destination.route == Screen.Chat.route &&
+                                targetState.destination.route == Screen.Chats.route)
+                    if (isChatListTransition) {
+                        EnterTransition.None
+                    } else {
+                        slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(260, easing = EaseInOutQuart)
+                        ) + fadeIn(animationSpec = tween(200))
+                    }
                 },
                 exitTransition = {
-                    slideOutOfContainer(
-                        AnimatedContentTransitionScope.SlideDirection.Left,
-                        animationSpec = tween(260, easing = EaseInOutQuart)
-                    ) + fadeOut(animationSpec = tween(200))
+                    val isChatListTransition =
+                        (initialState.destination.route == Screen.Chats.route &&
+                            targetState.destination.route == Screen.Chat.route) ||
+                            (initialState.destination.route == Screen.Chat.route &&
+                                targetState.destination.route == Screen.Chats.route)
+                    if (isChatListTransition) {
+                        ExitTransition.None
+                    } else {
+                        slideOutOfContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Left,
+                            animationSpec = tween(260, easing = EaseInOutQuart)
+                        ) + fadeOut(animationSpec = tween(200))
+                    }
                 },
                 popEnterTransition = {
-                    slideIntoContainer(
-                        AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(260, easing = EaseInOutQuart)
-                    ) + fadeIn(animationSpec = tween(200))
+                    val isChatListTransition =
+                        (initialState.destination.route == Screen.Chats.route &&
+                            targetState.destination.route == Screen.Chat.route) ||
+                            (initialState.destination.route == Screen.Chat.route &&
+                                targetState.destination.route == Screen.Chats.route)
+                    if (isChatListTransition) {
+                        EnterTransition.None
+                    } else {
+                        slideIntoContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(260, easing = EaseInOutQuart)
+                        ) + fadeIn(animationSpec = tween(200))
+                    }
                 },
                 popExitTransition = {
-                    slideOutOfContainer(
-                        AnimatedContentTransitionScope.SlideDirection.Right,
-                        animationSpec = tween(260, easing = EaseInOutQuart)
-                    ) + fadeOut(animationSpec = tween(200))
+                    val isChatListTransition =
+                        (initialState.destination.route == Screen.Chats.route &&
+                            targetState.destination.route == Screen.Chat.route) ||
+                            (initialState.destination.route == Screen.Chat.route &&
+                                targetState.destination.route == Screen.Chats.route)
+                    if (isChatListTransition) {
+                        ExitTransition.None
+                    } else {
+                        slideOutOfContainer(
+                            AnimatedContentTransitionScope.SlideDirection.Right,
+                            animationSpec = tween(260, easing = EaseInOutQuart)
+                        ) + fadeOut(animationSpec = tween(200))
+                    }
                 }
             ) {
                 composable(Screen.Auth.route) {
@@ -396,7 +485,10 @@ fun MayasApp(
                                 "chatId" to entity.chatId,
                                 "isGroup" to entity.isGroup,
                                 "groupName" to (entity.groupName ?: ""),
-                                "partnerName" to (entity.partnerName ?: "")
+                                "partnerName" to (entity.partnerName ?: ""),
+                                "groupAvatarUrl" to (entity.groupAvatarUrl ?: ""),
+                                "partnerAvatarUrl" to (entity.partnerAvatarUrl ?: ""),
+                                "description" to (entity.description ?: "")
                             )
                         }
                     }
@@ -494,6 +586,8 @@ fun MayasApp(
                 composable(Screen.Settings.route) {
                     SettingsScreen(
                         vm = vm,
+                        seasonalEffectsEnabled = seasonalEffectsEnabled,
+                        onSeasonalEffectsEnabledChange = updateSeasonalEffects,
                         onBack = { navController.popBackStack() },
                         onNavigateToPremium = { navController.navigate(Screen.Premium.route) },
                         onNavigateToCredits = { navController.navigate(Screen.Credits.route) },
@@ -502,6 +596,15 @@ fun MayasApp(
                         },
                         onNavigateToCustomization = {
                             navController.navigate(Screen.Customization.route)
+                        },
+                        onNavigateToPlugins = {
+                            navController.navigate(Screen.Plugins.route)
+                        },
+                        onNavigateToMesh = {
+                            navController.navigate(Screen.Mesh.route)
+                        },
+                        onNavigateToSteam = {
+                            navController.navigate(Screen.Steam.route)
                         },
                         onNavigateToThemes = {
                             navController.navigate(Screen.Themes.route)
@@ -536,36 +639,54 @@ fun MayasApp(
                 }
 
                 composable(Screen.Shop.route) {
-                    // Магазин теперь доступен и из Настроек (не только из топбара профиля).
-                    // Переиспользуем уже существующий ShopDialog и данные из vm.userData/vm.ownedItems —
-                    // ровно те же поля, что читает ProfileScreen (balance/emojiStatus/messageStyle).
-                    ShopDialog(
+                    val context = LocalContext.current
+                    ShopScreen(
                         balance = vm.userData["balance"]?.toIntOrNull() ?: 0,
                         ownedItems = vm.ownedItems,
-                        onDismiss = { navController.popBackStack() },
+                        onBack = { navController.popBackStack() },
                         onBuyItem = { id, price, itemName ->
                             vm.buyItem(
                                 id, price,
-                                onSuccess = {},
-                                onError = {}
+                                onSuccess = {
+                                    Toast.makeText(context, "Куплено: $itemName", Toast.LENGTH_SHORT).show()
+                                },
+                                onError = { error ->
+                                    Toast.makeText(context, error, Toast.LENGTH_SHORT).show()
+                                }
                             )
                         },
                         onSelectItem = { id, type ->
-                            val key = when (type) {
-                                ItemType.EMOJI_STATUS -> "emojiStatus"
-                                ItemType.BUBBLE -> "messageStyle"
-                                else -> null
-                            }
-                            key?.let { vm.updateUserData(it, id) }
+                            vm.useItem(id, type)
                         },
                         currentEmoji = vm.userData["emojiStatus"] ?: "",
-                        messageStyle = vm.userData["messageStyle"] ?: ""
+                        messageStyle = vm.userData["messageStyle"] ?: "",
+                        currentFont = vm.userData["fontId"] ?: "",
+                        currentEffect = vm.userData["effectId"] ?: "",
+                        isPurchaseInProgress = vm.isPurchaseInProgress
                     )
                 }
 
                 composable(Screen.Customization.route) {
                     CustomizationScreen(
                         vm = vm,
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Screen.Steam.route) {
+                    com.dan1eidtj.mayas.settings.SteamScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Screen.Mesh.route) {
+                    com.dan1eidtj.mayas.settings.MeshScreen(
+                        onBack = { navController.popBackStack() }
+                    )
+                }
+
+                composable(Screen.Plugins.route) {
+                    com.dan1eidtj.mayas.settings.PluginsScreen(
                         onBack = { navController.popBackStack() }
                     )
                 }
@@ -653,8 +774,83 @@ fun MayasApp(
 
             }
 
+            val meshUiState by MeshManager.state.collectAsState()
+            LaunchedEffect(user?.uid, meshUiState.pendingConnections) {
+                if (user == null) {
+                    meshUiState.pendingConnections.forEach { pending ->
+                        MeshManager.rejectPendingConnection(pending.endpointId)
+                    }
+                }
+            }
+            val pendingMeshConnection = meshUiState.pendingConnections.firstOrNull { !it.acceptedByUser }
+            if (user != null && pendingMeshConnection != null) {
+                AlertDialog(
+                    onDismissRequest = {
+                        MeshManager.rejectPendingConnection(pendingMeshConnection.endpointId)
+                    },
+                    title = {
+                        Text(stringResource(com.dan1eidtj.mayas.settings.R.string.mesh_pairing_title))
+                    },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                stringResource(
+                                    com.dan1eidtj.mayas.settings.R.string.mesh_pairing_peer,
+                                    pendingMeshConnection.name
+                                )
+                            )
+                            Text(
+                                pendingMeshConnection.authenticationDigits,
+                                fontSize = 30.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(stringResource(com.dan1eidtj.mayas.settings.R.string.mesh_pairing_compare))
+                            pendingMeshConnection.mayasUid?.takeIf { it.isNotBlank() }?.let { claimedUid ->
+                                Text(
+                                    stringResource(
+                                        com.dan1eidtj.mayas.settings.R.string.mesh_pairing_uid,
+                                        claimedUid
+                                    )
+                                )
+                            }
+                            Text(stringResource(com.dan1eidtj.mayas.settings.R.string.mesh_pairing_uid_warning))
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            MeshManager.acceptPendingConnection(pendingMeshConnection.endpointId)
+                        }) {
+                            Text(stringResource(com.dan1eidtj.mayas.settings.R.string.mesh_pairing_accept))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = {
+                            MeshManager.rejectPendingConnection(pendingMeshConnection.endpointId)
+                        }) {
+                            Text(stringResource(com.dan1eidtj.mayas.settings.R.string.mesh_pairing_reject))
+                        }
+                    }
+                )
+            }
 
+            val pendingLinkedChatId = SharedContentManager.pendingChatId
+            val pendingLinkedMessageId = SharedContentManager.pendingMessageId
+            LaunchedEffect(pendingLinkedChatId, pendingLinkedMessageId, user?.uid) {
+                if (user != null && !pendingLinkedChatId.isNullOrBlank()) {
+                    SharedContentManager.pendingChatId = null
+                    SharedContentManager.pendingMessageId = null
+                    navController.navigate(
+                        Screen.Chat.create(pendingLinkedChatId, pendingLinkedMessageId)
+                    ) {
+                        launchSingleTop = true
+                    }
+                }
+            }
 
+            SeasonalEffectsOverlay(
+                enabled = seasonalEffectsEnabled,
+                modifier = Modifier.fillMaxSize()
+            )
 
             val pendingInviteCode = SharedContentManager.pendingInviteCode
             if (pendingInviteCode != null && user != null) {

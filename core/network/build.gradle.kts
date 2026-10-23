@@ -78,6 +78,7 @@ dependencies {
 
     // реклама
     implementation(libs.yandex.mobileads)
+    implementation(libs.play.services.nearby)
     implementation(libs.play.services.ads)
 
     // сеть / файлы

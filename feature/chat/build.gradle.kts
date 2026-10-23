@@ -58,6 +58,7 @@ dependencies {
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.analytics)
     implementation(libs.firebase.storage)
+    implementation(libs.kotlinx.coroutines.play.services)
 
     // Compose — один BOM
     implementation(platform(libs.androidx.compose.bom))

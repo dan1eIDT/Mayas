@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="plugin_perm_transform_outgoing">Modify the text of your outgoing messages</string>
+    <string name="plugin_signature_name">Message signature</string>
+    <string name="plugin_signature_desc">Appends your signature to the end of every message you send.</string>
+    <string name="plugin_signature_setting_text">Signature text</string>
+    <string name="plugin_signature_setting_newline">Signature on a new line</string>
+</resources>

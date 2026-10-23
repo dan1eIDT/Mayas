@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_item_actions">Chat actions</string>
+    <string name="pin_chat">Pin chat</string>
+    <string name="unpin_chat">Unpin chat</string>
+    <string name="pin_chat_sidebar">Pin to sidebar</string>
+    <string name="unpin_chat_sidebar">Remove from sidebar</string>
+    <string name="select_chat">Select chat</string>
+    <string name="chat_action_failed">Could not perform chat action</string>
+    <string name="channels">Channels</string>
+    <string name="contacts">Contacts</string>
+    <string name="waiting_for_network">Waiting for network</string>
+    <string name="no_connection">No connection</string>
+    <string name="online">online</string>
+    <string name="navigation">Navigation</string>
+    <string name="update_mayas">Update Mayas</string>
+    <string name="create_group">Create group</string>
+    <string name="folders_label">FOLDERS</string>
+    <string name="manage_sidebar_folders">Manage sidebar folders</string>
+    <string name="sidebar_folder_visibility_title">Sidebar folders</string>
+    <string name="sidebar_folder_visibility_hint">Choose which standard folders to show. Hiding a folder does not delete it or its chats.</string>
+    <string name="done_action">Done</string>
+    <string name="logout">Log out</string>
+    <string name="logout_confirm">Log out of account</string>
+    <string name="update_available">A Mayas update is available!</string>
+    <string name="open_menu">Open menu</string>
+    <string name="add_friends">Add friends</string>
+    <string name="global_search">Search</string>
+    <string name="search_hint_global">People, groups, channels, messages…</string>
+    <string name="search_section_groups">Groups</string>
+    <string name="search_section_users">Users</string>
+    <string name="search_section_chats">Chats</string>
+    <string name="search_section_channels">Channels</string>
+    <string name="search_section_messages">Messages</string>
+    <string name="search_no_results">No results found</string>
+    <string name="search_error">Search error</string>
+    <string name="search_start_typing">Start typing to find people, chats, groups, channels and messages</string>
+    <string name="search_chats_hint">Search chats...</string>
+    <string name="selected_count">Selected: %1$d</string>
+    <string name="selected_chat_actions">Selected chat actions</string>
+    <string name="pin_selected_to_sidebar">Pin to sidebar</string>
+    <string name="toggle_pin_selected_chats">Pin/unpin chats</string>
+    <string name="delete_selected_chats">Delete selected chats</string>
+    <string name="reset">Reset</string>
+    <string name="nothing_found">Nothing found</string>
+    <string name="no_chats_in_folder">No chats in this folder</string>
+    <string name="unnamed_group">Unnamed group</string>
+    <string name="typing">typing...</string>
+    <string name="no_messages">No messages</string>
+    <string name="draft_prefix">Draft: </string>
+    <string name="create_folder">Create folder</string>
+    <string name="edit_folder">Edit folder</string>
+    <string name="folder_name_hint">Folder name</string>
+    <string name="select_chats_for_folder">Chats in folder</string>
+    <string name="delete_folder">Delete folder</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="folder_limit_reached">Maximum 10 folders</string>
+    <string name="me">Me</string>
+    <string name="open_profile">Open profile</string>
+    <string name="notifications">Notifications</string>
+    <string name="new_chat">New chat</string>
+    <string name="search_username_hint_desc">Search by username — people and public channels</string>
+    <string name="it_is_you">It\'s you</string>
+    <string name="write_message">Write</string>
+    <string name="open">Open</string>
+    <string name="subscribe">Subscribe</string>
+    <string name="no_one_found">Couldn\'t find anyone :(</string>
+    <string name="yesterday">yesterday</string>
+    <string name="anonymous">Anonymous</string>
+    <string name="user_generic">User</string>
+    <string name="chat_generic">Chat</string>
+    <string name="error_not_authorized">Not authorized</string>
+    <string name="error_banned_in_chat">You\'re banned from this chat</string>
+    <string name="error_link_check_failed">Failed to check the link</string>
+    <string name="error_delete_message_failed">Failed to delete message</string>
+    <string name="error_clear_chat_failed">Failed to clear chat</string>
+    <string name="error_block_user_failed">Failed to block user</string>
+    <string name="error_delete_group_failed">Failed to delete group</string>
+    <string name="error_delete_group_messages_failed">Failed to delete group messages</string>
+    <string name="error_load_members_failed">Failed to load members</string>
+    <string name="no_name">No name</string>
+    <string name="error_id_token_failed">Failed to get idToken</string>
+    <string name="message_generic">Message</string>
+    <string name="error_admin_promote_failed">Failed to promote admin</string>
+    <string name="error_permissions_update_failed">Failed to update permissions</string>
+    <string name="error_ban_failed">Failed to ban</string>
+    <string name="error_unban_failed">Failed to unban</string>
+    <string name="error_invite_link_failed">Failed to create link</string>
+    <string name="saved_messages">Saved Messages</string>
+
+    <!-- ChatListViewModel: new -->
+    <string name="error_subscribe_failed">Failed to subscribe</string>
+
+    <!-- NotificationsScreen -->
+    <string name="mark_all_read">Mark all read</string>
+    <string name="clear_all">Clear all</string>
+    <string name="empty_notifications_title">All quiet</string>
+    <string name="empty_notifications_desc">Missed calls, system stuff, and promos\nwill show up here</string>
+
+    <!-- ContactsSyncScreen -->
+    <string name="error_read_contacts_failed">Failed to read contacts</string>
+    <string name="contacts_in_mayas_title">Contacts on Mayas</string>
+    <string name="searching_friends">Looking for your friends on Mayas…</string>
+    <string name="contacts_permission_needed">Contacts access needed</string>
+    <string name="contacts_permission_desc">Mayas will match numbers from your address book against registered users — your contacts\' numbers are never uploaded</string>
+    <string name="allow_access">Allow access</string>
+    <string name="something_went_wrong">Something went wrong</string>
+    <string name="retry_action">Retry</string>
+    <string name="no_contacts_with_number">No contacts with a phone number</string>
+    <string name="no_numbers_found_in_address_book">No numbers found in your address book</string>
+    <string name="already_on_mayas_count">Already on Mayas — %1$d</string>
+    <string name="not_on_mayas_count">Not on Mayas yet — %1$d</string>
+    <string name="invite_share_text">Join Mayas, let\'s chat - https://dan1eidt.github.io/mayas-site/</string>
+    <string name="invite_action">Invite</string>
+    <string name="not_on_mayas_label">Not on Mayas</string>
+
+    <!-- ChatListScreen -->
+    <string name="waiting_for_network_dots">Waiting for network%1$s</string>
+    <string name="no_connection_dots">No connection%1$s</string>
+    <string name="create_channel">Create channel</string>
+    <string name="invite_friend_action">Invite a friend</string>
+    <string name="invite_friend_share_text">Join Mayas, you won\'t regret it) - https://dan1eidt.github.io/mayas-site/</string>
+    <string name="find_contacts_action">Find contacts</string>
+    <string name="search_chats_action">Search chats</string>
+    <string name="error_open_link_failed">Failed to open link: %1$s</string>
+    <string name="pinned_chats_section_label">PINNED CHATS</string>
+    <string name="group_fallback_name">Group</string>
+    <string name="unpinned_from_panel">Unpinned from panel</string>
+    <string name="app_section_label">APP</string>
+    <string name="settings_menu_label">Settings</string>
+    <string name="about_app_menu_label">About</string>
+    <string name="logout_content_description">Log out</string>
+    <string name="close_action">Close</string>
+    <string name="pinned_to_panel">Pinned to panel</string>
+    <string name="brand_lowercase_mark">mayas.</string>
+    <string name="clear_search_action">Clear</string>
+    <string name="pinned_indicator">Pinned</string>
+    <string name="search_by_username_or_phone">Search by username or phone number</string>
+    <string name="username_or_phone_placeholder">@username or +1 555 123-4567</string>
+    <string name="channel_username_subscribers">@%1$s · %2$s subscribers</string>
+
+    <string name="chat_archive_title">Archive</string>
+    <string name="archive_selected_chats">Archive</string>
+    <string name="unarchive_selected_chats">Unarchive</string>
+    <string name="chat_swipe_label_read">Read</string>
+    <string name="chat_swipe_label_archive">Archive</string>
+    <string name="chat_swipe_label_unarchive">Unarchive</string>
+    <string name="chat_swipe_label_mute">Mute</string>
+    <string name="chat_swipe_label_unmute">Unmute</string>
+    <string name="chat_swipe_label_pin">Pin</string>
+    <string name="chat_swipe_label_unpin">Unpin</string>
+
+    <string name="chatlist_acc_title">Accounts</string>
+    <string name="chatlist_acc_add">Add account</string>
+    <string name="chatlist_acc_switch_title">Switch account</string>
+    <string name="chatlist_acc_password_prompt">Enter the password for %1$s</string>
+    <string name="chatlist_acc_password_label">Password</string>
+    <string name="chatlist_acc_sign_in">Sign in</string>
+    <string name="chatlist_acc_cancel">Cancel</string>
+    <string name="chatlist_acc_target_missing">Account not selected</string>
+
+
+    <string name="mute_all_chats">Mute all chats</string>
+    <string name="unmute_all_chats">Unmute all chats</string>
+    <string name="mute_selected_chats">Mute selected chats</string>
+    <string name="unmute_selected_chats">Unmute selected chats</string>
+    <string name="mass_mute_enabled_toast">Notifications muted in all chats</string>
+    <string name="mass_mute_disabled_toast">Notifications enabled, except for manually muted chats</string>
+    <string name="mass_mute_not_synced_toast">Wait for chats to sync and try again</string>
+    <string name="muted_indicator">Notifications muted</string>
+
+    <!-- WhatsNewDialog -->
+    <string name="whats_new_welcome_title">Welcome to Mayas %1$s</string>
+    <string name="whats_new_welcome_body">We\'ve updated the app. Want to see what\'s changed?</string>
+    <string name="whats_new_button">What\'s new?</string>
+    <string name="whats_new_hooray">Hooray!</string>
+    <string name="whats_new_no_changelog">Changelog is not available yet</string>
+    <string name="mesh_online">Online Mesh</string>
+    <string name="message_transport_mesh">(не переведено)</string>
+    <string name="set_emoji_status">Set emoji status</string>
+</resources>

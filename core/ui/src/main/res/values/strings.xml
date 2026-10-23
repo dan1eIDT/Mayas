@@ -1,5 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="credits_handle_thanks">Всем вам и тебе!</string>
+    <string name="credits_handle_testing">Cassie Sinclair~</string>
+    <string name="credits_handle_dev">@dan1eIDT</string>
+    <string name="credits_handle_design">@valeriy_dobryy</string>
+    <string name="credits_handle_idea">@VeewCr</string>
+    <string name="credits_role_thanks">Благодарность</string>
+    <string name="credits_role_testing">Тестирование</string>
+    <string name="credits_app_name">МАЯС</string>
     <!-- Common / shared across modules -->
     <string name="ok">Ок</string>
     <string name="cancel">Отмена</string>
@@ -38,4 +46,13 @@
     <string name="error_item_unavailable">Товар сейчас недоступен</string>
     <string name="error_already_owned">Уже куплено</string>
     <string name="app_name_caps_splash">маяс</string>
+    <string name="image_editor_title">Обрезка изображения</string>
+    <string name="image_editor_load_failed">Не удалось открыть изображение. Выберите другое.</string>
+    <string name="image_editor_gesture_hint">Перемещайте изображение и используйте жест двумя пальцами для масштаба</string>
+    <string name="image_editor_filter_original">Оригинал</string>
+    <string name="image_editor_filter_warm">Тёплый</string>
+    <string name="image_editor_filter_mono">Ч/Б</string>
+    <string name="image_editor_apply">Применить</string>
+    <string name="image_editor_cancel">Отмена</string>
+    <string name="image_editor_save_failed">Не удалось сохранить обработанное изображение. Попробуйте ещё раз.</string>
 </resources>

@@ -52,6 +52,7 @@ import androidx.compose.foundation.border
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
+import com.dan1eidtj.data.BubbleCorner
 import com.dan1eidtj.data.ShopConstants
 import com.dan1eidtj.data.ShopRepository
 import com.dan1eidtj.data.colorFor
@@ -290,6 +291,8 @@ fun MessageBubbleContainer(
     onDoubleClick: (() -> Unit)? = null,
     onScreenBounds: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
     plain: Boolean = false,
+    customBaseAssetUrl: String? = null,
+    customCornerAssets: Map<BubbleCorner, String> = emptyMap(),
     content: @Composable () -> Unit
 ) {
     val density = LocalDensity.current
@@ -308,6 +311,66 @@ fun MessageBubbleContainer(
                 .combinedClickable(onClick = onClick, onLongClick = onLongClick, onDoubleClick = onDoubleClick)
         ) {
             content()
+        }
+        return
+    }
+
+    if (!customBaseAssetUrl.isNullOrBlank()) {
+        val context = LocalContext.current
+        Box(
+            modifier = boundsModifier
+                .widthIn(max = 280.dp)
+                .clip(bubbleShape)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick, onDoubleClick = onDoubleClick)
+                .then(messageModifier)
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(customBaseAssetUrl)
+                    .crossfade(false)
+                    .build(),
+                contentDescription = null,
+                modifier = Modifier.matchParentSize(),
+                contentScale = androidx.compose.ui.layout.ContentScale.FillBounds
+            )
+
+            val cornerSize = 22.dp
+            customCornerAssets[BubbleCorner.TOP_LEFT]?.let { url ->
+                AsyncImage(
+                    model = ImageRequest.Builder(context).data(url).crossfade(false).build(),
+                    contentDescription = null,
+                    modifier = Modifier.size(cornerSize).align(Alignment.TopStart),
+                    contentScale = androidx.compose.ui.layout.ContentScale.FillBounds
+                )
+            }
+            customCornerAssets[BubbleCorner.TOP_RIGHT]?.let { url ->
+                AsyncImage(
+                    model = ImageRequest.Builder(context).data(url).crossfade(false).build(),
+                    contentDescription = null,
+                    modifier = Modifier.size(cornerSize).align(Alignment.TopEnd),
+                    contentScale = androidx.compose.ui.layout.ContentScale.FillBounds
+                )
+            }
+            customCornerAssets[BubbleCorner.BOTTOM_LEFT]?.let { url ->
+                AsyncImage(
+                    model = ImageRequest.Builder(context).data(url).crossfade(false).build(),
+                    contentDescription = null,
+                    modifier = Modifier.size(cornerSize).align(Alignment.BottomStart),
+                    contentScale = androidx.compose.ui.layout.ContentScale.FillBounds
+                )
+            }
+            customCornerAssets[BubbleCorner.BOTTOM_RIGHT]?.let { url ->
+                AsyncImage(
+                    model = ImageRequest.Builder(context).data(url).crossfade(false).build(),
+                    contentDescription = null,
+                    modifier = Modifier.size(cornerSize).align(Alignment.BottomEnd),
+                    contentScale = androidx.compose.ui.layout.ContentScale.FillBounds
+                )
+            }
+
+            Box(modifier = Modifier.padding(normalPadding)) {
+                content()
+            }
         }
         return
     }

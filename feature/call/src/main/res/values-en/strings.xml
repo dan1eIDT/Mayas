@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="calls">Calls</string>
+    <string name="incoming_call">Incoming call</string>
+    <string name="outgoing_call">Calling...</string>
+    <string name="connecting">Connecting...</string>
+    <string name="ringing">Ringing...</string>
+    <string name="call_rejected">Call declined</string>
+    <string name="rejected_by_partner">Declined by the other side</string>
+    <string name="call_ended">Call ended</string>
+    <string name="video_call_status">Video call · %1$s</string>
+    <string name="speaker">Speaker</string>
+    <string name="earpiece">Earpiece</string>
+    <string name="mic_on">Mic on</string>
+    <string name="mic_off">Mic off</string>
+    <string name="end_call">End call</string>
+    <string name="microphone">Microphone</string>
+    <string name="speakerphone">Speakerphone</string>
+    <string name="accept">Accept</string>
+    <string name="decline">Decline</string>
+
+    <!-- CallManager -->
+    <string name="unknown_caller">Unknown</string>
+    <string name="error_call_connected_desync">The call connected, but its status didn\'t sync with the server.</string>
+    <string name="error_call_connect_failed">Couldn\'t connect the call. Check your connection and try again.</string>
+    <string name="error_call_push_wrapper">⚠️ %1$s\n\nAsk them to open the app, or reach them another way.</string>
+
+    <!-- CallPushNotifier -->
+    <string name="error_peer_no_notifications">The other person doesn\'t have an active notification connection</string>
+    <string name="error_identity_confirm_failed">Couldn\'t verify your identity to place the call. Try reopening the app.</string>
+    <string name="error_notify_server_unavailable">Notification server is unavailable</string>
+    <string name="error_call_push_undelivered">Couldn\'t deliver the call notification. They may not see the call.</string>
+    <string name="error_call_notify_failed">Failed to send the call notification</string>
+</resources>
