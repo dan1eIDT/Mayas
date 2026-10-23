@@ -3,6 +3,7 @@
 
 package com.dan1eidtj.mayas.feature.chats.ChatListScreen
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
@@ -346,6 +347,7 @@ fun getChatId(uid1: String, uid2: String): String {
 }
 
 
+@SuppressLint("RememberReturnType")
 @Composable
 fun ChatListScreen(
     vm: AuthVM,
