@@ -6,7 +6,7 @@ package com.dan1eidtj.mayas.feature.chats.ChatListScreen
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
-import android.content.pm.PackageManager1
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri

@@ -17,7 +17,7 @@ android {
     defaultConfig {
         applicationId = "com.dan1eidtj.mayas"
         minSdk = 24
-        versionCode = 6
+        versionCode = 7
         versionName = "1.3"
         multiDexEnabled = true
         val properties = Properties()
