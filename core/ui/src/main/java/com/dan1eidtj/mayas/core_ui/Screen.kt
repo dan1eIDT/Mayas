@@ -1,10 +1,15 @@
 /* Copyright (C) 2026 ProjectIDT */
 package com.dan1eidtj.mayas.core_ui
 
+import android.net.Uri
+
 sealed class Screen(val route: String) {
     object Auth : Screen("auth")
     object Chats : Screen("chats")
-    object GlobalSearch : Screen("global_search")
+    object GlobalSearch : Screen("global_search?query={query}") {
+        fun create(query: String? = null) =
+            if (!query.isNullOrBlank()) "global_search?query=${Uri.encode(query)}" else "global_search"
+    }
     object Credits : Screen("credits")
     object Chat : Screen("chat/{chatId}?messageId={messageId}") {
         fun create(chatId: String, messageId: String? = null) =

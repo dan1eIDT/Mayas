@@ -30,6 +30,7 @@
     <string name="checking">Checking...</string>
     <string name="username_available">Link is available ✓</string>
     <string name="username_taken">This username is already taken</string>
+    <string name="user_not_found">User @%1$s not found</string>
 
     <!-- Chat -->
     <string name="system_sender">System</string>

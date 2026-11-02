@@ -464,7 +464,7 @@ fun MayasApp(
                         },
                         onOpenUserSearch = { showUserSearchDialog = true },
                         onDismissUserSearch = { showUserSearchDialog = false },
-                        onOpenGlobalSearch = { navController.navigate(Screen.GlobalSearch.route) },
+                        onOpenGlobalSearch = { navController.navigate(Screen.GlobalSearch.create()) },
                         homeLayoutPrefs = homeScreenLayoutPrefs,
                         sidebarLayoutPrefs = sidebarLayoutPrefs,
                         onUpdateSidebarPrefs = { newPrefs ->
@@ -474,7 +474,17 @@ fun MayasApp(
                     )
                 }
 
-                composable(Screen.GlobalSearch.route) {
+                composable(
+                    Screen.GlobalSearch.route,
+                    arguments = listOf(
+                        navArgument("query") {
+                            type = NavType.StringType
+                            nullable = true
+                            defaultValue = null
+                        }
+                    )
+                ) { searchBackStack ->
+                    val initialSearchQuery = searchBackStack.arguments?.getString("query")
                     val myUid = FirebaseAuth.getInstance().currentUser?.uid ?: ""
                     val chatsEntry = remember { navController.getBackStackEntry(Screen.Chats.route) }
                     val chatListVm: ChatListViewModel = viewModel(viewModelStoreOwner = chatsEntry)
@@ -494,6 +504,7 @@ fun MayasApp(
                     }
                     GlobalSearchScreen(
                         myUid = myUid,
+                        initialQuery = initialSearchQuery,
                         localChats = mappedChats,
                         onBack = { navController.popBackStack() },
                         onOpenChat = { chatId, messageId ->
@@ -535,6 +546,9 @@ fun MayasApp(
                         onBack = { navController.popBackStack() },
                         onOpenProfile = { uid, isGroup ->
                             navController.navigate(Screen.Profile.create(uid, isGroup)) },
+                        onOpenGlobalSearch = { query ->
+                            navController.navigate(Screen.GlobalSearch.create(query))
+                        },
                         onStartCall = { peerId, callType ->
                             if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
                                 == PackageManager.PERMISSION_GRANTED

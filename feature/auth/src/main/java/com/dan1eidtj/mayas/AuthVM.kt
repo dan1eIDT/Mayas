@@ -1,6 +1,9 @@
+/* Copyright (C) 2026 dan1eIDT */
+
 package com.dan1eidtj.mayas.feature.auth
 
 import android.app.Application
+import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.dan1eidtj.auth.R
@@ -30,6 +33,8 @@ import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.storage.FirebaseStorage
 import com.dan1eidtj.mayas.core_ui.Screen
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.CancellationException
 import com.dan1eidtj.mayas.db.OfflineDataStore
@@ -42,12 +47,17 @@ import com.dan1eidtj.data.refreshBalanceAndInventory
 import com.dan1eidtj.data.BuyItemResult
 import com.dan1eidtj.data.BackendApi
 
+enum class AuthStep { WELCOME, LOGIN, REGISTER_EMAIL, PROFILE }
+
+enum class UsernameStatus { IDLE, INVALID, CHECKING, FREE, TAKEN }
+
 class AuthVM(application: Application) : AndroidViewModel(application) {
 
     private val auth = FirebaseAuth.getInstance()
     val db: FirebaseFirestore = FirebaseFirestore.getInstance()
     private val sessionManager = SessionManager(application)
     private val accountTokenStore = AccountTokenStore(application.applicationContext)
+    private val authPrefs = application.getSharedPreferences("auth_prefs", Context.MODE_PRIVATE)
 
     var activeSessions by mutableStateOf<List<UserSession>>(emptyList())
         private set
@@ -86,11 +96,110 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
     fun onNameChange(newValue: String) { nameInput = newValue }
 
     var usernameInput by mutableStateOf("")
-    fun onUsernameChange(newValue: String) { usernameInput = newValue }
+    fun onUsernameChange(newValue: String) {
+        usernameInput = newValue.lowercase().filter { it in 'a'..'z' || it in '0'..'9' || it == '_' }.take(32)
+        scheduleUsernameCheck()
+    }
+
+    var authStep by mutableStateOf(AuthStep.WELCOME)
+
+    var usernameStatus by mutableStateOf(UsernameStatus.IDLE)
+        private set
+
+    var avatarUri by mutableStateOf<Uri?>(null)
+        private set
+
+    fun onAvatarPicked(uri: Uri?) { avatarUri = uri }
+
+    private var usernameCheckJob: Job? = null
+
+    private fun scheduleUsernameCheck() {
+        usernameCheckJob?.cancel()
+        val name = usernameInput
+        if (name.isEmpty()) {
+            usernameStatus = UsernameStatus.IDLE
+            return
+        }
+        if (!name.matches(Regex("^[a-z0-9_]{5,32}$"))) {
+            usernameStatus = UsernameStatus.INVALID
+            return
+        }
+        usernameStatus = UsernameStatus.CHECKING
+        usernameCheckJob = viewModelScope.launch {
+            delay(400)
+            checkUsername(name) { free ->
+                if (usernameInput == name) {
+                    usernameStatus = if (free) UsernameStatus.FREE else UsernameStatus.TAKEN
+                }
+            }
+        }
+    }
+
+    fun startRegistration() {
+        isLoginMode = false
+        authError = null
+        authStep = AuthStep.REGISTER_EMAIL
+    }
+
+    fun startLogin() {
+        isLoginMode = true
+        authError = null
+        authStep = AuthStep.LOGIN
+    }
+
+    fun continueToProfile() {
+        val ctx = getApplication<Application>()
+        authError = null
+        if (!emailInput.trim().matches(Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"))) {
+            authError = ctx.getString(R.string.onb_error_email)
+            return
+        }
+        if (passInput.length < 6) {
+            authError = ctx.getString(R.string.onb_error_password)
+            return
+        }
+        authStep = AuthStep.PROFILE
+    }
+
+    fun stepBack(): Boolean {
+        authError = null
+        return when (authStep) {
+            AuthStep.WELCOME -> false
+            AuthStep.LOGIN -> if (isAddingAccount) false else { authStep = AuthStep.WELCOME; true }
+            AuthStep.REGISTER_EMAIL -> {
+                if (isAddingAccount) {
+                    isLoginMode = true
+                    authStep = AuthStep.LOGIN
+                } else {
+                    authStep = AuthStep.WELCOME
+                }
+                true
+            }
+            AuthStep.PROFILE -> {
+                authStep = AuthStep.REGISTER_EMAIL
+                true
+            }
+        }
+    }
+
+    private fun verifySkipKey(uid: String) = "verify_skipped_$uid"
+
+    private fun needsVerification(u: FirebaseUser): Boolean =
+        !u.email.isNullOrBlank() && !u.isEmailVerified && !authPrefs.getBoolean(verifySkipKey(u.uid), false)
+
+    fun skipEmailVerification(onContinue: () -> Unit) {
+        val current = auth.currentUser ?: return
+        authPrefs.edit().putBoolean(verifySkipKey(current.uid), true).apply()
+        showVerifyScreen = false
+        verifyMessage = null
+        user = current
+        onContinue()
+    }
 
     var isLoginMode by mutableStateOf(true)
     fun toggleAuthMode() {
         isLoginMode = !isLoginMode
+        authStep = if (isLoginMode) AuthStep.LOGIN else AuthStep.REGISTER_EMAIL
         authError = null
     }
 
@@ -194,11 +303,11 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         user?.uid?.let { bindSessionTracking(it) }
 
         user?.let { u ->
-            showVerifyScreen = !u.isEmailVerified
+            showVerifyScreen = needsVerification(u)
             u.reload().addOnCompleteListener { task ->
                 if (task.isSuccessful) {
                     val verified = u.isEmailVerified
-                    showVerifyScreen = !verified
+                    showVerifyScreen = needsVerification(u)
                     db.collection("users").document(u.uid).update("emailVerified", verified)
                         .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось обновить emailVerified", e) }
                 }
@@ -605,6 +714,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             val failure = validateOnSecondary(email, pass, create = true)
             if (failure != null) {
                 isLoading = false
+                returnToCredentialsOnError(failure)
                 onError(mapAuthError(failure))
                 return@launch
             }
@@ -655,7 +765,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                         db.collection("users").document(uid).update("emailVerified", verified)
                             .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось обновить emailVerified", e) }
                     }
-                    if (verified) {
+                    if (!needsVerification(loggedUser)) {
 
 
                         loggedUser.getIdToken(true).addOnCompleteListener {
@@ -695,8 +805,18 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             }
             .addOnFailureListener { e ->
                 isLoading = false
+                returnToCredentialsOnError(e)
                 onError(mapAuthError(e))
             }
+    }
+
+    private fun returnToCredentialsOnError(e: Exception) {
+        if (e is FirebaseAuthUserCollisionException ||
+            e is FirebaseAuthInvalidCredentialsException ||
+            e is FirebaseAuthWeakPasswordException
+        ) {
+            authStep = AuthStep.REGISTER_EMAIL
+        }
     }
 
     private fun completeRegistration(
@@ -759,7 +879,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                         BackendApi.changeMainUsername(cleanUsername)
 
                         user = auth.currentUser
-                        accountTokenStore.putPassword(u.uid, pass)
+                        if (pass.isNotEmpty()) accountTokenStore.putPassword(u.uid, pass)
                         loadUserData(u.uid)
                         bindSessionTracking(u.uid)
                         sessionManager.saveSession(UserSession(
@@ -771,6 +891,10 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                             createdAt = u.metadata?.creationTimestamp ?: System.currentTimeMillis()
                         ))
 
+                        avatarUri?.let { picked ->
+                            uploadAvatar(u.uid, picked, false, {}, { msg -> Log.w("AuthVM", "Аватар не загружен: $msg") })
+                        }
+                        avatarUri = null
                         u.sendEmailVerification()
                             .addOnFailureListener { e -> Log.e("AuthVM", "Не удалось отправить письмо верификации", e) }
                         isLoading = false
@@ -838,6 +962,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             resetPremium()
             MeshManager.setBlockedUserIds(emptySet())
             backStack = listOf(Screen.Chats)
+            resetAuthForm()
         }
     }
 
@@ -960,7 +1085,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
                                 }
                                 accountTokenStore.put(targetUid, exchange.newToken)
                                 user = signedIn
-                                showVerifyScreen = !signedIn.isEmailVerified
+                                showVerifyScreen = needsVerification(signedIn)
                                 loadUserData(targetUid)
                                 bindSessionTracking(targetUid)
                                 sessionManager.saveSession(session)
@@ -1056,6 +1181,7 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
             }
             resetAuthForm()
             isAddingAccount = true
+            authStep = AuthStep.LOGIN
             onNavigateToAuth()
         }
     }
@@ -1071,9 +1197,12 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
         passInput = ""
         nameInput = ""
         usernameInput = ""
+        avatarUri = null
+        usernameStatus = UsernameStatus.IDLE
         authError = null
         resetMessage = null
         isLoginMode = true
+        authStep = AuthStep.WELCOME
     }
 
     fun removeSession(uid: String) {
@@ -1170,59 +1299,11 @@ class AuthVM(application: Application) : AndroidViewModel(application) {
 
     fun checkUsername(username: String, onResult: (Boolean) -> Unit) {
         val clean = username.lowercase().trim()
-        var userDone = false
-        var channelDone = false
-        var claimDone = false
-        var isTaken = false
-
-        fun finish() {
-            if (userDone && channelDone && claimDone) onResult(!isTaken)
-        }
-
-        db.collection("users")
-            .whereEqualTo("username", clean)
-            .limit(1)
-            .get()
-            .addOnSuccessListener { snap ->
-                if (!snap.isEmpty) isTaken = true
-                userDone = true
-                finish()
-            }
-            .addOnFailureListener { e ->
-                Log.e("AuthVM", "Не удалось проверить занятость username в users", e)
-                isTaken = true
-                userDone = true
-                finish()
-            }
-
         db.collection("usernameClaims").document(clean).get()
-            .addOnSuccessListener { snap ->
-                if (snap.exists()) isTaken = true
-                claimDone = true
-                finish()
-            }
+            .addOnSuccessListener { snap -> onResult(!snap.exists()) }
             .addOnFailureListener { e ->
                 Log.e("AuthVM", "Не удалось проверить username claim", e)
-                // При недоступности реестра нельзя считать имя свободным.
-                isTaken = true
-                claimDone = true
-                finish()
-            }
-
-        db.collection("chats")
-            .whereEqualTo("username", clean)
-            .limit(1)
-            .get()
-            .addOnSuccessListener { snap ->
-                if (!snap.isEmpty) isTaken = true
-                channelDone = true
-                finish()
-            }
-            .addOnFailureListener { e ->
-                Log.e("AuthVM", "Не удалось проверить занятость username в chats", e)
-                isTaken = true
-                channelDone = true
-                finish()
+                onResult(false)
             }
     }
 

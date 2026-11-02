@@ -30,6 +30,7 @@
     <string name="checking">Проверяем...</string>
     <string name="username_available">Ссылка свободна ✓</string>
     <string name="username_taken">Этот username уже занят</string>
+    <string name="user_not_found">Пользователь @%1$s не найден</string>
 
     <!-- Chat -->
     <string name="system_sender">Система</string>

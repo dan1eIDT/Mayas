@@ -45,6 +45,7 @@ import com.dan1eidtj.mayas.core.ui.theme.MayasTheme
 import com.dan1eidtj.chats.R
 import coil.compose.AsyncImage
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.FieldPath
 import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.QueryDocumentSnapshot
 import kotlinx.coroutines.CancellationException
@@ -63,7 +64,8 @@ data class GlobalUserResult(
     val name: String,
     val username: String?,
     val avatarUrl: String?,
-    val description: String? = null
+    val description: String? = null,
+    val matchedUsername: String? = null
 )
 
 data class GlobalChatResult(
@@ -188,6 +190,34 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
                     }.getOrNull()
                 }
 
+                val additionalUsersDeferred = async {
+                    runCatching {
+                        db.collection("users")
+                            .whereArrayContains("additionalUsernames", usernameQuery)
+                            .limit(10)
+                            .get().await()
+                    }.getOrNull()
+                }
+
+                val claimedAdditionalDeferred = async {
+                    runCatching {
+                        val claims = db.collection("usernameClaims")
+                            .whereEqualTo("kind", "ADDITIONAL")
+                            .whereGreaterThanOrEqualTo(FieldPath.documentId(), usernameQuery)
+                            .whereLessThanOrEqualTo(FieldPath.documentId(), usernameQuery + "\uf8ff")
+                            .limit(10)
+                            .get().await()
+                        claims.documents
+                            .mapNotNull { it.getString("uid") }
+                            .distinct()
+                            .mapNotNull { uid ->
+                                runCatching {
+                                    db.collection("users").document(uid).get().await().takeIf { it.exists() }
+                                }.getOrNull()
+                            }
+                    }.getOrNull().orEmpty()
+                }
+
                 val channelsDeferred = async {
                     runCatching {
                         db.collection("chats")
@@ -254,12 +284,14 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
                 }
 
                 val usersSnap = usersDeferred.await()
+                val additionalSnap = additionalUsersDeferred.await()
+                val claimedAdditional = claimedAdditionalDeferred.await()
                 val claimedUser = claimedUserDeferred.await()
                 val channelsSnap = channelsDeferred.await()
                 val groupsByUsernameSnap = groupsByUsernameDeferred.await()
                 val searchedMessages = messageSearches.map { it.await() }
 
-                if (usersSnap == null && claimedUser == null && channelsSnap == null &&
+                if (usersSnap == null && additionalSnap == null && claimedUser == null && channelsSnap == null &&
                     groupsByUsernameSnap == null && searchedMessages.none { it.second.isNotEmpty() }
                 ) {
                     errorText = "error"
@@ -267,7 +299,7 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
                     return@launch
                 }
 
-                val matchingUserDocs = (usersSnap?.documents.orEmpty() + listOfNotNull(claimedUser))
+                val matchingUserDocs = (usersSnap?.documents.orEmpty() + additionalSnap?.documents.orEmpty() + claimedAdditional + listOfNotNull(claimedUser))
                     .distinctBy { it.id }
                 userResults = matchingUserDocs.mapNotNull { doc ->
                     if (doc.id == myUid) return@mapNotNull null
@@ -277,6 +309,13 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
                         name = doc.getString("name") ?: doc.getString("username") ?: "",
                         username = doc.getString("username"),
                         avatarUrl = doc.getString("avatarUrl").takeIf { canShowPhoto },
+                        matchedUsername = if (doc.getString("username")?.startsWith(usernameQuery) == true) {
+                            null
+                        } else {
+                            (doc.get("additionalUsernames") as? List<*>)
+                                ?.filterIsInstance<String>()
+                                ?.firstOrNull { it.startsWith(usernameQuery) }
+                        },
                         description = doc.getString("description")
                     )
                 }.take(10)
@@ -295,17 +334,17 @@ class GlobalSearchViewModel(application: Application) : AndroidViewModel(applica
                 }.take(10)
 
                 groupResults = groupsByUsernameSnap?.documents.orEmpty().map { doc ->
-                        GlobalChatResult(
-                            chatId = doc.id,
-                            title = doc.getString("groupName") ?: doc.getString("username") ?: "",
-                            isGroup = true,
-                            isChannel = false,
-                            isJoined = (doc.get("participants") as? List<*>)?.contains(myUid) == true,
-                            username = doc.getString("username"),
-                            avatarUrl = doc.getString("groupAvatarUrl") ?: doc.getString("groupAvatar"),
-                            description = doc.getString("description")
-                        )
-                    }.take(10)
+                    GlobalChatResult(
+                        chatId = doc.id,
+                        title = doc.getString("groupName") ?: doc.getString("username") ?: "",
+                        isGroup = true,
+                        isChannel = false,
+                        isJoined = (doc.get("participants") as? List<*>)?.contains(myUid) == true,
+                        username = doc.getString("username"),
+                        avatarUrl = doc.getString("groupAvatarUrl") ?: doc.getString("groupAvatar"),
+                        description = doc.getString("description")
+                    )
+                }.take(10)
 
                 messageResults = searchedMessages.flatMap { (chat, documents) ->
                     documents.map { doc ->
@@ -339,10 +378,11 @@ fun GlobalSearchScreen(
     localChats: List<Map<String, Any>>,
     onBack: () -> Unit,
     onOpenChat: (chatId: String, messageId: String?) -> Unit,
-    onOpenProfile: (uid: String) -> Unit
+    onOpenProfile: (uid: String) -> Unit,
+    initialQuery: String? = null,
 ) {
     val vm: GlobalSearchViewModel = viewModel()
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(initialQuery.orEmpty()) }
     val focusManager = LocalFocusManager.current
 
     val localMatches = remember(query, localChats) {
@@ -411,7 +451,7 @@ fun GlobalSearchScreen(
                 }
             }
             localMatches.isEmpty() && vm.userResults.isEmpty() && vm.channelResults.isEmpty() &&
-                vm.groupResults.isEmpty() && vm.messageResults.isEmpty() -> {
+                    vm.groupResults.isEmpty() && vm.messageResults.isEmpty() -> {
                 Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                     Text(stringResource(R.string.search_no_results), color = MayasTheme.TextSecondary, fontSize = 14.sp)
                 }
@@ -450,6 +490,7 @@ fun GlobalSearchScreen(
                         items(vm.userResults, key = { "user_${it.uid}" }) { user ->
                             val subtitle = listOfNotNull(
                                 user.username?.takeIf { it.isNotBlank() }?.let { "@$it" },
+                                user.matchedUsername?.let { "@$it" },
                                 user.description?.takeIf { it.isNotBlank() }
                             ).joinToString(" · ").takeIf { it.isNotBlank() }
                             SearchResultRow(

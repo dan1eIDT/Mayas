@@ -519,6 +519,46 @@ class ChatVM(application: Application) : AndroidViewModel(application) {
         isSearching = false
     }
 
+    /**
+     * Резолвит @username из текста сообщения в id профиля.
+     * Сначала ищем пользователя, потом (фолбэк) публичный канал/группу с таким username.
+     * onResult(targetId, isGroup): targetId == null — ничего не нашли.
+     */
+    fun resolveMention(username: String, onResult: (targetId: String?, isGroup: Boolean) -> Unit) {
+        val clean = username.trim().lowercase().removePrefix("@")
+        if (clean.isBlank()) {
+            onResult(null, false)
+            return
+        }
+        db.collection("users")
+            .whereEqualTo("username", clean)
+            .limit(1)
+            .get()
+            .addOnSuccessListener { users ->
+                val userDoc = users.documents.firstOrNull()
+                if (userDoc != null) {
+                    onResult(userDoc.id, false)
+                    return@addOnSuccessListener
+                }
+                db.collection("chats")
+                    .whereEqualTo("username", clean)
+                    .limit(1)
+                    .get()
+                    .addOnSuccessListener { chats ->
+                        val chatDoc = chats.documents.firstOrNull()
+                        onResult(chatDoc?.id, chatDoc != null)
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("ChatVM", "Не удалось найти чат по username", e)
+                        onResult(null, false)
+                    }
+            }
+            .addOnFailureListener { e ->
+                Log.e("ChatVM", "Не удалось найти пользователя по username", e)
+                onResult(null, false)
+            }
+    }
+
     fun playVoice(rawUrlOrKey: String) {
         if (playingUrl == rawUrlOrKey) {
             if (isVoicePlaying) {

@@ -50,6 +50,24 @@
     <string name="error_update_password_failed">Failed to update password</string>
     <string name="error_wrong_password">Wrong password</string>
 
+    <string name="onb_welcome_subtitle">A fast and friendly messenger</string>
+    <string name="onb_start_messaging">Start messaging</string>
+    <string name="onb_register_email_title">Email and password</string>
+    <string name="onb_register_email_desc">You can confirm your email later</string>
+    <string name="onb_profile_title">Your profile</string>
+    <string name="onb_profile_desc">Choose a photo, name and username</string>
+    <string name="onb_add_photo">Add photo</string>
+    <string name="onb_username_hint">Latin letters, digits and _, 5 to 32 characters</string>
+    <string name="onb_username_checking">Checking…</string>
+    <string name="onb_username_free">@%1$s is available</string>
+    <string name="onb_username_taken">This username is already taken</string>
+    <string name="onb_next">Next</string>
+    <string name="onb_done">Done</string>
+    <string name="onb_verify_later">I\'ll confirm later</string>
+    <string name="onb_error_email">Enter a valid email</string>
+    <string name="onb_error_password">Password must be at least 6 characters</string>
+
+
     <!-- AuthVM: new, kept distinct from the similarly worded errors above -->
     <string name="error_invalid_email_short">Invalid email</string>
     <string name="error_generic_short">Error</string>

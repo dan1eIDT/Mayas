@@ -582,6 +582,7 @@ fun ChatScreen(
     chatId: String,
     onBack: () -> Unit,
     onOpenProfile: (String, Boolean) -> Unit,
+    onOpenGlobalSearch: (String) -> Unit = {},
     onStartCall: (peerId: String, callType: CallType) -> Unit = { _, _ -> },
     scrollToMessageId: String? = null,
 ) {
@@ -1139,6 +1140,14 @@ fun ChatScreen(
                 listState.animateScrollToItem(outboxItems.size + visibleMessageIndex)
             }
         }
+    }
+
+    // Тап по #хештегу в канале/группе: открываем поиск по чату и прыгаем к первому совпадению.
+    var autoJumpToFirst by remember(chatId) { mutableStateOf(false) }
+    LaunchedEffect(chatVM.searchResults, chatVM.isSearching, autoJumpToFirst) {
+        if (!autoJumpToFirst || chatVM.isSearching) return@LaunchedEffect
+        autoJumpToFirst = false
+        if (chatVM.searchResults.isNotEmpty()) navigateToSearchResult(0)
     }
 
     LaunchedEffect(searchQuery, chatVM.searchResults.size, showSearch) {
@@ -2265,8 +2274,7 @@ fun ChatScreen(
                                                                     }
                                                                 )
 
-                                                                val usernameClickedTemplate = stringResource(R.string.username_clicked)
-                                                                val hashtagClickedTemplate = stringResource(R.string.hashtag_clicked)
+                                                                val userNotFoundTemplate = stringResource(R.string.user_not_found)
                                                                 MayasClickableText(
                                                                     text = parsedText,
                                                                     style = TextStyle(
@@ -2291,11 +2299,17 @@ fun ChatScreen(
                                                                             offset,
                                                                             offset
                                                                         ).firstOrNull()?.let { annotation ->
-                                                                            Toast.makeText(
-                                                                                context,
-                                                                                String.format(usernameClickedTemplate, annotation.item),
-                                                                                Toast.LENGTH_SHORT
-                                                                            ).show()
+                                                                            chatVM.resolveMention(annotation.item) { targetId, isGroup ->
+                                                                                if (targetId != null) {
+                                                                                    onOpenProfile(targetId, isGroup)
+                                                                                } else {
+                                                                                    Toast.makeText(
+                                                                                        context,
+                                                                                        String.format(userNotFoundTemplate, annotation.item),
+                                                                                        Toast.LENGTH_SHORT
+                                                                                    ).show()
+                                                                                }
+                                                                            }
                                                                             return@MayasClickableText
                                                                         }
                                                                         annotated.getStringAnnotations(
@@ -2303,11 +2317,18 @@ fun ChatScreen(
                                                                             offset,
                                                                             offset
                                                                         ).firstOrNull()?.let { annotation ->
-                                                                            Toast.makeText(
-                                                                                context,
-                                                                                String.format(hashtagClickedTemplate, annotation.item),
-                                                                                Toast.LENGTH_SHORT
-                                                                            ).show()
+                                                                            val tag = "#" + annotation.item
+                                                                            if (chatVM.chatType == "DIRECT") {
+                                                                                // ЛС -> глобальный поиск
+                                                                                onOpenGlobalSearch(tag)
+                                                                            } else {
+                                                                                // Канал/группа -> поиск внутри чата
+                                                                                searchQuery = tag
+                                                                                searchResultIndex = 0
+                                                                                showSearch = true
+                                                                                autoJumpToFirst = true
+                                                                                chatVM.searchMessages(chatId, tag)
+                                                                            }
                                                                             return@MayasClickableText
                                                                         }
                                                                         if (msg.transport != "MESH") selectedMessage = msg else meshInfoMessageId = msg.id
