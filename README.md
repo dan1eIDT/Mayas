@@ -1,4 +1,4 @@
-# Mayas (Маяс)
+# Mayas (Маяс) 
 
 <img width="122" height="122" alt="mayas" src="https://github.com/user-attachments/assets/36c28379-6f32-434b-a8e3-81217a981eb9" />
 
