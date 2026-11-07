@@ -1,0 +1,37 @@
+<!-- Copyright (C) 2026 dan1eIDT -->
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="360" viewBox="0 0 360 360">
+  <defs>
+    <g id="bubble"><path d="M-15 -12h30a7 7 0 0 1 7 7v14a7 7 0 0 1-7 7h-15l-9 8v-8h-6a7 7 0 0 1-7-7v-14a7 7 0 0 1 7-7z"/></g>
+    <g id="heart"><path d="M0 12C-20 -2 -12 -16 0 -6C12 -16 20 -2 0 12Z"/></g>
+    <g id="star"><path d="M0 -15L4.4 -5L15 -4.6L6.8 2.4L9.5 13L0 7.2L-9.5 13L-6.8 2.4L-15 -4.6L-4.4 -5Z"/></g>
+    <g id="plane"><path d="M-18 0L18 -14L8 14L1 3Z M1 3L18 -14"/></g>
+    <g id="smile"><circle r="14"/><path d="M-6 -4v2M6 -4v2M-7 4q7 6 14 0"/></g>
+    <g id="bolt"><path d="M4 -16L-9 3H-1L-5 17L10 -4H2Z"/></g>
+    <g id="pin"><path d="M0 16C-12 2 -12 -4 -12 -6a12 12 0 0 1 24 0c0 2 0 8 -12 22z"/><circle cy="-6" r="4"/></g>
+    <g id="ring"><circle r="11"/><circle r="3"/></g>
+    <g id="blob"><ellipse rx="16" ry="12"/><path d="M-6 11L-12 18L2 12"/></g>
+    <g id="cross"><path d="M-4 0h8M0 -4v8"/></g>
+    <g id="dot"><circle r="2"/></g>
+  </defs>
+  <g fill="none" stroke="#b39dff" stroke-opacity="0.13" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#bubble" transform="translate(52 48) rotate(-12)"/>
+    <use href="#heart" transform="translate(176 40) rotate(10)"/>
+    <use href="#star" transform="translate(292 58) rotate(14)"/>
+    <use href="#plane" transform="translate(58 168) rotate(-20)"/>
+    <use href="#smile" transform="translate(180 172) rotate(8)"/>
+    <use href="#bolt" transform="translate(300 176) rotate(12)"/>
+    <use href="#pin" transform="translate(46 292)"/>
+    <use href="#ring" transform="translate(172 296)"/>
+    <use href="#blob" transform="translate(296 296) rotate(-10)"/>
+    <use href="#cross" transform="translate(112 104) rotate(20)"/>
+    <use href="#cross" transform="translate(238 112)"/>
+    <use href="#cross" transform="translate(114 236) rotate(-15)"/>
+    <use href="#cross" transform="translate(240 240) rotate(10)"/>
+    <use href="#dot" transform="translate(340 120)"/>
+    <use href="#dot" transform="translate(20 108)"/>
+    <use href="#dot" transform="translate(110 340)"/>
+    <use href="#dot" transform="translate(236 342)"/>
+    <use href="#dot" transform="translate(340 236)"/>
+    <use href="#dot" transform="translate(16 232)"/>
+  </g>
+</svg>

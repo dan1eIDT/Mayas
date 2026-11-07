@@ -1,0 +1,537 @@
+<!-- Copyright (C) 2026 dan1eIDT -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Как установить Mayas на Android — Mayas</title>
+<meta name="description" content="Пошаговая установка Mayas из APK: разрешение на установку, Play Protect, проверка SHA-256.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Mayas">
+<meta property="og:title" content="Как установить Mayas на Android">
+<meta property="og:description" content="Пошаговая установка Mayas из APK: разрешение на установку, Play Protect, проверка SHA-256.">
+<meta property="og:image" content="https://mayasapp.ru/assets/app_icon.png">
+<link rel="icon" type="image/png" href="../assets/app_icon.png">
+<link rel="apple-touch-icon" href="../assets/app_icon.png">
+<meta name="theme-color" content="#0b0b0e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Golos+Text:wght@400;500;600&family=Noto+Sans+JP:wght@500;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="../assets/sub.css">
+<script>try{if(localStorage.getItem("mayas-theme")==="light")document.documentElement.setAttribute("data-theme","light")}catch(e){}</script>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="../">
+    <img src="../assets/app_icon.png" alt="">
+    <span>Mayas</span>
+  </a>
+  <div class="top-actions">
+    <a class="back" href="../" data-i18n="back">На сайт</a>
+    <select class="lang" id="langSelect" aria-label="Language">
+      <option value="ru">RU</option>
+      <option value="en">EN</option>
+      <option value="es">ES</option>
+      <option value="de">DE</option>
+      <option value="ja">JA</option>
+    </select>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <h1 data-i18n="hero_title">Установка Mayas</h1>
+    <p data-i18n="hero_desc">Mayas пока не в Google Play, поэтому приложение ставится из APK-файла. Это займёт около минуты.</p>
+  </div>
+
+  <div class="notice" id="iosNotice" hidden>
+    <span data-i18n="ios_notice">На iPhone приложения Mayas пока нет, но можно открыть веб-версию.</span>
+    <a class="btn" href="https://mayas-47778.web.app/" data-i18n="ios_web">Открыть веб-версию</a>
+  </div>
+
+  <div class="panel download" id="downloadPanel">
+    <div>
+      <h2 class="section-title" data-i18n="dl_title">Скачать</h2>
+      <dl class="meta" id="meta" hidden>
+        <div><dt data-i18n="m_version">Версия</dt><dd id="mVersion"></dd></div>
+        <div><dt data-i18n="m_size">Размер</dt><dd id="mSize"></dd></div>
+        <div><dt data-i18n="m_date">Дата выпуска</dt><dd id="mDate"></dd></div>
+        <div><dt data-i18n="m_file">Файл</dt><dd id="mFile"></dd></div>
+      </dl>
+      <p class="relstate" id="relState" data-i18n="dl_loading">Загружаем данные релиза…</p>
+      <div class="actions">
+        <a class="btn" id="dlBtn" href="https://github.com/dan1eIDT/Mayas/releases/latest">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M5 21h14"/></svg>
+          <span data-i18n="dl_btn">Скачать APK</span>
+        </a>
+        <a class="link" id="relLink" href="https://github.com/dan1eIDT/Mayas/releases/latest" target="_blank" rel="noopener" data-i18n="dl_release">Страница релиза на GitHub</a>
+      </div>
+    </div>
+    <div class="qr-card" id="qrCard" hidden>
+      <div class="qr-box" id="qrBox"></div>
+      <h3 data-i18n="qr_title">Ставите с компьютера?</h3>
+      <p data-i18n="qr_desc">Наведите камеру телефона на QR-код: откроется эта страница, и APK можно будет скачать сразу на телефон.</p>
+    </div>
+  </div>
+
+  <section class="block">
+    <h2 class="section-title" data-i18n="steps_title">Пошаговая установка</h2>
+    <ol class="steps">
+      <li class="step">
+        <div class="step-head">
+          <div class="step-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4.5-4.5M12 15l-4.5-4.5M5 21h14"/></svg></div>
+          <div><div class="step-num"></div><h3 data-i18n="s1_t">Скачайте APK</h3></div>
+        </div>
+        <p data-i18n="s1_d"></p>
+      </li>
+      <li class="step">
+        <div class="step-head">
+          <div class="step-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/></svg></div>
+          <div><div class="step-num"></div><h3 data-i18n="s2_t">Откройте файл</h3></div>
+        </div>
+        <p data-i18n="s2_d"></p>
+      </li>
+      <li class="step">
+        <div class="step-head">
+          <div class="step-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="8" width="18" height="8" rx="4"/><circle cx="16" cy="12" r="2"/></svg></div>
+          <div><div class="step-num"></div><h3 data-i18n="s3_t">Разрешите установку</h3></div>
+        </div>
+        <p data-i18n="s3_d"></p>
+        <p class="note" data-i18n="s3_note"></p>
+      </li>
+      <li class="step">
+        <div class="step-head">
+          <div class="step-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="m9 12 2 2 4-4"/></svg></div>
+          <div><div class="step-num"></div><h3 data-i18n="s4_t">Если предупредил Play Protect</h3></div>
+        </div>
+        <p data-i18n="s4_d"></p>
+      </li>
+      <li class="step">
+        <div class="step-head">
+          <div class="step-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.5 2.5L16 9.5"/></svg></div>
+          <div><div class="step-num"></div><h3 data-i18n="s5_t">Готово</h3></div>
+        </div>
+        <p data-i18n="s5_d"></p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="block">
+    <h2 class="section-title" data-i18n="v_title">Проверка файла</h2>
+    <div class="panel verify">
+      <p data-i18n="v_desc"></p>
+      <div class="sha" id="shaBox" hidden>
+        <span class="sha-label">SHA-256</span>
+        <code id="shaValue"></code>
+        <button class="copy" id="copyBtn" type="button" data-i18n="v_copy">Копировать</button>
+      </div>
+      <p class="missing" id="shaMissing" data-i18n="v_missing" hidden></p>
+      <div class="howto">
+        <h3 data-i18n="v_how">Как посчитать на компьютере</h3>
+        <div class="cmds">
+          <div class="cmd"><span>Windows</span><code id="cmdWin"></code></div>
+          <div class="cmd"><span>macOS</span><code id="cmdMac"></code></div>
+          <div class="cmd"><span>Linux</span><code id="cmdLinux"></code></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2 class="section-title" data-i18n="faq_title">Частые вопросы</h2>
+    <div class="faq">
+      <details><summary data-i18n="q1"></summary><p data-i18n="a1"></p></details>
+      <details><summary data-i18n="q2"></summary><p data-i18n="a2"></p></details>
+      <details><summary data-i18n="q3"></summary><p data-i18n="a3"></p></details>
+    </div>
+  </section>
+
+  <footer>
+    <a href="../" data-i18n="back">На сайт</a>
+    <a href="https://github.com/dan1eIDT/Mayas" target="_blank" rel="noopener" data-i18n="foot">Исходный код на GitHub</a>
+  </footer>
+</main>
+
+<script src="../assets/vendor/qrcode.min.js"></script>
+<script src="../assets/qr.js"></script>
+<script src="../assets/apk.js"></script>
+<script>
+  const RELEASES_URL = 'https://github.com/dan1eIDT/Mayas/releases/latest';
+
+  const T = {
+    ru: {
+      title: 'Как установить Mayas на Android — Mayas',
+      back: 'На сайт',
+      hero_title: 'Установка Mayas',
+      hero_desc: 'Mayas пока не в Google Play, поэтому приложение ставится из APK-файла. Это займёт около минуты.',
+      ios_notice: 'На iPhone приложения Mayas пока нет, но можно открыть веб-версию.',
+      ios_web: 'Открыть веб-версию',
+      dl_title: 'Скачать',
+      dl_btn: 'Скачать APK',
+      dl_loading: 'Загружаем данные релиза…',
+      dl_fail: 'Не удалось получить данные релиза. Откройте страницу релиза на GitHub.',
+      dl_release: 'Страница релиза на GitHub',
+      m_version: 'Версия',
+      m_size: 'Размер',
+      m_date: 'Дата выпуска',
+      m_file: 'Файл',
+      mb: 'МБ',
+      qr_title: 'Ставите с компьютера?',
+      qr_desc: 'Наведите камеру телефона на QR-код: откроется эта страница, и APK можно будет скачать сразу на телефон.',
+      steps_title: 'Пошаговая установка',
+      s1_t: 'Скачайте APK',
+      s1_d: 'Нажмите «Скачать APK» на телефоне. Браузер может предупредить, что файлы такого типа бывают опасными, это стандартное сообщение для любых APK. Выберите «Всё равно скачать».',
+      s2_t: 'Откройте файл',
+      s2_d: 'Нажмите на загруженный файл в уведомлении или найдите его в «Загрузках» (приложение «Файлы»).',
+      s3_t: 'Разрешите установку',
+      s3_d: 'Если телефон скажет, что установка неизвестных приложений запрещена, нажмите «Настройки» и включите разрешение для браузера (или «Файлов»), из которого открыли APK. Потом вернитесь назад и повторите.',
+      s3_note: 'На Android 7 и старше это настройка «Неизвестные источники» в разделе «Безопасность».',
+      s4_t: 'Если предупредил Play Protect',
+      s4_d: 'Mayas ставится не из Google Play, поэтому Play Protect может показать предупреждение или предложить проверить приложение. Для приложений вне магазина это нормально: нажмите «Подробнее» → «Всё равно установить».',
+      s5_t: 'Готово',
+      s5_d: 'Нажмите «Открыть» и войдите в аккаунт. Новые версии ставятся тем же способом поверх старой.',
+      v_title: 'Проверка файла',
+      v_desc: 'SHA-256 — отпечаток файла. Если он совпал с тем, что вы получили у себя, файл не повреждён и не подменён. Скачивайте Mayas только из официальных релизов на GitHub.',
+      v_copy: 'Копировать',
+      v_copied: 'Скопировано',
+      v_missing: 'GitHub не показал хеш для этого файла. Смотрите его на странице релиза.',
+      v_how: 'Как посчитать на компьютере',
+      faq_title: 'Частые вопросы',
+      q1: 'Установка не начинается',
+      a1: 'Проверьте, что разрешение на установку неизвестных приложений включено именно для того приложения, из которого вы открыли файл: браузера или «Файлов».',
+      q2: 'Пишет «Приложение не установлено»',
+      a2: 'Чаще всего не хватает места или на телефоне стоит версия из другого источника. Освободите место, при необходимости удалите старую версию и повторите.',
+      q3: 'Почему не Google Play?',
+      a3: 'Mayas пока распространяется напрямую через GitHub. Исходный код открыт, а файлы можно сверить по хешу выше.',
+      foot: 'Исходный код на GitHub'
+    },
+    en: {
+      title: 'How to install Mayas on Android — Mayas',
+      back: 'Back to site',
+      hero_title: 'Installing Mayas',
+      hero_desc: 'Mayas isn’t on Google Play yet, so you install it from an APK file. It takes about a minute.',
+      ios_notice: 'There’s no Mayas app for iPhone yet, but you can open the web version.',
+      ios_web: 'Open web version',
+      dl_title: 'Download',
+      dl_btn: 'Download APK',
+      dl_loading: 'Loading release info…',
+      dl_fail: 'Couldn’t load release info. Open the release page on GitHub.',
+      dl_release: 'Release page on GitHub',
+      m_version: 'Version',
+      m_size: 'Size',
+      m_date: 'Released',
+      m_file: 'File',
+      mb: 'MB',
+      qr_title: 'Installing from a computer?',
+      qr_desc: 'Point your phone’s camera at the QR code. This page will open on your phone and you can download the APK right there.',
+      steps_title: 'Step by step',
+      s1_t: 'Download the APK',
+      s1_d: 'Tap “Download APK” on your phone. Your browser may warn that this type of file can be harmful. That’s the standard message for any APK. Choose “Download anyway”.',
+      s2_t: 'Open the file',
+      s2_d: 'Tap the downloaded file in the notification, or find it in Downloads (the Files app).',
+      s3_t: 'Allow the installation',
+      s3_d: 'If your phone says installing unknown apps is blocked, tap “Settings” and allow it for the browser (or Files app) you opened the APK from. Then go back and try again.',
+      s3_note: 'On Android 7 and older this is the “Unknown sources” option under Security.',
+      s4_t: 'If Play Protect warns you',
+      s4_d: 'Mayas doesn’t come from Google Play, so Play Protect may show a warning or offer to scan the app. That’s normal for apps outside the store: tap “More details” → “Install anyway”.',
+      s5_t: 'Done',
+      s5_d: 'Tap “Open” and sign in. New versions are installed the same way, over the old one.',
+      v_title: 'Verify the file',
+      v_desc: 'SHA-256 is the file’s fingerprint. If it matches what you get on your side, the file isn’t corrupted or swapped. Download Mayas only from the official GitHub releases.',
+      v_copy: 'Copy',
+      v_copied: 'Copied',
+      v_missing: 'GitHub didn’t show a hash for this file. Check the release page.',
+      v_how: 'How to calculate it on a computer',
+      faq_title: 'FAQ',
+      q1: 'The installation doesn’t start',
+      a1: 'Make sure the permission to install unknown apps is enabled for the app you opened the file from: the browser or Files.',
+      q2: 'It says “App not installed”',
+      a2: 'Usually there isn’t enough storage, or a version from another source is installed. Free up space, remove the old version if needed, and try again.',
+      q3: 'Why not Google Play?',
+      a3: 'Mayas is currently distributed directly through GitHub. The source code is open, and you can check the files against the hash above.',
+      foot: 'Source code on GitHub'
+    },
+    es: {
+      title: 'Cómo instalar Mayas en Android — Mayas',
+      back: 'Volver al sitio',
+      hero_title: 'Instalar Mayas',
+      hero_desc: 'Mayas todavía no está en Google Play, así que se instala desde un archivo APK. Lleva alrededor de un minuto.',
+      ios_notice: 'Todavía no hay app de Mayas para iPhone, pero puedes abrir la versión web.',
+      ios_web: 'Abrir la versión web',
+      dl_title: 'Descargar',
+      dl_btn: 'Descargar APK',
+      dl_loading: 'Cargando datos de la versión…',
+      dl_fail: 'No se pudieron cargar los datos de la versión. Abre la página de la versión en GitHub.',
+      dl_release: 'Página de la versión en GitHub',
+      m_version: 'Versión',
+      m_size: 'Tamaño',
+      m_date: 'Fecha',
+      m_file: 'Archivo',
+      mb: 'MB',
+      qr_title: '¿Instalas desde el ordenador?',
+      qr_desc: 'Apunta la cámara del móvil al código QR: se abrirá esta página en tu teléfono y podrás descargar el APK directamente.',
+      steps_title: 'Paso a paso',
+      s1_t: 'Descarga el APK',
+      s1_d: 'Pulsa «Descargar APK» en el móvil. El navegador puede avisar de que este tipo de archivo puede ser peligroso; es el mensaje habitual con cualquier APK. Elige «Descargar de todos modos».',
+      s2_t: 'Abre el archivo',
+      s2_d: 'Pulsa el archivo descargado en la notificación o búscalo en Descargas (app Archivos).',
+      s3_t: 'Permite la instalación',
+      s3_d: 'Si el móvil dice que la instalación de apps desconocidas está bloqueada, pulsa «Ajustes» y permítela para el navegador (o la app Archivos) desde el que abriste el APK. Luego vuelve atrás y repite.',
+      s3_note: 'En Android 7 y anteriores es la opción «Orígenes desconocidos» en Seguridad.',
+      s4_t: 'Si Play Protect avisa',
+      s4_d: 'Mayas no viene de Google Play, así que Play Protect puede mostrar una advertencia u ofrecer analizar la app. Es normal en apps de fuera de la tienda: pulsa «Más detalles» → «Instalar de todos modos».',
+      s5_t: 'Listo',
+      s5_d: 'Pulsa «Abrir» e inicia sesión. Las nuevas versiones se instalan igual, encima de la anterior.',
+      v_title: 'Comprobar el archivo',
+      v_desc: 'SHA-256 es la huella del archivo. Si coincide con la que obtienes tú, el archivo no está dañado ni alterado. Descarga Mayas solo desde las versiones oficiales de GitHub.',
+      v_copy: 'Copiar',
+      v_copied: 'Copiado',
+      v_missing: 'GitHub no mostró un hash para este archivo. Consúltalo en la página de la versión.',
+      v_how: 'Cómo calcularlo en un ordenador',
+      faq_title: 'Preguntas frecuentes',
+      q1: 'La instalación no empieza',
+      a1: 'Comprueba que el permiso para instalar apps desconocidas esté activado en la app desde la que abriste el archivo: el navegador o Archivos.',
+      q2: 'Dice «App no instalada»',
+      a2: 'Suele faltar espacio o hay instalada una versión de otro origen. Libera espacio, desinstala la versión anterior si hace falta y vuelve a intentarlo.',
+      q3: '¿Por qué no Google Play?',
+      a3: 'Mayas se distribuye por ahora directamente en GitHub. El código es abierto y puedes comprobar los archivos con el hash de arriba.',
+      foot: 'Código fuente en GitHub'
+    },
+    de: {
+      title: 'Mayas auf Android installieren — Mayas',
+      back: 'Zur Website',
+      hero_title: 'Mayas installieren',
+      hero_desc: 'Mayas ist noch nicht bei Google Play, deshalb wird die App aus einer APK-Datei installiert. Das dauert etwa eine Minute.',
+      ios_notice: 'Für das iPhone gibt es Mayas noch nicht als App, aber du kannst die Web-Version öffnen.',
+      ios_web: 'Web-Version öffnen',
+      dl_title: 'Herunterladen',
+      dl_btn: 'APK herunterladen',
+      dl_loading: 'Release-Daten werden geladen …',
+      dl_fail: 'Release-Daten konnten nicht geladen werden. Öffne die Release-Seite auf GitHub.',
+      dl_release: 'Release-Seite auf GitHub',
+      m_version: 'Version',
+      m_size: 'Größe',
+      m_date: 'Veröffentlicht',
+      m_file: 'Datei',
+      mb: 'MB',
+      qr_title: 'Installation vom Computer?',
+      qr_desc: 'Richte die Kamera deines Handys auf den QR-Code: Diese Seite öffnet sich auf dem Handy und du kannst die APK direkt dort herunterladen.',
+      steps_title: 'Schritt für Schritt',
+      s1_t: 'APK herunterladen',
+      s1_d: 'Tippe auf dem Handy auf „APK herunterladen“. Der Browser warnt eventuell, dass solche Dateien schädlich sein können. Das ist die übliche Meldung bei jeder APK. Wähle „Trotzdem herunterladen“.',
+      s2_t: 'Datei öffnen',
+      s2_d: 'Tippe in der Benachrichtigung auf die heruntergeladene Datei oder öffne sie unter „Downloads“ (App „Dateien“).',
+      s3_t: 'Installation erlauben',
+      s3_d: 'Wenn das Handy meldet, dass die Installation unbekannter Apps blockiert ist, tippe auf „Einstellungen“ und erlaube sie für den Browser (oder die Dateien-App), aus dem du die APK geöffnet hast. Dann zurück und noch einmal versuchen.',
+      s3_note: 'Unter Android 7 und älter heißt die Option „Unbekannte Quellen“ und liegt unter „Sicherheit“.',
+      s4_t: 'Wenn Play Protect warnt',
+      s4_d: 'Mayas stammt nicht aus Google Play, daher kann Play Protect eine Warnung zeigen oder eine Prüfung anbieten. Für Apps außerhalb des Stores ist das normal: Tippe auf „Weitere Details“ → „Trotzdem installieren“.',
+      s5_t: 'Fertig',
+      s5_d: 'Tippe auf „Öffnen“ und melde dich an. Neue Versionen werden auf dieselbe Weise über die alte installiert.',
+      v_title: 'Datei prüfen',
+      v_desc: 'SHA-256 ist der Fingerabdruck der Datei. Stimmt er mit deinem überein, ist die Datei weder beschädigt noch ausgetauscht. Lade Mayas nur aus den offiziellen GitHub-Releases herunter.',
+      v_copy: 'Kopieren',
+      v_copied: 'Kopiert',
+      v_missing: 'GitHub zeigt für diese Datei keinen Hash an. Schau auf der Release-Seite nach.',
+      v_how: 'So berechnest du ihn am Computer',
+      faq_title: 'Häufige Fragen',
+      q1: 'Die Installation startet nicht',
+      a1: 'Prüfe, ob die Erlaubnis für unbekannte Apps für die App aktiv ist, aus der du die Datei geöffnet hast: Browser oder Dateien.',
+      q2: '„App nicht installiert“',
+      a2: 'Meist fehlt Speicherplatz oder es ist eine Version aus einer anderen Quelle installiert. Platz schaffen, bei Bedarf die alte Version entfernen und erneut versuchen.',
+      q3: 'Warum nicht Google Play?',
+      a3: 'Mayas wird derzeit direkt über GitHub verteilt. Der Quellcode ist offen, und du kannst die Dateien mit dem Hash oben prüfen.',
+      foot: 'Quellcode auf GitHub'
+    },
+    ja: {
+      title: 'AndroidへのMayasのインストール方法 — Mayas',
+      back: 'サイトへ戻る',
+      hero_title: 'Mayasをインストール',
+      hero_desc: 'MayasはまだGoogle Playにないため、APKファイルからインストールします。1分ほどで完了します。',
+      ios_notice: 'iPhone向けのMayasアプリはまだありませんが、ウェブ版を開けます。',
+      ios_web: 'ウェブ版を開く',
+      dl_title: 'ダウンロード',
+      dl_btn: 'APKをダウンロード',
+      dl_loading: 'リリース情報を読み込み中…',
+      dl_fail: 'リリース情報を取得できませんでした。GitHubのリリースページを開いてください。',
+      dl_release: 'GitHubのリリースページ',
+      m_version: 'バージョン',
+      m_size: 'サイズ',
+      m_date: '公開日',
+      m_file: 'ファイル',
+      mb: 'MB',
+      qr_title: 'パソコンからインストールしますか？',
+      qr_desc: 'スマホのカメラでQRコードを読み取ると、このページが開き、そのままAPKをダウンロードできます。',
+      steps_title: '手順',
+      s1_t: 'APKをダウンロード',
+      s1_d: 'スマホで「APKをダウンロード」をタップします。ブラウザが「この種類のファイルは危険な可能性があります」と警告することがありますが、APKでは通常の表示です。「ダウンロードを続行」を選びます。',
+      s2_t: 'ファイルを開く',
+      s2_d: '通知からダウンロードしたファイルをタップするか、「ダウンロード」（ファイルアプリ）から開きます。',
+      s3_t: 'インストールを許可',
+      s3_d: '不明なアプリのインストールが禁止されていると表示されたら、「設定」をタップし、APKを開いたブラウザ（またはファイルアプリ）に対して許可します。その後、戻ってもう一度試します。',
+      s3_note: 'Android 7以前では、「セキュリティ」の「提供元不明のアプリ」が該当します。',
+      s4_t: 'Play Protectが警告した場合',
+      s4_d: 'MayasはGoogle Play経由ではないため、Play Protectが警告を表示したり、スキャンを提案したりすることがあります。ストア外のアプリでは通常のことです。「詳細」→「このままインストール」をタップします。',
+      s5_t: '完了',
+      s5_d: '「開く」をタップしてログインします。新しいバージョンも同じ方法で、古いバージョンの上にインストールできます。',
+      v_title: 'ファイルの確認',
+      v_desc: 'SHA-256はファイルの指紋です。お手元の値と一致すれば、ファイルは破損も差し替えもされていません。Mayasは公式のGitHubリリースからのみダウンロードしてください。',
+      v_copy: 'コピー',
+      v_copied: 'コピーしました',
+      v_missing: 'このファイルのハッシュはGitHubに表示されていません。リリースページで確認してください。',
+      v_how: 'パソコンでの計算方法',
+      faq_title: 'よくある質問',
+      q1: 'インストールが始まらない',
+      a1: 'APKを開いたアプリ（ブラウザまたはファイル）に対して、不明なアプリのインストール許可がオンになっているか確認してください。',
+      q2: '「アプリがインストールされていません」と出る',
+      a2: '空き容量不足か、別の提供元のバージョンが入っていることが多いです。容量を空け、必要なら古いバージョンを削除してからやり直してください。',
+      q3: 'なぜGoogle Playではないの？',
+      a3: 'Mayasは現在GitHubから直接配布しています。ソースコードは公開されており、上のハッシュでファイルを確認できます。',
+      foot: 'GitHubのソースコード'
+    }
+  };
+
+  const langs = Object.keys(T);
+  const params = new URLSearchParams(window.location.search);
+  const ua = navigator.userAgent;
+  const isAndroid = /Android/i.test(ua);
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+
+  let lang = detectLang();
+  let release = null;
+  let apk = null;
+  let status = 'loading';
+
+  function detectLang() {
+    const q = (params.get('lang') || '').slice(0, 2).toLowerCase();
+    if (langs.includes(q)) return q;
+    const nav = (navigator.language || 'ru').slice(0, 2).toLowerCase();
+    return langs.includes(nav) ? nav : 'ru';
+  }
+
+  function t(key) {
+    return (T[lang] && T[lang][key]) || T.ru[key] || '';
+  }
+
+  const el = (id) => document.getElementById(id);
+
+  function formatDate(value) {
+    try {
+      return new Intl.DateTimeFormat(lang, { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date(value));
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function renderRelease() {
+    const stateEl = el('relState');
+    const meta = el('meta');
+    if (status === 'loading') {
+      stateEl.hidden = false;
+      stateEl.textContent = t('dl_loading');
+      meta.hidden = true;
+    } else if (status === 'fail') {
+      stateEl.hidden = false;
+      stateEl.textContent = t('dl_fail');
+      meta.hidden = true;
+    } else {
+      stateEl.hidden = true;
+      meta.hidden = false;
+      el('mVersion').textContent = release.tag_name || release.name || '';
+      el('mSize').textContent = apk ? (apk.size / 1048576).toFixed(1) + ' ' + t('mb') : '';
+      el('mDate').textContent = formatDate(release.published_at || release.created_at);
+      el('mFile').textContent = apk ? apk.name : '';
+    }
+
+    const name = apk ? apk.name : 'mayas.apk';
+    el('cmdWin').textContent = 'certutil -hashfile "' + name + '" SHA256';
+    el('cmdMac').textContent = 'shasum -a 256 "' + name + '"';
+    el('cmdLinux').textContent = 'sha256sum "' + name + '"';
+
+    const digest = apk && apk.digest && /^sha256:[0-9a-f]{64}$/i.test(apk.digest) ? apk.digest.slice(7).toLowerCase() : null;
+    el('shaBox').hidden = !digest;
+    el('shaMissing').hidden = !!digest || status === 'loading';
+    if (digest) el('shaValue').textContent = digest;
+  }
+
+  function applyLang(next) {
+    lang = next;
+    document.documentElement.lang = lang;
+    document.title = t('title');
+    document.querySelectorAll('[data-i18n]').forEach((node) => {
+      node.textContent = t(node.dataset.i18n);
+    });
+    renderRelease();
+  }
+
+  function pageUrl() {
+    return window.location.href.split('#')[0].split('?')[0];
+  }
+
+  function setupPlatform() {
+    if (isIOS) el('iosNotice').hidden = false;
+    const showQr = !isAndroid && !isIOS;
+    el('qrCard').hidden = !showQr;
+    el('downloadPanel').classList.toggle('no-qr', !showQr);
+    if (showQr) {
+      try {
+        MayasQR.render(el('qrBox'), pageUrl(), { logo: '../assets/app_icon.png', label: 'QR' });
+      } catch (_) {
+        el('qrCard').hidden = true;
+        el('downloadPanel').classList.add('no-qr');
+      }
+    }
+  }
+
+  function loadRelease() {
+    MayasReleases.load().then((data) => {
+      release = MayasReleases.latestStable(data);
+      apk = MayasReleases.pickApk(release);
+      status = 'ok';
+      if (apk) el('dlBtn').setAttribute('href', apk.browser_download_url);
+      if (release && release.html_url) el('relLink').setAttribute('href', release.html_url);
+      renderRelease();
+    }).catch(() => {
+      status = 'fail';
+      renderRelease();
+    });
+  }
+
+  el('copyBtn').addEventListener('click', () => {
+    const value = el('shaValue').textContent;
+    if (!value) return;
+    const done = () => {
+      el('copyBtn').textContent = t('v_copied');
+      setTimeout(() => { el('copyBtn').textContent = t('v_copy'); }, 1800);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(value).then(done).catch(() => {});
+      return;
+    }
+    const area = document.createElement('textarea');
+    area.value = value;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    try { document.execCommand('copy'); done(); } catch (_) {}
+    document.body.removeChild(area);
+  });
+
+  el('langSelect').addEventListener('change', (e) => {
+    applyLang(e.target.value);
+    const u = new URL(window.location.href);
+    u.searchParams.set('lang', e.target.value);
+    window.history.replaceState(null, '', u.toString());
+  });
+
+  el('langSelect').value = lang;
+  setupPlatform();
+  applyLang(lang);
+  loadRelease();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,317 @@
+<!-- Copyright (C) 2026 dan1eIDT -->
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Приглашение в Mayas</title>
+<meta name="robots" content="noindex">
+<meta name="description" content="Вас пригласили в Mayas. Откройте приглашение в приложении или в веб-версии.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Mayas">
+<meta property="og:title" content="Приглашение в Mayas">
+<meta property="og:description" content="Вас пригласили в Mayas. Откройте приглашение в приложении или в веб-версии.">
+<meta property="og:image" content="https://mayasapp.ru/assets/app_icon.png">
+<link rel="icon" type="image/png" href="../assets/app_icon.png">
+<link rel="apple-touch-icon" href="../assets/app_icon.png">
+<meta name="theme-color" content="#1a1a1e">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;700;800&family=Golos+Text:wght@400;500;600&family=Noto+Sans+JP:wght@500;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="../assets/sub.css">
+<script>try{if(localStorage.getItem("mayas-theme")==="light")document.documentElement.setAttribute("data-theme","light")}catch(e){}</script>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="../">
+    <img src="../assets/app_icon.png" alt="">
+    <span>Mayas</span>
+  </a>
+  <a class="pill" id="topDownload" data-apk href="https://github.com/dan1eIDT/Mayas/releases/latest">Скачать</a>
+</header>
+
+<main>
+  <section class="card" id="card"></section>
+</main>
+
+<script src="../assets/apk.js"></script>
+<script>
+  const WEB_URL = 'https://mayas-47778.web.app/';
+  const APK_RELEASES_URL = 'https://github.com/dan1eIDT/Mayas/releases/latest';
+  const ICON_URL = '../assets/app_icon.png';
+  const CODE_RE = /^[A-Za-z0-9_-]{2,64}$/;
+  const APP_OPEN_TIMEOUT = 1600;
+  const DESKTOP_APP_URL = null;
+  const PREVIEW = {
+    projectId: 'mayas-47778',
+    apiKey: '',
+    configUrl: WEB_URL + '__/firebase/init.json',
+    timeoutMs: 6000
+  };
+  const KEY_CACHE = 'mayas-fb-api-key';
+  const VERIFIED_SVG = '<svg class="verified" viewBox="0 0 24 24" aria-label="Подтверждён"><circle cx="12" cy="12" r="11" fill="#9B7BFF"/><path d="m7 12.5 3.2 3.2L17 9" fill="none" stroke="#0b0b0e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+  const params = new URLSearchParams(window.location.search);
+  const rawCode = params.get('code');
+  const code = rawCode && CODE_RE.test(rawCode) ? rawCode : null;
+  const card = document.getElementById('card');
+  const topDownload = document.getElementById('topDownload');
+
+  const ua = navigator.userAgent;
+  const platform = /Android/i.test(ua) ? 'android' : (/iPhone|iPad|iPod/i.test(ua) ? 'ios' : 'desktop');
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  }
+
+  function safeImageUrl(url) {
+    try {
+      const u = new URL(url, window.location.href);
+      return u.protocol === 'https:' ? u.href : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function plural(n, one, few, many) {
+    const m10 = n % 10;
+    const m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+    return many;
+  }
+
+  function withTimeout(url, options) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), PREVIEW.timeoutMs);
+    return fetch(url, Object.assign({}, options, { signal: ctrl.signal })).finally(() => clearTimeout(timer));
+  }
+
+  function getApiKey() {
+    if (PREVIEW.apiKey) return Promise.resolve(PREVIEW.apiKey);
+    try {
+      const cached = sessionStorage.getItem(KEY_CACHE);
+      if (cached) return Promise.resolve(cached);
+    } catch (_) {}
+    return withTimeout(PREVIEW.configUrl)
+      .then((res) => {
+        if (!res.ok) throw new Error('config ' + res.status);
+        return res.json();
+      })
+      .then((cfg) => {
+        if (!cfg || !cfg.apiKey) throw new Error('no api key');
+        try { sessionStorage.setItem(KEY_CACHE, cfg.apiKey); } catch (_) {}
+        return cfg.apiKey;
+      });
+  }
+
+  function eq(field, value) {
+    return { fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value } };
+  }
+
+  function strField(fields, name) {
+    const v = fields[name];
+    return v && typeof v.stringValue === 'string' ? v.stringValue : '';
+  }
+
+  function mapChannel(doc) {
+    const f = doc.fields || {};
+    const list = f.participants && f.participants.arrayValue && f.participants.arrayValue.values;
+    return {
+      title: strField(f, 'groupName'),
+      description: strField(f, 'description'),
+      avatar: strField(f, 'groupAvatar'),
+      members: list ? list.length : 0,
+      kind: 'Канал',
+      verified: !!(f.verification && f.verification.booleanValue === true)
+    };
+  }
+
+  function loadInvite(c) {
+    const body = {
+      structuredQuery: {
+        from: [{ collectionId: 'chats' }],
+        where: {
+          compositeFilter: {
+            op: 'AND',
+            filters: [
+              eq('type', { stringValue: 'CHANNEL' }),
+              eq('isPublic', { booleanValue: true }),
+              eq('username', { stringValue: c.toLowerCase() })
+            ]
+          }
+        },
+        limit: 1
+      }
+    };
+    return getApiKey()
+      .then((key) => withTimeout(
+        'https://firestore.googleapis.com/v1/projects/' + PREVIEW.projectId + '/databases/(default)/documents:runQuery?key=' + encodeURIComponent(key),
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      ))
+      .then((res) => {
+        if (!res.ok) throw new Error('query ' + res.status);
+        return res.json();
+      })
+      .then((rows) => {
+        const hit = Array.isArray(rows) ? rows.find((r) => r.document) : null;
+        if (!hit) return null;
+        const channel = mapChannel(hit.document);
+        return channel.title ? channel : null;
+      });
+  }
+
+  function linkApk() {
+    if (!document.querySelector('[data-apk]')) return;
+    MayasReleases.load().then((data) => {
+      const release = MayasReleases.latestStable(data);
+      MayasReleases.applyDownloadLinks(release);
+      const apk = MayasReleases.pickApk(release);
+      const size = document.getElementById('apkSize');
+      if (apk && size) size.textContent = (apk.size / 1048576).toFixed(1) + ' MB';
+    }).catch(() => {});
+  }
+
+  function setStatus(text) {
+    const el = document.getElementById('status');
+    if (el) el.textContent = text;
+  }
+
+  function showError() {
+    document.title = 'Ссылка недействительна — Mayas';
+    card.innerHTML = `
+      <div class="avatar is-glyph">:(</div>
+      <h1 class="title">Ссылка недействительна</h1>
+      <p class="desc">В ссылке нет корректного кода приглашения. Проверьте, что вы скопировали её полностью.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="${WEB_URL}">Открыть в вебе</a>
+      </div>
+      <a class="ghost" href="../">На сайт Mayas</a>
+    `;
+    if (platform === 'ios') topDownload.hidden = true;
+    linkApk();
+  }
+
+  function defaultDescription() {
+    if (platform === 'android') return 'Вас пригласили в Mayas. Откройте приглашение в приложении или в вебе.';
+    if (platform === 'ios') return 'Вас пригласили в Mayas. Присоединиться можно в веб-версии.';
+    return 'Вас пригласили в Mayas. Откройте приглашение в веб-версии или установите приложение для Android.';
+  }
+
+  function render() {
+    const primaryLabel = platform === 'desktop' ? 'Открыть в десктопе' : 'Открыть в приложении';
+    const appHref = 'mayas://join/' + encodeURIComponent(code);
+    const webHref = WEB_URL + '?join=' + encodeURIComponent(code);
+    const primaryHref = platform === 'android' ? appHref : (platform === 'desktop' && DESKTOP_APP_URL ? DESKTOP_APP_URL : '#');
+
+    let tail = '';
+    if (platform === 'ios') {
+      tail = '<p class="note">Приложения Mayas для iOS пока нет, поэтому доступна только веб-версия.</p>';
+    } else {
+      tail = `<div class="ghosts"><a class="ghost" data-apk href="${APK_RELEASES_URL}">${platform === 'android' ? 'Скачать Mayas' : 'Скачать Mayas для Android'}<span class="size" id="apkSize"></span></a><a class="ghost" href="../install/">Как установить</a></div>`;
+    }
+
+    document.title = 'Приглашение в Mayas';
+    card.innerHTML = `
+      <div class="avatar" id="invAvatar"><img src="${ICON_URL}" alt=""></div>
+      <h1 class="title" id="invTitle"><span>Приглашение в Mayas</span></h1>
+      <div class="subtitle" id="invSub">Код приглашения: ${escapeHtml(code)}</div>
+      <p class="desc" id="invDesc">${escapeHtml(defaultDescription())}</p>
+      <div class="actions">
+        <a class="btn btn-primary" id="primaryBtn" href="${primaryHref}">${primaryLabel}</a>
+        <a class="btn btn-outline" id="webBtn" href="${webHref}">Открыть в вебе</a>
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+      </div>
+      ${tail}
+    `;
+    if (platform === 'ios') topDownload.hidden = true;
+    setupPrimary(document.getElementById('primaryBtn'), appHref);
+    linkApk();
+  }
+
+  function applyInvite(invite) {
+    const titleEl = document.getElementById('invTitle');
+    const subEl = document.getElementById('invSub');
+    const descEl = document.getElementById('invDesc');
+    const imgEl = document.querySelector('#invAvatar img');
+    if (!titleEl) return;
+
+    titleEl.innerHTML = '<span>' + escapeHtml(invite.title) + '</span>' + (invite.verified ? VERIFIED_SVG : '');
+    subEl.textContent = invite.kind + ' · ' + invite.members + ' ' + plural(invite.members, 'участник', 'участника', 'участников');
+    if (invite.description) descEl.textContent = invite.description;
+    const safe = invite.avatar ? safeImageUrl(invite.avatar) : null;
+    if (safe && imgEl) {
+      imgEl.addEventListener('error', () => { imgEl.src = ICON_URL; }, { once: true });
+      imgEl.src = safe;
+    }
+    document.title = invite.title + ' — Mayas';
+    [titleEl, subEl, descEl].forEach((el) => {
+      el.classList.remove('fade-in');
+      void el.offsetWidth;
+      el.classList.add('fade-in');
+    });
+  }
+
+  function pulseWebButton() {
+    const webBtn = document.getElementById('webBtn');
+    if (!webBtn) return;
+    webBtn.classList.add('attention');
+    setTimeout(() => webBtn.classList.remove('attention'), 2400);
+  }
+
+  function setupPrimary(btn, appHref) {
+    if (platform === 'android') {
+      let attempting = false;
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (attempting) return;
+        attempting = true;
+        let left = false;
+        const mark = () => { left = true; };
+        document.addEventListener('visibilitychange', mark, { once: true });
+        window.addEventListener('pagehide', mark, { once: true });
+        window.addEventListener('blur', mark, { once: true });
+        setStatus('Открываем приложение…');
+        window.location.href = appHref;
+        setTimeout(() => {
+          attempting = false;
+          document.removeEventListener('visibilitychange', mark);
+          window.removeEventListener('pagehide', mark);
+          window.removeEventListener('blur', mark);
+          if (left || document.visibilityState !== 'visible') {
+            setStatus('');
+            return;
+          }
+          setStatus('Приложение не найдено на этом устройстве. Откройте приглашение в вебе или установите Mayas.');
+          pulseWebButton();
+        }, APP_OPEN_TIMEOUT);
+      });
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && !attempting) setStatus('');
+      });
+      return;
+    }
+    btn.addEventListener('click', (e) => {
+      if (platform === 'desktop' && DESKTOP_APP_URL) return;
+      e.preventDefault();
+      setStatus(platform === 'desktop'
+        ? 'Десктопное приложение пока в разработке. Откройте приглашение в вебе.'
+        : 'Откройте приглашение в вебе.');
+      pulseWebButton();
+    });
+  }
+
+  if (!code) {
+    showError();
+  } else {
+    render();
+    loadInvite(code).then((invite) => { if (invite) applyInvite(invite); }).catch(() => {});
+  }
+</script>
+
+</body>
+</html>
